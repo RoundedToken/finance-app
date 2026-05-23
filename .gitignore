@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Node / Wrangler
+node_modules/
+dist/
+.wrangler/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Excel temp/lock
+*.tmp
+~$*
+
+# Secrets — никогда не коммитить
+.env
+.env.local
+.env.*.local
+*.secret
+secrets/
+
+# Locally generated databases (ground truth — обрабатывается отдельным backup-механизмом)
+local/*.db
+local/*.db-journal
+local/*.db-wal
+local/*.db-shm
+local/backups/*.db
+
+# Generated artefacts
+finances/csv/
+finances/backups/*.xlsx
+!finances/backups/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp

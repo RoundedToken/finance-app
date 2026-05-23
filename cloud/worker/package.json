@@ -1,0 +1,19 @@
+{
+  "name": "finances-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker for personal finance system: Telegram bot, REST API, D1 outbox cleanup",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "d1:console": "wrangler d1 execute finances-outbox --remote --command",
+    "d1:apply-schema": "wrangler d1 execute finances-outbox --file=schema.sql --remote",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^3.50.0"
+  }
+}
