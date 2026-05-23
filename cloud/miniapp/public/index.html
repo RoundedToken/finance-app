@@ -2,9 +2,9 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css?v=5">
+    <link rel="stylesheet" href="styles.css?v=6">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -45,7 +45,9 @@
             </div>
 
             <div class="categories">
-                <div class="categories-grid" id="categories-grid"></div>
+                <div class="categories-viewport">
+                    <div class="categories-track" id="cat-track"></div>
+                </div>
                 <div class="pager" id="categories-pager"></div>
             </div>
 
@@ -115,20 +117,22 @@
         <!-- ───────────── Edit expense ───────────── -->
         <section class="modal" id="modal-edit" hidden>
             <div class="modal-backdrop" data-close></div>
-            <div class="modal-card">
+            <div class="modal-card" id="edit-card">
                 <h2 id="edit-title">Редактировать</h2>
-                <div class="edit-block">
+
+                <div class="edit-block inline">
                     <span class="label">Сумма</span>
                     <input type="number" id="edit-amount" inputmode="decimal" step="any" min="0">
                 </div>
-                <div class="edit-block">
+                <div class="edit-block inline">
                     <span class="label">Валюта</span>
                     <select id="edit-currency"></select>
                 </div>
-                <div class="edit-block edit-block-date">
+                <div class="edit-block inline edit-block-date">
                     <span class="label">Дата</span>
                     <input type="date" id="edit-date">
                 </div>
+
                 <div class="edit-block">
                     <span class="label">Описание</span>
                     <textarea id="edit-note" rows="2" placeholder="Введите описание своей покупки"></textarea>
@@ -137,6 +141,7 @@
                     <span class="label">Категория</span>
                     <div class="cat-mini-grid" id="edit-cat-grid"></div>
                 </div>
+
                 <div class="row-actions">
                     <button class="danger" id="edit-delete">Удалить</button>
                     <button class="primary" id="edit-save">Сохранить</button>
@@ -148,6 +153,6 @@
         <div class="toast" id="toast" hidden></div>
     </div>
 
-    <script type="module" src="app.js?v=5"></script>
+    <script type="module" src="app.js?v=6"></script>
 </body>
 </html>
