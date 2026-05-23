@@ -5,34 +5,27 @@
     <key>Label</key>
     <string>com.user.excel-sync</string>
 
+    <!-- После D1-centric pivot этот агент делает только бэкап D1 раз в день. -->
     <key>ProgramArguments</key>
     <array>
         <string>/Users/stepan/Desktop/excel/.venv/bin/python</string>
-        <string>/Users/stepan/Desktop/excel/local/scripts/sync.py</string>
-        <string>--once</string>
-        <string>--quiet</string>
+        <string>/Users/stepan/Desktop/excel/local/scripts/backup_d1.py</string>
     </array>
 
     <key>WorkingDirectory</key>
     <string>/Users/stepan/Desktop/excel</string>
 
-    <!-- Запускать при login и каждые 60 секунд -->
     <key>RunAtLoad</key>
     <true/>
-    <key>StartInterval</key>
-    <integer>60</integer>
 
-    <!-- Только когда машина не спит и сеть онлайн -->
-    <key>KeepAlive</key>
-    <dict>
-        <key>NetworkState</key>
-        <true/>
-    </dict>
+    <!-- Раз в день: 86400 секунд -->
+    <key>StartInterval</key>
+    <integer>86400</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/stepan/Desktop/excel/local/logs/sync.out.log</string>
+    <string>/Users/stepan/Desktop/excel/local/logs/backup.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/stepan/Desktop/excel/local/logs/sync.err.log</string>
+    <string>/Users/stepan/Desktop/excel/local/logs/backup.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -40,7 +33,6 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 
-    <!-- Низкий приоритет, чтобы не тормозить интерактив -->
     <key>ProcessType</key>
     <string>Background</string>
     <key>LowPriorityIO</key>

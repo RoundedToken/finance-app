@@ -3,7 +3,7 @@
  * Минимальный текстовый bot для bootstrap и smoke-теста.
  */
 import type { Env } from "./types";
-import { isAuthorizedUser, insertExpense, getSyncStatus } from "./db";
+import { isAuthorizedUser, createExpense } from "./db";
 
 interface TelegramUpdate {
     message?: {
@@ -45,24 +45,19 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         const lines = [
             `👋 Привет, ${msg.from.first_name ?? "user"}!`,
             ``,
-            `✅ Вы авторизованы (id <code>${userId}</code>).`,
+            `✅ Вы авторизованы.`,
             ``,
-            `Команды:`,
-            `  /id — показать ваш ID`,
-            `  /sync — статус синхронизации с MacBook`,
+            `Откройте <b>Mini App</b> через кнопку <b>Finances</b> внизу чата.`,
+            ``,
+            `Команды (если Mini App не работает):`,
+            `  /id — ваш ID`,
             `  <code>50 EUR food продукты</code> — записать трату`,
-            ``,
-            `<i>Mini App с полноценным UI — в Этапе 2.</i>`,
         ];
         await sendMessage(env, chatId, lines.join("\n"));
         return;
     }
 
-    if (text === "/sync") {
-        const status = await getSyncStatus(env);
-        await sendMessage(env, chatId, formatSyncStatus(status));
-        return;
-    }
+    // /sync команда удалена — после D1-centric pivot статус не нужен.
 
     // Парсинг "<amount> <ccy> <category> [note]"
     const parsed = parseExpense(text);
@@ -80,7 +75,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
 
-    await insertExpense(env, userId, {
+    await createExpense(env, userId, {
         id,
         date,
         amount: parsed.amount,
@@ -88,6 +83,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         category_id: parsed.category,
         note: parsed.note ?? null,
         created_at: now,
+        source: "telegram_bot",
     });
 
     await sendMessage(
@@ -134,7 +130,8 @@ function escapeHtml(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function formatSyncStatus(s: { heartbeat: any | null; outbox: any }): string {
+// Sync status удалён вместе с pivot.
+function _unusedFormatSyncStatus(s: { heartbeat: any | null; outbox: any }): string {
     const lines: string[] = [`🔄 <b>Sync status</b>`, ``];
     const out = s.outbox;
     lines.push(`📥 Outbox:`);

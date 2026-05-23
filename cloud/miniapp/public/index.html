@@ -4,15 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="styles.css?v=4">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- ───────────── Main: numpad + categories ───────────── -->
+        <!-- ───────────── Main ───────────── -->
         <section class="screen" id="screen-main">
             <header class="topbar">
-                <button class="iconbtn" id="open-menu" aria-label="меню">☰</button>
+                <button class="iconbtn" id="open-history" aria-label="История">📜</button>
                 <div class="display">
                     <span class="display-amount" id="amount-display">0</span>
                     <span class="display-currency">
@@ -20,7 +20,7 @@
                         <span id="currency-display">RSD</span>
                     </span>
                 </div>
-                <button class="iconbtn" id="open-sync" aria-label="sync">🔄</button>
+                <span class="iconbtn-placeholder"></span>
             </header>
 
             <div class="numpad" id="numpad">
@@ -41,7 +41,7 @@
             <div class="side-actions">
                 <button class="sidebtn" id="open-currency"><span id="side-flag">🇷🇸</span><span id="side-currency">RSD</span></button>
                 <button class="sidebtn" id="open-date">📅<span id="side-date">сегодня</span></button>
-                <button class="sidebtn" id="open-note">💬<span id="side-note-indicator">заметка</span></button>
+                <button class="sidebtn" id="open-note">💬<span id="side-note-indicator">описание</span></button>
             </div>
 
             <div class="categories">
@@ -49,14 +49,10 @@
                 <div class="pager" id="categories-pager"></div>
             </div>
 
-            <footer class="footer">
-                <div class="footer-line">Сегодня: <b id="spent-today">—</b></div>
-                <div class="footer-line">Вчера: <b id="spent-yesterday">—</b></div>
-                <ul class="recent" id="recent-list"></ul>
-            </footer>
+            <div class="recent-days" id="recent-days"></div>
         </section>
 
-        <!-- ───────────── History ─────────────────────────────── -->
+        <!-- ───────────── History ───────────── -->
         <section class="screen" id="screen-history" hidden>
             <header class="topbar">
                 <button class="iconbtn back-btn" data-back>←</button>
@@ -68,28 +64,7 @@
             </div>
         </section>
 
-        <!-- ───────────── Sync ────────────────────────────────── -->
-        <section class="screen" id="screen-sync" hidden>
-            <header class="topbar">
-                <button class="iconbtn back-btn" data-back>←</button>
-                <h1>Sync</h1>
-                <span class="iconbtn-placeholder"></span>
-            </header>
-            <div class="sync-body" id="sync-body"></div>
-        </section>
-
-        <!-- ───────────── Menu modal ──────────────────────────── -->
-        <section class="modal" id="modal-menu" hidden>
-            <div class="modal-backdrop" data-close></div>
-            <div class="modal-card">
-                <h2>Меню</h2>
-                <button class="row" data-go="history">📜 История</button>
-                <button class="row" data-go="sync">🔄 Sync</button>
-                <button class="row" data-close>Закрыть</button>
-            </div>
-        </section>
-
-        <!-- ───────────── Currency picker ─────────────────────── -->
+        <!-- ───────────── Currency picker ───────────── -->
         <section class="modal" id="modal-currency" hidden>
             <div class="modal-backdrop" data-close></div>
             <div class="modal-card">
@@ -98,7 +73,7 @@
             </div>
         </section>
 
-        <!-- ───────────── Date picker ─────────────────────────── -->
+        <!-- ───────────── Date picker ───────────── -->
         <section class="modal" id="modal-date" hidden>
             <div class="modal-backdrop" data-close></div>
             <div class="modal-card">
@@ -110,29 +85,27 @@
                     <span>другая</span>
                     <input type="date" id="date-input">
                 </label>
-                <button class="row" data-close>Готово</button>
             </div>
         </section>
 
-        <!-- ───────────── Note editor ─────────────────────────── -->
+        <!-- ───────────── Note editor ───────────── -->
         <section class="modal" id="modal-note" hidden>
             <div class="modal-backdrop" data-close></div>
             <div class="modal-card">
-                <h2>Комментарий</h2>
-                <textarea id="note-input" rows="4" placeholder="свободный текст"></textarea>
+                <h2>Описание покупки</h2>
+                <textarea id="note-input" rows="3" placeholder="Введите описание своей покупки"></textarea>
                 <div class="row-actions">
                     <button class="ghost" id="note-clear">Очистить</button>
-                    <button class="ghost" data-close>Отмена</button>
                     <button class="primary" id="note-save">OK</button>
                 </div>
             </div>
         </section>
 
-        <!-- ───────────── Edit expense ────────────────────────── -->
+        <!-- ───────────── Edit expense ───────────── -->
         <section class="modal" id="modal-edit" hidden>
             <div class="modal-backdrop" data-close></div>
             <div class="modal-card">
-                <h2 id="edit-title">Трата</h2>
+                <h2 id="edit-title">Редактировать</h2>
                 <div class="edit-block">
                     <span class="label">Сумма</span>
                     <input type="number" id="edit-amount" inputmode="decimal" step="any" min="0">
@@ -141,33 +114,29 @@
                     <span class="label">Валюта</span>
                     <select id="edit-currency"></select>
                 </div>
-                <div class="edit-block">
+                <div class="edit-block edit-block-date">
                     <span class="label">Дата</span>
                     <input type="date" id="edit-date">
                 </div>
                 <div class="edit-block">
-                    <span class="label">Комментарий</span>
-                    <textarea id="edit-note" rows="2"></textarea>
+                    <span class="label">Описание</span>
+                    <textarea id="edit-note" rows="2" placeholder="Введите описание своей покупки"></textarea>
                 </div>
                 <div class="edit-block">
                     <span class="label">Категория</span>
                     <div class="cat-mini-grid" id="edit-cat-grid"></div>
                 </div>
-                <p id="edit-note-readonly" hidden style="font-size:11px;color:var(--hint);text-align:center;margin:8px 0;">
-                    Записи старше или импортированные нельзя редактировать через Mini App. Используйте MacBook.
-                </p>
                 <div class="row-actions">
-                    <button class="ghost" data-close>Отмена</button>
                     <button class="danger" id="edit-delete">Удалить</button>
                     <button class="primary" id="edit-save">Сохранить</button>
                 </div>
             </div>
         </section>
 
-        <!-- ───────────── Toast ───────────────────────────────── -->
+        <!-- ───────────── Toast ───────────── -->
         <div class="toast" id="toast" hidden></div>
     </div>
 
-    <script type="module" src="app.js?v=3"></script>
+    <script type="module" src="app.js?v=4"></script>
 </body>
 </html>
