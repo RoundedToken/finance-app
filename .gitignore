@@ -33,10 +33,16 @@ local/*.db-wal
 local/*.db-shm
 local/backups/*.db
 
-# Generated artefacts
-finances/csv/
-finances/backups/*.xlsx
-!finances/backups/.gitkeep
+# Personal source data — никогда не коммитить (Legacy xlsx, CSV из Расходы ОК, скрины)
+data/**
+!data/README.md
+!data/*/
+!data/legacy/backups/.gitkeep
+
+# Generated artefacts — пересобираются автоматически
+reports/**
+!reports/README.md
+tools/csv/
 
 # IDE
 .vscode/

@@ -14,9 +14,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-WORKBOOK_PATH = ROOT / "Finances.xlsx"
-BACKUP_DIR = ROOT / "backups"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = PROJECT_ROOT  # для совместимости с импортирующими скриптами
+WORKBOOK_PATH = PROJECT_ROOT / "data" / "legacy" / "Finances.xlsx"
+BACKUP_DIR = PROJECT_ROOT / "data" / "legacy" / "backups"
 
 
 def assert_not_open(path: Path) -> None:

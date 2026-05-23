@@ -174,6 +174,28 @@
 - На MacBook два рантайма: Python + Node (для wrangler).
 - Worker на TS, локально на Python — нет code sharing, но интерфейс REST.
 
+## ADR-010: Структура — data/ для source, reports/ для generated, tools/ для xlsx-утилит
+
+**Контекст.** На раннем этапе всё лежало в одной папке `finances/`: и Legacy xlsx, и скрипты, и regenerated файлы. После того как появился Mini App + CSV-импорт + скрины — стало тесно и путано.
+
+**Решение.**
+- `data/` — все source-данные (Legacy xlsx, CSV из «ОК», скрины). **Целиком gitignored**, только `README.md` в git.
+- `reports/` — generated артефакты (`Finances.generated.xlsx`). Регенерируются, не комитятся.
+- `tools/` — Python-утилиты для работы с `.xlsx`. Переехало из `finances/scripts/`.
+- `local/` — SQLite ground truth + sync + миграции (без изменений).
+- `cloud/` — Worker + Mini App (без изменений).
+
+**Почему.**
+- Privacy: личные финансы не в git history.
+- Чистота: понятно где input, где код, где output.
+- Имя `finances/` конфликтовало с темой всего проекта.
+- `inspect.py` переименован в `inspect_xlsx.py` — конфликтовал со stdlib `inspect`.
+
+**Следствия.**
+- Пути в `tools/excel/_common.py` теперь резолвят `data/legacy/Finances.xlsx`.
+- `local/scripts/regenerate_xlsx.py` пишет в `reports/`.
+- `.gitignore` уровня директорий: `data/**` и `reports/**` с исключениями для README.
+
 ## ADR-009: Bot полностью молчит для не-whitelist пользователей
 
 **Контекст.** Telegram-бот публичный по самой природе Telegram (любой может найти `@<bot_username>` и написать ему). Что бот должен делать с этими сообщениями?

@@ -20,7 +20,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 from _common import WORKBOOK_PATH, assert_not_open, create_backup  # noqa: E402
 
 SOFFICE_CANDIDATES = [

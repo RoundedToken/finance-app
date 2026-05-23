@@ -16,7 +16,7 @@
 ## Структура репозитория
 
 ```
-excel/
+excel/                            # имя корня — historical; см. ADR-011 о возможном переименовании
 ├── CLAUDE.md, README.md          ← entry points
 ├── docs/                         ← вся архитектурная документация
 │   ├── architecture.md           — общая архитектура и диаграммы
@@ -26,29 +26,36 @@ excel/
 │   ├── setup.md                  — как поднять проект с нуля
 │   ├── stack.md                  — технологический стек
 │   └── roadmap.md                — план этапов и текущий статус
-├── finances/                     ← Excel (Legacy + dashboard) + Excel-tools
-│   ├── Finances.xlsx             — рабочая таблица (бывший ground truth, теперь dashboard)
-│   ├── CLAUDE.md                 — детальные правила работы с .xlsx
-│   ├── scripts/                  — 11 утилит inspect/backup/diff/...
-│   ├── backups/
-│   └── ...
+├── data/                         ← source data (личные, gitignored — только README в git)
+│   ├── README.md
+│   ├── legacy/                   — Finances.xlsx (старый ground truth) + бэкапы
+│   └── money-ok/                 — CSV-экспорт из «Расходы ОК» + скриншоты UI
 ├── local/                        ← локальный SQLite (ground truth) + sync + регенерация
-│   ├── schema.sql                — DDL для локальной БД
+│   ├── schema.sql                — DDL (current snapshot)
 │   ├── migrations/               — нумерованные миграции схемы
+│   ├── launchd/                  — plist для автозапуска sync.py
 │   ├── scripts/
-│   │   ├── init_db.py            — создать БД из schema.sql
-│   │   ├── sync.py               — тянуть из D1, писать локально
-│   │   └── regenerate_xlsx.py    — собрать Finances.xlsx из БД
-│   └── (finances.db создаётся init_db.py, в .gitignore)
-└── cloud/                        ← Cloudflare Worker + Mini App
-    ├── worker/                   — TypeScript, REST API + Telegram bot + cron cleanup
-    │   ├── src/                  — index.ts, bot.ts, api.ts, cron.ts
-    │   ├── schema.sql            — DDL для D1
-    │   ├── wrangler.toml
-    │   └── package.json
-    └── miniapp/                  — Telegram Mini App (HTML/CSS/JS)
-        └── public/
+│   │   ├── init_db.py            — создать БД, применить миграции
+│   │   ├── sync.py               — тянуть из D1, писать локально, heartbeat
+│   │   └── regenerate_xlsx.py    — собрать reports/Finances.generated.xlsx
+│   ├── backups/                  — копии finances.db
+│   └── logs/                     — sync.out.log, sync.err.log
+├── cloud/                        ← Cloudflare Worker + Mini App
+│   ├── worker/                   — TypeScript, REST API + Telegram bot + cron
+│   │   ├── src/                  — index.ts, bot.ts, auth.ts, db.ts, types.ts
+│   │   ├── schema.sql, migrations/
+│   │   ├── scripts/bootstrap.sh
+│   │   └── wrangler.toml, package.json
+│   └── miniapp/                  — Telegram Mini App (HTML/CSS/JS)
+│       └── public/
+├── tools/                        ← Excel-инструменты (Legacy и отладка дашборда)
+│   ├── README.md, CLAUDE.md
+│   ├── Makefile
+│   └── excel/                    — 12 утилит для .xlsx (inspect_xlsx, backup, diff, ...)
+└── reports/                      ← generated artefacts (Finances.generated.xlsx) — gitignored
 ```
+
+**Историческая заметка**: корень папки называется `excel/`, что не отражает текущий scope (полноценная финансовая система с Telegram-каналом ввода). Переименовать — отдельная задача, потребует обновить пути в `launchd`-агенте и `.env`. См. roadmap.
 
 ## Главные правила для агента
 
@@ -77,7 +84,7 @@ excel/
    - Node + npm для wrangler. Wrangler ставится глобально (`npm install -g wrangler`).
    - launchd-агент для sync прописывается в `~/Library/LaunchAgents/com.user.excel-sync.plist` (см. `local/README.md`).
 
-9. **При работе с Finances.xlsx — соблюдать правила из `finances/CLAUDE.md`** (atomic save, backup, roundtrip-check). Excel хрупкий, особенно chart/form controls/calcChain.
+9. **При работе с Legacy `data/legacy/Finances.xlsx` — соблюдать правила из `tools/CLAUDE.md`** (atomic save, backup в `data/legacy/backups/`, roundtrip-check). Excel хрупкий, особенно chart/form controls/calcChain.
 
 10. **Когда непонятно direction — спросить пользователя.** Не угадывать архитектурные решения.
 
@@ -94,7 +101,9 @@ excel/
 | Как поднять проект с нуля | `docs/setup.md` |
 | Полный список зависимостей и версий | `docs/stack.md` |
 | Что сейчас делаем, что дальше | `docs/roadmap.md` |
-| Excel-инспекция (legacy lens) | `finances/CLAUDE.md` |
+| Excel-инспекция (legacy lens + dashboard debug) | `tools/CLAUDE.md` |
+| Source data (CSV/скрины/Legacy xlsx) | `data/README.md` |
+| Regenerated artefacts | `reports/README.md` |
 | Локальный SQLite + sync | `local/README.md` |
 | Cloudflare Worker + Mini App | `cloud/README.md` |
 
