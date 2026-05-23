@@ -1,32 +1,28 @@
 /**
- * finances-worker — entry point.
- *
- * Routes:
- *   POST /tg                       — Telegram webhook (text bot for Stage 1)
- *   POST /v1/expenses              — Mini App пишет трату (initData auth)
- *   GET  /v1/sync                  — MacBook забирает новое (bearer auth)
- *   POST /v1/sync/confirm          — MacBook подтверждает (bearer auth)
- *   POST /v1/admin/references      — MacBook пушит справочники (bearer auth)
- *   GET  /v1/bootstrap             — Mini App грузит справочники (initData auth)
- *   GET  /healthz                  — public
- *
- * Cron (configured in wrangler.toml):
- *   "0 3 * * *"  — daily cleanup of confirmed expenses older than 7 days
+ * finances-worker — D1-centric, no MacBook ground truth.
+ * Endpoints:
+ *   POST   /tg                       — Telegram webhook (text bot)
+ *   GET    /v1/bootstrap              — refs + initial expenses (initData)
+ *   GET    /v1/expenses               — list (initData)
+ *   POST   /v1/expenses               — create (initData)
+ *   PUT    /v1/expenses/:id           — update (initData)
+ *   DELETE /v1/expenses/:id           — soft delete (initData)
+ *   POST   /v1/admin/references       — push refs from MacBook (bearer)
+ *   POST   /v1/admin/migrate-expenses — bulk insert (bearer, миграция)
+ *   GET    /healthz                   — public
  */
 
 import type { Env } from "./types";
 import { validateInitData, checkBearer } from "./auth";
 import {
     isAuthorizedUser,
-    insertExpense,
-    fetchExpensesSince,
-    confirmExpenses,
-    cleanupConfirmed,
+    createExpense,
+    updateExpense,
+    deleteExpense,
+    listExpenses,
+    bulkInsertExpenses,
     getBootstrapData,
-    updateHeartbeat,
-    getSyncStatus,
     replaceReferences,
-    replaceExpensesCache,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
 
@@ -35,13 +31,12 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // CORS preflight для Mini App.
         if (request.method === "OPTIONS") {
             return new Response(null, {
                 status: 204,
                 headers: {
                     "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
                     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
                     "Access-Control-Max-Age": "86400",
                 },
@@ -50,15 +45,20 @@ export default {
 
         try {
             if (path === "/healthz") return json({ ok: true });
-            if (path === "/tg" && request.method === "POST") return handleTelegramWebhook(request, env);
-            if (path === "/v1/expenses" && request.method === "POST") return handlePostExpense(request, env);
-            if (path === "/v1/sync" && request.method === "GET") return handleSync(request, env, url);
-            if (path === "/v1/sync/confirm" && request.method === "POST") return handleConfirm(request, env);
-            if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
-            if (path === "/v1/admin/expenses-cache" && request.method === "POST") return handlePushExpensesCache(request, env);
+            if (path === "/tg" && request.method === "POST") return handleTg(request, env);
+
             if (path === "/v1/bootstrap" && request.method === "GET") return handleBootstrap(request, env);
-            if (path === "/v1/sync/heartbeat" && request.method === "POST") return handleHeartbeat(request, env);
-            if (path === "/v1/sync/status" && request.method === "GET") return handleSyncStatus(request, env);
+            if (path === "/v1/expenses" && request.method === "GET") return handleListExpenses(request, env, url);
+            if (path === "/v1/expenses" && request.method === "POST") return handleCreateExpense(request, env);
+
+            const m = path.match(/^\/v1\/expenses\/([0-9a-fA-F-]+)$/);
+            if (m) {
+                if (request.method === "PUT") return handleUpdateExpense(request, env, m[1]);
+                if (request.method === "DELETE") return handleDeleteExpense(request, env, m[1]);
+            }
+
+            if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
+            if (path === "/v1/admin/migrate-expenses" && request.method === "POST") return handleMigrate(request, env);
 
             return json({ error: "not found" }, 404);
         } catch (err) {
@@ -66,18 +66,10 @@ export default {
             return json({ error: String(err) }, 500);
         }
     },
-
-    async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-        const removed = await cleanupConfirmed(env, 7);
-        console.log(`cron cleanup: removed ${removed} confirmed records`);
-    },
 };
 
-// ────────────────────────────────────────────────────────────────────────────
-// Handlers
-// ────────────────────────────────────────────────────────────────────────────
-
-async function handleTelegramWebhook(request: Request, env: Env): Promise<Response> {
+// ── Telegram bot webhook ───────────────────────────────────────────────────
+async function handleTg(request: Request, env: Env): Promise<Response> {
     const body = await request.json().catch(() => null);
     if (!body) return json({ ok: false, reason: "bad json" });
     try {
@@ -85,98 +77,86 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
     } catch (e) {
         console.error("bot error", e);
     }
-    // Telegram считает webhook успешным только при 200 OK.
     return json({ ok: true });
 }
 
-async function handlePostExpense(request: Request, env: Env): Promise<Response> {
-    const initData = request.headers.get("X-Telegram-Init-Data") ?? "";
-    const auth = await validateInitData(initData, env.TELEGRAM_BOT_TOKEN);
-    if (!auth.ok || !auth.user_id) {
-        return json({ error: "unauthorized", reason: auth.reason }, 401);
-    }
-    if (!(await isAuthorizedUser(env, auth.user_id))) {
-        return json({ error: "user not in whitelist" }, 403);
-    }
-    const payload = await request.json().catch(() => null);
-    if (!payload || typeof payload !== "object") {
-        return json({ error: "bad json" }, 400);
-    }
-    // TODO: schema validation
-    const { inserted } = await insertExpense(env, auth.user_id, payload as any);
-    return json({ ok: true, inserted });
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+async function handleBootstrap(request: Request, env: Env): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    return json(await getBootstrapData(env));
 }
 
-async function handleSync(request: Request, env: Env, url: URL): Promise<Response> {
-    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    const since = url.searchParams.get("since") ?? "1970-01-01T00:00:00Z";
-    const expenses = await fetchExpensesSince(env, since, 500);
-    const has_more = expenses.length === 500;
-    const next_since = expenses.length > 0 ? expenses[expenses.length - 1].created_at : since;
-    return json({ expenses, next_since, has_more });
+// ── List / CRUD expenses ───────────────────────────────────────────────────
+async function handleListExpenses(request: Request, env: Env, url: URL): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    const limit = parseInt(url.searchParams.get("limit") ?? "500", 10);
+    const from = url.searchParams.get("from") ?? undefined;
+    const rows = await listExpenses(env, { limit, from });
+    return json({ expenses: rows });
 }
 
-async function handleConfirm(request: Request, env: Env): Promise<Response> {
-    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    const body = (await request.json().catch(() => ({}))) as { ids?: string[] };
-    const ids = Array.isArray(body.ids) ? body.ids : [];
-    const confirmed = await confirmExpenses(env, ids);
-    return json({ ok: true, confirmed });
+async function handleCreateExpense(request: Request, env: Env): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400);
+    const r = await createExpense(env, auth.userId!, body as any);
+    return json({ ok: true, ...r });
 }
 
-async function handlePushExpensesCache(request: Request, env: Env): Promise<Response> {
-    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    const body = (await request.json().catch(() => ({}))) as any;
-    const expenses = Array.isArray(body.expenses) ? body.expenses : [];
-    const n = await replaceExpensesCache(env, expenses);
-    return json({ ok: true, cached: n });
+async function handleUpdateExpense(request: Request, env: Env, id: string): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400);
+    const r = await updateExpense(env, id, auth.userId!, body);
+    return json({ ok: true, ...r });
 }
 
+async function handleDeleteExpense(request: Request, env: Env, id: string): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    const r = await deleteExpense(env, id, auth.userId!);
+    return json({ ok: true, ...r });
+}
+
+// ── Admin (bearer) ─────────────────────────────────────────────────────────
 async function handlePushReferences(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    const payload = (await request.json().catch(() => ({}))) as any;
-    await replaceReferences(env, payload);
+    const body = (await request.json().catch(() => ({}))) as any;
+    await replaceReferences(env, body);
     return json({
         ok: true,
         replaced: {
-            accounts: payload.accounts?.length ?? null,
-            categories: payload.categories?.length ?? null,
-            currencies: payload.currencies?.length ?? null,
+            accounts: body.accounts?.length ?? null,
+            categories: body.categories?.length ?? null,
+            currencies: body.currencies?.length ?? null,
         },
     });
 }
 
-async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
+async function handleMigrate(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
     const body = (await request.json().catch(() => ({}))) as any;
-    await updateHeartbeat(env, body.device_id ?? "macbook", {
-        last_sync_attempt_at: body.last_sync_attempt_at ?? new Date().toISOString(),
-        last_sync_success_at: body.last_sync_success_at ?? null,
-        last_pulled: body.last_pulled ?? 0,
-        last_inserted: body.last_inserted ?? 0,
-        last_confirmed: body.last_confirmed ?? 0,
-        last_error: body.last_error ?? null,
-        notes: body.notes ?? null,
-    });
-    return json({ ok: true });
+    const expenses = Array.isArray(body.expenses) ? body.expenses : [];
+    const n = await bulkInsertExpenses(env, expenses);
+    return json({ ok: true, inserted: n, attempted: expenses.length });
 }
 
-async function handleSyncStatus(request: Request, env: Env): Promise<Response> {
-    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    const status = await getSyncStatus(env);
-    return json(status);
-}
-
-async function handleBootstrap(request: Request, env: Env): Promise<Response> {
+// ── Auth helpers ───────────────────────────────────────────────────────────
+async function authenticateMiniApp(
+    request: Request,
+    env: Env,
+): Promise<{ ok: true; userId: string } | { ok: false; response: Response }> {
     const initData = request.headers.get("X-Telegram-Init-Data") ?? "";
-    const auth = await validateInitData(initData, env.TELEGRAM_BOT_TOKEN);
-    if (!auth.ok || !auth.user_id) return json({ error: "unauthorized" }, 401);
-    if (!(await isAuthorizedUser(env, auth.user_id))) return json({ error: "forbidden" }, 403);
-    const data = await getBootstrapData(env);
-    return json(data);
+    const a = await validateInitData(initData, env.TELEGRAM_BOT_TOKEN);
+    if (!a.ok || !a.user_id) return { ok: false, response: json({ error: "unauthorized" }, 401) };
+    if (!(await isAuthorizedUser(env, a.user_id))) return { ok: false, response: json({ error: "forbidden" }, 403) };
+    return { ok: true, userId: a.user_id };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 function json(payload: unknown, status: number = 200): Response {
     return new Response(JSON.stringify(payload), {
         status,

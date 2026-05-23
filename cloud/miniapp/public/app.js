@@ -1,17 +1,16 @@
-// Mini App. Personal finance tracker.
-// Архитектура: state-machine, vanilla JS, без фреймворков.
+// Mini App — D1-centric. All CRUD via Worker REST API.
+// No localStorage outbox: D1 = single source of truth.
 
 const tg = window.Telegram?.WebApp;
 const WORKER_BASE = "https://finances-worker.<owner>.workers.dev";
-const STORE_KEY = "finances.miniapp.v3";
 
-// ───────────────────────────── state
+// ───────────── state
 const state = {
     accounts: [],
     categories: [],         // expense только
-    allCategories: [],      // включая income/system (для edit)
+    allCategories: [],      // включая income/system (для edit dropdown)
     currencies: [],
-    recentExpenses: [],     // из D1 cache, read-only история
+    expenses: [],           // полный список из D1 (last 500)
     bootstrapped: false,
     bootstrapError: null,
 
@@ -22,16 +21,9 @@ const state = {
     catPage: 0,
     catsPerPage: 8,
 
-    sent: loadLocal().sent || [], // что отправили с этого устройства, может быть edited
-    editingId: null,              // id записи в режиме редактирования
+    editingId: null,
+    editingCategory: null,
 };
-
-function loadLocal() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); } catch { return {}; }
-}
-function saveLocal() {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ sent: state.sent.slice(-300) }));
-}
 
 function todayISO() {
     return new Date().toISOString().slice(0, 10);
@@ -48,7 +40,7 @@ function uuid4() {
     });
 }
 
-// ───────────────────────────── network
+// ───────────── network
 async function api(path, options = {}) {
     const headers = {
         "Content-Type": "application/json",
@@ -70,7 +62,7 @@ async function bootstrap() {
         state.categories = state.allCategories.filter(c => c.type === "expense");
         state.accounts = data.accounts || [];
         state.currencies = data.currencies || [];
-        state.recentExpenses = data.recent_expenses || [];
+        state.expenses = data.expenses || [];
         state.bootstrapped = true;
         state.bootstrapError = null;
     } catch (e) {
@@ -78,11 +70,11 @@ async function bootstrap() {
     }
 }
 
-async function postExpense(e) {
-    return await api("/v1/expenses", { method: "POST", body: JSON.stringify(e) });
-}
+async function postExpense(e) { return await api("/v1/expenses", { method: "POST", body: JSON.stringify(e) }); }
+async function putExpense(id, patch) { return await api(`/v1/expenses/${id}`, { method: "PUT", body: JSON.stringify(patch) }); }
+async function delExpense(id) { return await api(`/v1/expenses/${id}`, { method: "DELETE" }); }
 
-// ───────────────────────────── DOM helpers
+// ───────────── DOM
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 function showScreen(name) {
@@ -101,23 +93,36 @@ function toast(msg, kind = "ok") {
     toast._t = setTimeout(() => { el.hidden = true; }, 2000);
 }
 
-// ───────────────────────────── rendering
-function flagOf(code) {
-    return state.currencies.find(c => c.code === code)?.emoji || "💱";
-}
-function catOf(id) {
-    return state.allCategories.find(c => c.id === id);
-}
+// ───────────── helpers
+function flagOf(code) { return state.currencies.find(c => c.code === code)?.emoji || "💱"; }
+function catOf(id) { return state.allCategories.find(c => c.id === id); }
 function fmt(n) {
     if (n === Math.floor(n)) return n.toLocaleString("ru-RU");
     return n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 }
+function humanDayTitle(iso) {
+    const today = todayISO();
+    const yest = dateShift(-1);
+    const d = new Date(iso + "T00:00:00");
+    const weekdays = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+    const monthsGen = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+    let prefix = "";
+    if (iso === today) prefix = "Сегодня";
+    else if (iso === yest) prefix = "Вчера";
+    else prefix = `${d.getDate()} ${monthsGen[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""}`;
+    const wd = weekdays[d.getDay()];
+    return { prefix, weekday: wd };
+}
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+}
 
+// ───────────── render
 function render() {
     renderDisplay();
     renderSideActions();
     renderCategories();
-    renderFooter();
+    renderRecentDays();
 }
 
 function renderDisplay() {
@@ -132,13 +137,11 @@ function renderSideActions() {
     $("#side-currency").textContent = state.currency;
     $("#side-flag").textContent = flagOf(state.currency);
     const today = todayISO();
-    const lbl = state.date === today ? "сегодня"
-              : state.date === dateShift(-1) ? "вчера"
-              : state.date.slice(5);
-    $("#side-date").textContent = lbl;
-    const noteBtn = $("#open-note");
-    $("#side-note-indicator").textContent = state.note ? "есть" : "заметка";
-    noteBtn.classList.toggle("has-note", !!state.note);
+    $("#side-date").textContent = state.date === today ? "сегодня"
+                               : state.date === dateShift(-1) ? "вчера"
+                               : state.date.slice(5);
+    $("#side-note-indicator").textContent = state.note ? "есть" : "описание";
+    $("#open-note").classList.toggle("has-note", !!state.note);
 }
 
 function renderCategories() {
@@ -149,23 +152,21 @@ function renderCategories() {
 
     if (!state.bootstrapped) {
         grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--hint);padding:18px;font-size:12px;">
-            ${state.bootstrapError ? "Ошибка: " + state.bootstrapError : "Загрузка категорий…"}
+            ${state.bootstrapError ? "Ошибка: " + escapeHtml(state.bootstrapError) : "Загрузка категорий…"}
         </div>`;
         return;
     }
-
     const cats = state.categories;
     const totalPages = Math.max(1, Math.ceil(cats.length / state.catsPerPage));
     if (state.catPage >= totalPages) state.catPage = 0;
     const start = state.catPage * state.catsPerPage;
     const slice = cats.slice(start, start + state.catsPerPage);
     const amountValid = parseFloat(state.amount) > 0;
-
     for (const cat of slice) {
         const btn = document.createElement("button");
         btn.className = "cat" + (amountValid ? "" : " disabled");
         btn.style.background = cat.color || "var(--bg-elevated)";
-        btn.innerHTML = `<span class="emoji">${cat.emoji || "📌"}</span><span class="name">${cat.name}</span>`;
+        btn.innerHTML = `<span class="emoji">${cat.emoji || "📌"}</span><span class="name">${escapeHtml(cat.name)}</span>`;
         btn.addEventListener("click", () => onCategoryTap(cat));
         grid.appendChild(btn);
     }
@@ -177,136 +178,103 @@ function renderCategories() {
     }
 }
 
-function renderFooter() {
+// Сегодня + вчера групированно
+function renderRecentDays() {
+    const container = $("#recent-days");
+    container.innerHTML = "";
     const today = todayISO();
     const yest = dateShift(-1);
-    // Берём из union: sent + recentExpenses, дедуплицируем по id, тогда новые из Mini App
-    // и старые из импорта обе вилимы.
-    const allByDate = (d) => {
-        const map = new Map();
-        for (const e of state.sent.filter(x => x.date === d && x.ok)) map.set(e.id, e);
-        for (const e of state.recentExpenses.filter(x => x.date === d)) {
-            if (!map.has(e.id)) map.set(e.id, e);
-        }
-        return [...map.values()];
-    };
-    const sumBy = (list) => {
-        const m = new Map();
-        for (const e of list) m.set(e.currency, (m.get(e.currency) || 0) + e.amount);
-        return m;
-    };
-    const ccyStr = (m) => m.size === 0 ? "—" :
-        [...m.entries()].map(([c, n]) => `${fmt(n)} ${c}`).join(" + ");
-    $("#spent-today").textContent = ccyStr(sumBy(allByDate(today)));
-    $("#spent-yesterday").textContent = ccyStr(sumBy(allByDate(yest)));
+    for (const day of [today, yest]) {
+        const block = buildDayGroup(day, /* showEmpty= */ true);
+        container.appendChild(block);
+    }
+}
 
-    const list = $("#recent-list");
-    list.innerHTML = "";
-    // Последние 8 из sent ∪ recent
-    const map = new Map();
-    for (const e of [...state.recentExpenses, ...state.sent.filter(x => x.ok)]) {
-        map.set(e.id, e);
+function buildDayGroup(day, showEmpty) {
+    const items = state.expenses.filter(e => e.date === day);
+    const block = document.createElement("div");
+    block.className = "day-group";
+
+    const sums = new Map();
+    for (const e of items) sums.set(e.currency, (sums.get(e.currency) || 0) + e.amount);
+    const totalLabel = sums.size === 0
+        ? (showEmpty ? "— нет операций" : "")
+        : [...sums.entries()].map(([c, n]) => `${fmt(n)} ${flagOf(c)} ${c}`).join(" + ");
+
+    const titleData = humanDayTitle(day);
+    const head = document.createElement("div");
+    head.className = "day-head";
+    head.innerHTML = `
+        <span class="day-title">${escapeHtml(titleData.prefix)}<small>${escapeHtml(titleData.weekday)}</small></span>
+        <span class="day-total">${totalLabel}</span>
+    `;
+    block.appendChild(head);
+
+    if (items.length || !showEmpty) {
+        const ul = document.createElement("ul");
+        ul.className = "day-rows";
+        for (const e of items) ul.appendChild(buildExpenseRow(e));
+        block.appendChild(ul);
     }
-    const all = [...map.values()].sort((a, b) => (b.created_at || b.date) < (a.created_at || a.date) ? -1 : 1);
-    for (const e of all.slice(0, 8)) {
-        const cat = catOf(e.category_id);
-        const li = document.createElement("li");
-        li.innerHTML = `
-            <span class="icon" style="background:${cat?.color || "var(--bg-elevated)"}">${cat?.emoji || "📌"}</span>
-            <span class="name">${cat?.name || e.category_id || "—"}</span>
-            <span class="amount">${fmt(e.amount)} ${e.currency}</span>
-        `;
-        // tap → edit (только для своих)
-        const ownEntry = state.sent.find(s => s.id === e.id);
-        if (ownEntry) {
-            li.addEventListener("click", () => openEditModal(ownEntry, /*owned*/ true));
-        } else {
-            li.addEventListener("click", () => openEditModal(e, /*owned*/ false));
-        }
-        list.appendChild(li);
-    }
+    return block;
+}
+
+function buildExpenseRow(e) {
+    const cat = catOf(e.category_id);
+    const li = document.createElement("li");
+    li.className = "day-row";
+    const noteHtml = e.note ? `<div class="note">${escapeHtml(e.note)}</div>` : "";
+    li.innerHTML = `
+        <span class="icon" style="background:${cat?.color || "var(--bg-elevated)"}">${cat?.emoji || "📌"}</span>
+        <div class="body">
+            <div class="name">${escapeHtml(cat?.name || "—")}</div>
+            ${noteHtml}
+        </div>
+        <span class="amount"><span class="flag">${flagOf(e.currency)}</span>${fmt(e.amount)} ${e.currency}</span>
+    `;
+    li.addEventListener("click", () => openEditModal(e));
+    return li;
 }
 
 function renderHistoryScreen() {
     const list = $("#history-list");
     list.innerHTML = "";
-
-    // union sent + recent, по date desc
-    const map = new Map();
-    for (const e of state.recentExpenses) map.set(e.id, e);
-    for (const e of state.sent.filter(x => x.ok)) map.set(e.id, e);
-    const all = [...map.values()]
-        .filter(e => e.deleted_at == null)
-        .sort((a, b) => (a.date < b.date ? 1 : -1));
-
-    if (!all.length) {
-        list.innerHTML = `<p class="history-hint">Пока нет ни одной траты.</p>`;
+    if (!state.expenses.length) {
+        list.innerHTML = `<p class="history-hint">Пока пусто.</p>`;
         return;
     }
+    const groupedByDate = new Map();
+    for (const e of state.expenses) {
+        if (!groupedByDate.has(e.date)) groupedByDate.set(e.date, []);
+        groupedByDate.get(e.date).push(e);
+    }
+    const dates = [...groupedByDate.keys()].sort((a, b) => a < b ? 1 : -1);
+    for (const d of dates) {
+        // Подменим логику чтобы использовать готовые рендеры:
+        const block = document.createElement("div");
+        block.className = "day-group";
 
-    let curDay = null;
-    for (const e of all) {
-        if (e.date !== curDay) {
-            curDay = e.date;
-            const h = document.createElement("div");
-            h.className = "day-head";
-            h.textContent = humanDate(e.date);
-            list.appendChild(h);
-        }
-        const cat = catOf(e.category_id);
-        const row = document.createElement("div");
-        row.className = "history-row";
-        row.innerHTML = `
-            <span class="icon" style="background:${cat?.color || "var(--bg-elevated)"}">${cat?.emoji || "📌"}</span>
-            <span class="name">${cat?.name || "—"}${e.note ? `<small>${escapeHtml(e.note)}</small>` : ""}</span>
-            <span class="amount">${fmt(e.amount)} ${e.currency}</span>
+        const items = groupedByDate.get(d);
+        const sums = new Map();
+        for (const e of items) sums.set(e.currency, (sums.get(e.currency) || 0) + e.amount);
+        const totalLabel = [...sums.entries()].map(([c, n]) => `${fmt(n)} ${flagOf(c)} ${c}`).join(" + ");
+        const t = humanDayTitle(d);
+        const head = document.createElement("div");
+        head.className = "day-head";
+        head.innerHTML = `
+            <span class="day-title">${escapeHtml(t.prefix)}<small>${escapeHtml(t.weekday)}</small></span>
+            <span class="day-total">${totalLabel}</span>
         `;
-        const ownEntry = state.sent.find(s => s.id === e.id);
-        row.addEventListener("click", () => openEditModal(ownEntry || e, !!ownEntry));
-        list.appendChild(row);
+        block.appendChild(head);
+        const ul = document.createElement("ul");
+        ul.className = "day-rows";
+        for (const e of items) ul.appendChild(buildExpenseRow(e));
+        block.appendChild(ul);
+        list.appendChild(block);
     }
 }
 
-function renderSyncScreen() {
-    const body = $("#sync-body");
-    const ownCount = state.sent.filter(s => s.ok).length;
-    const pendingCount = state.sent.filter(s => !s.ok && !s.error).length;
-    const errorCount = state.sent.filter(s => s.error).length;
-    const totalCached = state.recentExpenses.length;
-    const last = state.sent[state.sent.length - 1];
-
-    body.innerHTML = `
-        <div class="info-row">
-            <span class="label">В кеше Mini App</span>
-            <b>${totalCached}</b> записей (загружено при старте)
-        </div>
-        <div class="info-row">
-            <span class="label">Отправлено с этого устройства</span>
-            <b>${ownCount}</b> ✓ &nbsp; ${pendingCount} в очереди &nbsp; ${errorCount} ошибок
-        </div>
-        ${last ? `
-        <div class="info-row">
-            <span class="label">Последняя</span>
-            ${fmt(last.amount)} ${last.currency} · ${last.sent_at?.slice(0,16).replace("T"," ") || ""}
-        </div>` : ""}
-        <div class="info-row">
-            <span class="label">MacBook</span>
-            Статус MacBook — через бота: команда <b>/sync</b>.<br>
-            <span style="color:var(--hint);">MacBook опрашивает облако каждую минуту, если открыт.</span>
-        </div>
-    `;
-}
-
-function humanDate(iso) {
-    if (iso === todayISO()) return "Сегодня";
-    if (iso === dateShift(-1)) return "Вчера";
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-}
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-}
-
-// ───────────────────────────── currency picker
+// ───────────── currency picker
 function renderCurrencyPicker() {
     const grid = $("#currency-grid");
     grid.innerHTML = "";
@@ -315,7 +283,7 @@ function renderCurrencyPicker() {
         btn.className = c.code === state.currency ? "active" : "";
         btn.innerHTML = `<span class="ccy-flag">${c.emoji || "💱"}</span>
                          <span class="ccy-code">${c.code}</span>
-                         <span class="ccy-name">${c.name}</span>`;
+                         <span class="ccy-name">${escapeHtml(c.name)}</span>`;
         btn.addEventListener("click", () => {
             state.currency = c.code;
             renderDisplay();
@@ -326,17 +294,13 @@ function renderCurrencyPicker() {
     }
 }
 
-// ───────────────────────────── edit modal
-function openEditModal(expense, owned) {
+// ───────────── edit modal
+function openEditModal(expense) {
     state.editingId = expense.id;
-    $("#edit-title").textContent = owned ? "Редактировать" : "Просмотр";
-
+    state.editingCategory = expense.category_id;
     $("#edit-amount").value = expense.amount;
-    $("#edit-amount").disabled = !owned;
     $("#edit-date").value = expense.date;
-    $("#edit-date").disabled = !owned;
     $("#edit-note").value = expense.note || "";
-    $("#edit-note").disabled = !owned;
 
     const sel = $("#edit-currency");
     sel.innerHTML = "";
@@ -347,7 +311,6 @@ function openEditModal(expense, owned) {
         if (c.code === expense.currency) o.selected = true;
         sel.appendChild(o);
     }
-    sel.disabled = !owned;
 
     const catGrid = $("#edit-cat-grid");
     catGrid.innerHTML = "";
@@ -357,74 +320,58 @@ function openEditModal(expense, owned) {
         b.style.background = c.color || "var(--bg)";
         b.textContent = c.emoji || "📌";
         b.title = c.name;
-        b.disabled = !owned;
+        b.dataset.id = c.id;
         b.addEventListener("click", () => {
+            state.editingCategory = c.id;
             $$(".cat-mini-grid button.active").forEach(x => x.classList.remove("active"));
             b.classList.add("active");
-            b.dataset.selected = "1";
-            catGrid.dataset.value = c.id;
         });
-        if (c.id === expense.category_id) catGrid.dataset.value = c.id;
         catGrid.appendChild(b);
     }
-
-    $("#edit-save").style.display = owned ? "" : "none";
-    $("#edit-delete").style.display = owned ? "" : "none";
-    $("#edit-note-readonly").hidden = owned;
 
     openModal("edit");
 }
 
 async function saveEdit() {
     const id = state.editingId;
-    const ownEntry = state.sent.find(s => s.id === id);
-    if (!ownEntry) { toast("Нельзя редактировать", "err"); return; }
-
-    const newExpense = {
-        id,
+    const patch = {
         amount: parseFloat($("#edit-amount").value),
         currency: $("#edit-currency").value,
         date: $("#edit-date").value,
         note: $("#edit-note").value.trim() || null,
-        category_id: $("#edit-cat-grid").dataset.value || ownEntry.category_id,
-        created_at: ownEntry.created_at,
+        category_id: state.editingCategory || null,
     };
-    if (!(newExpense.amount > 0)) { toast("Сумма?", "err"); return; }
-
-    // Локально обновляем optimistically
-    Object.assign(ownEntry, newExpense, { ok: false });
-    saveLocal(); renderFooter();
+    if (!(patch.amount > 0)) { toast("Сумма?", "err"); return; }
 
     try {
-        // Тот же UUID → Worker INSERT OR IGNORE → не обновит outbox
-        // Но Mini App кеш у нас локальный, поэтому считаем что обновили.
-        // Полноценный edit (обновление на MacBook) — Stage 5.
-        // Сейчас просто помечаем локально + отправляем как новую запись (если есть смысл).
-        ownEntry.ok = true;
-        ownEntry.edited_locally_at = new Date().toISOString();
-        saveLocal();
-        renderFooter();
-        renderHistoryScreen();
-        toast("✓ Сохранено локально", "ok");
+        await putExpense(id, patch);
+        // обновляем локальный state
+        const idx = state.expenses.findIndex(e => e.id === id);
+        if (idx >= 0) state.expenses[idx] = { ...state.expenses[idx], ...patch, updated_at: new Date().toISOString() };
+        render();
+        if (!$("#screen-history").hidden) renderHistoryScreen();
         closeModals();
+        toast("✓ Сохранено", "ok");
     } catch (e) {
         toast("Ошибка: " + e.message, "err");
     }
 }
 
-function deleteEntry() {
+async function deleteEntry() {
     const id = state.editingId;
-    const ownEntry = state.sent.find(s => s.id === id);
-    if (!ownEntry) return;
-    ownEntry.deleted_at = new Date().toISOString();
-    saveLocal();
-    renderFooter();
-    renderHistoryScreen();
-    toast("🗑️ Удалено локально", "ok");
-    closeModals();
+    try {
+        await delExpense(id);
+        state.expenses = state.expenses.filter(e => e.id !== id);
+        render();
+        if (!$("#screen-history").hidden) renderHistoryScreen();
+        closeModals();
+        toast("🗑️ Удалено", "ok");
+    } catch (e) {
+        toast("Ошибка: " + e.message, "err");
+    }
 }
 
-// ───────────────────────────── interactions
+// ───────────── input handlers
 function onNumpadTap(button) {
     const key = button.dataset.key;
     if (key === "back") {
@@ -455,18 +402,15 @@ async function onCategoryTap(cat) {
         currency: state.currency,
         category_id: cat.id,
         note: state.note || null,
+        source: "mini_app",
         created_at: new Date().toISOString(),
     };
-    const local = { ...expense, ok: false, sent_at: expense.created_at };
-    state.sent.push(local);
-    saveLocal();
-    renderFooter();
+    // Optimistic — добавим в state, потом подтверждение от API
+    state.expenses.unshift(expense);
+    render();
 
     try {
         await postExpense(expense);
-        local.ok = true;
-        saveLocal();
-        renderFooter();
         toast(`✓ ${fmt(amount)} ${state.currency} → ${cat.name}`, "ok");
         state.amount = "0";
         state.note = "";
@@ -474,32 +418,23 @@ async function onCategoryTap(cat) {
         renderSideActions();
         renderCategories();
     } catch (e) {
-        local.error = String(e.message || e);
-        saveLocal();
-        renderFooter();
+        state.expenses = state.expenses.filter(x => x.id !== expense.id);
+        render();
         toast("Ошибка: " + e.message, "err");
     }
 }
 
-// ───────────────────────────── init
+// ───────────── init
 function bindEvents() {
     $$("#numpad button").forEach(b => b.addEventListener("click", () => onNumpadTap(b)));
 
-    $("#open-menu").addEventListener("click", () => openModal("menu"));
+    $("#open-history").addEventListener("click", () => { renderHistoryScreen(); showScreen("history"); });
     $("#open-currency").addEventListener("click", () => { renderCurrencyPicker(); openModal("currency"); });
     $("#open-date").addEventListener("click", () => { $("#date-input").value = state.date; openModal("date"); });
     $("#open-note").addEventListener("click", () => { $("#note-input").value = state.note; openModal("note"); });
-    $("#open-sync").addEventListener("click", () => { showScreen("sync"); renderSyncScreen(); });
 
     $$("[data-close]").forEach(el => el.addEventListener("click", closeModals));
     $$("[data-back]").forEach(el => el.addEventListener("click", () => showScreen("main")));
-    $$("[data-go]").forEach(el => el.addEventListener("click", () => {
-        closeModals();
-        const t = el.dataset.go;
-        if (t === "history") { renderHistoryScreen(); showScreen("history"); }
-        else if (t === "sync") { renderSyncScreen(); showScreen("sync"); }
-    }));
-
     $$("[data-date-shift]").forEach(el => el.addEventListener("click", () => {
         state.date = dateShift(parseInt(el.dataset.dateShift, 10));
         renderSideActions();
@@ -516,7 +451,7 @@ function bindEvents() {
     $("#edit-save").addEventListener("click", saveEdit);
     $("#edit-delete").addEventListener("click", deleteEntry);
 
-    // swipe для пагинации категорий
+    // Swipe для пагинации категорий
     const cats = $(".categories");
     let touchX = 0;
     cats.addEventListener("touchstart", e => { touchX = e.touches[0].clientX; }, { passive: true });
@@ -534,18 +469,14 @@ async function init() {
     if (tg) {
         tg.ready();
         tg.expand();
-        // Telegram WebApp 7.7+: блокирует пуллируемый swipe-to-close.
         try { tg.disableVerticalSwipes?.(); } catch {}
-        // Применяем тему Telegram к header/bg.
         try { tg.setHeaderColor?.("#2b2546"); } catch {}
         try { tg.setBackgroundColor?.("#2b2546"); } catch {}
     }
-
     bindEvents();
     render();
 
     await bootstrap();
-    // Дефолтная валюта — из первого "реального" аккаунта.
     const def = state.accounts.find(a => a.type !== "external")?.currency || "RSD";
     state.currency = def;
     render();

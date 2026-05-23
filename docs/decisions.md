@@ -174,6 +174,43 @@
 - На MacBook два рантайма: Python + Node (для wrangler).
 - Worker на TS, локально на Python — нет code sharing, но интерфейс REST.
 
+## ADR-011: D1 как единственный источник правды (pivot)
+
+**Контекст.** Изначально архитектура была: SQLite на MacBook = ground truth, D1 = транзитный outbox-буфер, Excel — view. Mini App пишет в D1, MacBook каждую минуту тянет к себе.
+
+Проблемы, выявленные на практике:
+- Mini App не может редактировать записи: outbox чистится через 7 дней, локальный SQLite не доступен online.
+- Архитектурная сложность: 3 копии данных, sync, heartbeat, cron cleanup, push_references, push_expenses, expenses_cache.
+- Excel-дашборд морально устарел — пользователь хочет всю аналитику в Mini App.
+
+**Решение.** D1 = единственный источник правды. Mini App пишет/читает/редактирует напрямую через CRUD endpoints. MacBook сводится к ежедневному backup через `wrangler d1 export`.
+
+**Почему это работает:**
+- Cloudflare D1 free tier: 5 GB. Реальный объём: ~1820 трат за 2.5 года = 250 KB. Хватит на десятилетия.
+- 5M reads / 100k writes в день — далеко за пределы реальной нагрузки.
+- Сложность операций (CRUD) проще трёхслойного sync.
+- Mini App может редактировать любые записи (на свои UUID).
+- Backup на MacBook + iCloud Drive — компенсация рисков (D1 down, аккаунт удалён).
+
+**Что удалено:**
+- `expenses_outbox`, `expenses_cache`, `device_heartbeats`, `rate_limit` таблицы в D1.
+- `local/scripts/sync.py`, `push_expenses.py`, `push_references.py`, `regenerate_xlsx.py`.
+- Cron Trigger в Worker.
+- `/v1/sync/*` endpoints, `/v1/sync/heartbeat`, `/sync` команда в боте.
+- Excel-дашборд (`reports/`), Google Sheets-прокси для курсов.
+
+**Что осталось:**
+- `local/scripts/backup_d1.py` — раз в день через launchd.
+- `local/scripts/init_db.py` — для локальной БД (например, импорт CSV).
+- `local/scripts/import_ok_csv.py` — для повторных импортов.
+- `local/scripts/migrate_to_d1.py` — для миграции local SQLite → D1 (выполнен один раз).
+- `tools/excel/*` — Legacy Excel-инструменты (на случай если понадобится правка `data/legacy/Finances.xlsx`).
+
+**Следствия.**
+- Аналитика (графики, разрезы) переезжает внутрь Mini App в будущих этапах.
+- Excel перестаёт быть частью основного flow.
+- MacBook больше не sync-зависимый — может быть выключен неделями, всё работает.
+
 ## ADR-010: Структура — data/ для source, reports/ для generated, tools/ для xlsx-утилит
 
 **Контекст.** На раннем этапе всё лежало в одной папке `finances/`: и Legacy xlsx, и скрипты, и regenerated файлы. После того как появился Mini App + CSV-импорт + скрины — стало тесно и путано.

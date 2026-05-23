@@ -12,20 +12,7 @@ export interface ExpensePayload {
     currency: string;
     category_id?: string | null;
     note?: string | null;
+    source?: string;
+    source_record_id?: string | null;
     created_at: string;
-}
-
-export interface ExpenseRow extends ExpensePayload {
-    user_id: string;
-    confirmed_at: string | null;
-}
-
-export interface SyncResponse {
-    expenses: ExpenseRow[];
-    next_since: string;
-    has_more: boolean;
-}
-
-export interface ConfirmRequest {
-    ids: string[];
 }
