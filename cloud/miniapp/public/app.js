@@ -1,4 +1,4 @@
-// Mini App v5 — D1-centric. CRUD via REST. Polished UI.
+// Mini App v6 — translate-slider, swipe direction lock, focus-guard, inline edit.
 
 const tg = window.Telegram?.WebApp;
 const WORKER_BASE = "https://finances-worker.stepan-mikhalev-99.workers.dev";
@@ -33,10 +33,7 @@ async function api(path, options = {}) {
         ...(options.headers || {}),
     };
     const r = await fetch(WORKER_BASE + path, { ...options, headers });
-    if (!r.ok) {
-        const t = await r.text().catch(() => r.statusText);
-        throw new Error(`${r.status} ${t.slice(0, 200)}`);
-    }
+    if (!r.ok) { const t = await r.text().catch(() => r.statusText); throw new Error(`${r.status} ${t.slice(0, 200)}`); }
     return r.json();
 }
 async function bootstrap() {
@@ -47,17 +44,14 @@ async function bootstrap() {
         state.accounts = data.accounts || [];
         state.currencies = data.currencies || [];
         state.expenses = data.expenses || [];
-        state.bootstrapped = true;
-        state.bootstrapError = null;
-    } catch (e) {
-        state.bootstrapError = String(e.message || e);
-    }
+        state.bootstrapped = true; state.bootstrapError = null;
+    } catch (e) { state.bootstrapError = String(e.message || e); }
 }
 async function postExpense(e) { return await api("/v1/expenses", { method: "POST", body: JSON.stringify(e) }); }
 async function putExpense(id, patch) { return await api(`/v1/expenses/${id}`, { method: "PUT", body: JSON.stringify(patch) }); }
 async function delExpense(id) { return await api(`/v1/expenses/${id}`, { method: "DELETE" }); }
 
-// ───────────── DOM
+// ───────────── DOM helpers
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 function showScreen(name) {
@@ -65,9 +59,14 @@ function showScreen(name) {
     const t = $(`#screen-${name}`); if (t) t.hidden = false;
     $("#app").scrollTop = 0;
 }
-function openModal(name) { $(`#modal-${name}`).hidden = false; }
+function openModal(name) {
+    const m = $(`#modal-${name}`);
+    m.hidden = false;
+    // Сбросить scroll вверх
+    const card = m.querySelector(".modal-card");
+    if (card) card.scrollTop = 0;
+}
 function closeModals() {
-    // ВАЖНО: убираем фокус, чтобы iOS-клавиатура закрылась
     try { document.activeElement?.blur?.(); } catch {}
     $$(".modal").forEach(m => m.hidden = true);
 }
@@ -103,18 +102,13 @@ function humanDayTitle(iso) {
     return { prefix, weekday: wd };
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-
-// Amount HTML — сумма (жирная белая) + флаг + код (приглушённый).
 function amountHTML(amount, currency) {
     return `<span class="num">${fmt(amount)}</span><span class="flag">${flagOf(currency)}</span><span class="ccy">${currency}</span>`;
 }
 
 // ───────────── render
 function render() {
-    renderDisplay();
-    renderSideActions();
-    renderCategories();
-    renderRecentDays();
+    renderDisplay(); renderSideActions(); renderCategories(); renderRecentDays();
 }
 function renderDisplay() {
     const a = $("#amount-display");
@@ -134,60 +128,76 @@ function renderSideActions() {
     $("#open-note").classList.toggle("has-note", !!state.note);
 }
 
+// Категории — настоящий slider с translate
 function renderCategories() {
-    const grid = $("#categories-grid");
+    const track = $("#cat-track");
     const pager = $("#categories-pager");
-    grid.innerHTML = "";
+    track.innerHTML = "";
     pager.innerHTML = "";
 
     if (!state.bootstrapped) {
-        grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--hint);padding:18px;font-size:12px;">
+        track.innerHTML = `<div class="categories-page"><div style="grid-column:1/-1;text-align:center;color:var(--hint);padding:18px;font-size:12px;">
             ${state.bootstrapError ? "Ошибка: " + escapeHtml(state.bootstrapError) : "Загрузка категорий…"}
-        </div>`;
+        </div></div>`;
         return;
     }
+
     const cats = state.categories;
     const totalPages = Math.max(1, Math.ceil(cats.length / state.catsPerPage));
     if (state.catPage >= totalPages) state.catPage = 0;
-    const start = state.catPage * state.catsPerPage;
-    const slice = cats.slice(start, start + state.catsPerPage);
     const amountValid = parseFloat(state.amount) > 0;
 
-    for (const cat of slice) {
-        const btn = document.createElement("button");
-        btn.className = "cat" + (amountValid ? "" : " disabled");
-        btn.style.background = cat.color || "var(--bg-elevated)";
-        btn.innerHTML = `<span class="emoji">${cat.emoji || "📌"}</span><span class="name">${escapeHtml(cat.name)}</span>`;
-        btn.addEventListener("click", () => onCategoryTap(cat));
-        grid.appendChild(btn);
+    for (let p = 0; p < totalPages; p++) {
+        const page = document.createElement("div");
+        page.className = "categories-page";
+        const slice = cats.slice(p * state.catsPerPage, (p + 1) * state.catsPerPage);
+        for (const cat of slice) {
+            const btn = document.createElement("button");
+            btn.className = "cat" + (amountValid ? "" : " disabled");
+            btn.style.background = cat.color || "var(--bg-elevated)";
+            btn.innerHTML = `<span class="emoji">${cat.emoji || "📌"}</span><span class="name">${escapeHtml(cat.name)}</span>`;
+            btn.addEventListener("click", () => onCategoryTap(cat));
+            page.appendChild(btn);
+        }
+        // Spacer чтобы page не сжимался
+        for (let i = slice.length; i < state.catsPerPage; i++) {
+            const stub = document.createElement("div");
+            stub.className = "cat-spacer";
+            page.appendChild(stub);
+        }
+        track.appendChild(page);
     }
-    // Spacer-клетки чтобы grid не схлопывался на последней странице
-    for (let i = slice.length; i < state.catsPerPage; i++) {
-        const stub = document.createElement("div");
-        stub.className = "cat-spacer";
-        grid.appendChild(stub);
-    }
+    // Применить текущий transform
+    snapTo(state.catPage, /*animate*/ false);
+
     for (let i = 0; i < totalPages; i++) {
         const dot = document.createElement("span");
         dot.className = "dot" + (i === state.catPage ? " active" : "");
-        dot.addEventListener("click", () => switchCatPage(i));
+        dot.addEventListener("click", () => snapTo(i, true));
         pager.appendChild(dot);
     }
 }
 
-// Анимация (fade) при смене страницы.
-function switchCatPage(p) {
-    const grid = $("#categories-grid");
-    grid.classList.add("fading");
-    setTimeout(() => {
-        state.catPage = p;
-        renderCategories();
-        // forced reflow → следующая отрисовка с opacity 0
-        requestAnimationFrame(() => grid.classList.remove("fading"));
-    }, 140);
+function snapTo(page, animate) {
+    state.catPage = page;
+    const track = $("#cat-track");
+    const viewport = $(".categories-viewport");
+    if (!viewport || !track) return;
+    const w = viewport.getBoundingClientRect().width;
+    if (animate) track.classList.remove("dragging");
+    else track.classList.add("dragging");
+    requestAnimationFrame(() => {
+        track.style.transform = `translateX(${-page * w}px)`;
+        if (!animate) {
+            // Без анимации — снимем dragging после кадра
+            requestAnimationFrame(() => track.classList.remove("dragging"));
+        }
+    });
+    // Pager dots
+    $$("#categories-pager .dot").forEach((d, i) => d.classList.toggle("active", i === page));
 }
 
-// ── Recent (main): сегодня/вчера; БЕЗ swipe-to-delete ─────────
+// ── Recent (main) ─────────────────────────────────────────────
 function renderRecentDays() {
     const container = $("#recent-days");
     container.innerHTML = "";
@@ -195,7 +205,6 @@ function renderRecentDays() {
         container.appendChild(buildDayGroup(day, /*swipeable*/ false, /*showEmpty*/ true));
     }
 }
-
 function buildDayGroup(day, swipeable, showEmpty) {
     const items = state.expenses.filter(e => e.date === day);
     const block = document.createElement("div");
@@ -228,9 +237,9 @@ function buildDayGroup(day, swipeable, showEmpty) {
 function buildExpenseRow(e, swipeable) {
     const cat = catOf(e.category_id);
     const noteHtml = e.note ? `<div class="note">${escapeHtml(e.note)}</div>` : "";
-    const inner = document.createElement("div");
-    inner.className = "day-row";
-    inner.innerHTML = `
+    const row = document.createElement("div");
+    row.className = "day-row";
+    row.innerHTML = `
         <span class="icon" style="background:${cat?.color || "var(--bg-elevated)"}">${cat?.emoji || "📌"}</span>
         <div class="body">
             <div class="name">${escapeHtml(cat?.name || "—")}</div>
@@ -241,16 +250,14 @@ function buildExpenseRow(e, swipeable) {
 
     if (!swipeable) {
         const li = document.createElement("li");
-        li.appendChild(inner);
-        // На main — tap открывает edit. Без swipe.
-        inner.addEventListener("click", () => openEditModal(e));
+        li.appendChild(row);
+        row.addEventListener("click", () => openEditModal(e));
         return li;
     }
-
-    // С swipe-to-delete (только в History)
     const li = document.createElement("li");
     const wrap = document.createElement("div");
     wrap.className = "day-row-wrap";
+
     const reveal = document.createElement("button");
     reveal.className = "reveal";
     reveal.textContent = "✕";
@@ -259,25 +266,23 @@ function buildExpenseRow(e, swipeable) {
         confirmAndDelete(e.id);
     });
     wrap.appendChild(reveal);
-    wrap.appendChild(inner);
+    wrap.appendChild(row);
 
-    attachSwipeToDelete(inner, e);
+    attachSwipeToDelete(row, e);
     li.appendChild(wrap);
     return li;
 }
 
 // iOS-like swipe-to-delete
 function attachSwipeToDelete(row, expense) {
-    const REVEAL = 64;
-    const OPEN_AT = 28;
-    let startX = 0, startY = 0;
-    let dx = 0, dy = 0;
-    let active = false, opened = false, moved = false;
+    const REVEAL = 64, OPEN_AT = 28;
+    let startX = 0, startY = 0, dx = 0, dy = 0;
+    let active = false, opened = false, moved = false, dirLocked = null;
 
     row.addEventListener("touchstart", (e) => {
         const t = e.touches[0];
         startX = t.clientX; startY = t.clientY;
-        dx = dy = 0; moved = false;
+        dx = dy = 0; moved = false; dirLocked = null;
         active = true;
         row.style.transition = "none";
     }, { passive: true });
@@ -287,13 +292,12 @@ function attachSwipeToDelete(row, expense) {
         const t = e.touches[0];
         dx = t.clientX - startX;
         dy = t.clientY - startY;
-        // Если вертикальный жест преобладает — отказываемся от swipe
-        if (Math.abs(dy) > Math.abs(dx) * 1.2 && Math.abs(dy) > 10) {
-            active = false;
-            row.style.transition = "transform .2s";
-            row.style.transform = opened ? `translateX(-${REVEAL}px)` : "translateX(0)";
-            return;
+        if (!dirLocked) {
+            if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                dirLocked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+            }
         }
+        if (dirLocked === "v") return; // отдаём scroll'у
         moved = moved || Math.abs(dx) > 4;
         let pos = (opened ? -REVEAL : 0) + dx;
         if (pos > 0) pos = 0;
@@ -305,22 +309,15 @@ function attachSwipeToDelete(row, expense) {
         if (!active) return;
         active = false;
         row.style.transition = "transform .22s ease";
+        if (dirLocked === "v") return;
         const projected = (opened ? -REVEAL : 0) + dx;
-        if (projected < -OPEN_AT) {
-            opened = true;
-            row.style.transform = `translateX(-${REVEAL}px)`;
-        } else if (projected > -OPEN_AT && opened) {
-            opened = false;
-            row.style.transform = "translateX(0)";
-        } else {
-            row.style.transform = opened ? `translateX(-${REVEAL}px)` : "translateX(0)";
-        }
+        if (projected < -OPEN_AT) { opened = true; row.style.transform = `translateX(-${REVEAL}px)`; }
+        else if (opened && projected > -OPEN_AT) { opened = false; row.style.transform = "translateX(0)"; }
+        else row.style.transform = opened ? `translateX(-${REVEAL}px)` : "translateX(0)";
     });
 
     row.addEventListener("click", (e) => {
-        // если swipe двигал ряд — это не tap
         if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; return; }
-        // если swipe открыт — клик его закрывает (не открывает edit)
         if (opened) {
             opened = false;
             row.style.transition = "transform .22s ease";
@@ -355,9 +352,6 @@ function renderHistoryScreen() {
     }
     const dates = [...byDate.keys()].sort((a, b) => a < b ? 1 : -1);
     for (const d of dates) {
-        // Используем общий builder, но с пред-составленным items (фильтр уже сделан)
-        // → берём buildDayGroup и подменяем: но buildDayGroup сам фильтрует state.expenses…
-        // Сделаем кастомное построение, аналогичное buildDayGroup, но с swipe.
         const block = document.createElement("div");
         block.className = "day-group";
         const items = byDate.get(d);
@@ -447,7 +441,6 @@ async function saveEdit() {
         category_id: state.editingCategory || null,
     };
     if (!(patch.amount > 0)) { toast("Сумма?", "err"); return; }
-
     try {
         await putExpense(id, patch);
         const idx = state.expenses.findIndex(e => e.id === id);
@@ -456,9 +449,7 @@ async function saveEdit() {
         render();
         if (!$("#screen-history").hidden) renderHistoryScreen();
         toast("✓ Сохранено", "ok");
-    } catch (e) {
-        toast("Ошибка: " + e.message, "err");
-    }
+    } catch (e) { toast("Ошибка: " + e.message, "err"); }
 }
 
 async function deleteEntry() {
@@ -471,12 +462,10 @@ async function deleteEntry() {
         render();
         if (!$("#screen-history").hidden) renderHistoryScreen();
         toast("🗑️ Удалено", "ok");
-    } catch (e) {
-        toast("Ошибка: " + e.message, "err");
-    }
+    } catch (e) { toast("Ошибка: " + e.message, "err"); }
 }
 
-// ───────────── input
+// ───────────── input handlers
 function onNumpadTap(button) {
     const key = button.dataset.key;
     if (key === "back") {
@@ -501,13 +490,8 @@ async function onCategoryTap(cat) {
     tg?.HapticFeedback?.impactOccurred?.("light");
 
     const expense = {
-        id: uuid4(),
-        date: state.date,
-        amount,
-        currency: state.currency,
-        category_id: cat.id,
-        note: state.note || null,
-        source: "mini_app",
+        id: uuid4(), date: state.date, amount, currency: state.currency,
+        category_id: cat.id, note: state.note || null, source: "mini_app",
         created_at: new Date().toISOString(),
     };
     state.expenses.unshift(expense);
@@ -515,16 +499,126 @@ async function onCategoryTap(cat) {
     try {
         await postExpense(expense);
         toast(`✓ ${fmt(amount)} ${state.currency} → ${cat.name}`, "ok");
-        state.amount = "0";
-        state.note = "";
-        renderDisplay();
-        renderSideActions();
-        renderCategories();
+        state.amount = "0"; state.note = "";
+        renderDisplay(); renderSideActions(); renderCategories();
     } catch (e) {
         state.expenses = state.expenses.filter(x => x.id !== expense.id);
         render();
         toast("Ошибка: " + e.message, "err");
     }
+}
+
+// ───────────── Category slider — настоящий drag
+function setupCategorySwipe() {
+    const viewport = $(".categories-viewport");
+    const track = $("#cat-track");
+    if (!viewport || !track) return;
+    let st = null;
+
+    viewport.addEventListener("touchstart", (e) => {
+        const t = e.touches[0];
+        const w = viewport.getBoundingClientRect().width;
+        st = { x0: t.clientX, y0: t.clientY, page: state.catPage, dir: null, w };
+        track.classList.add("dragging");
+    }, { passive: true });
+
+    viewport.addEventListener("touchmove", (e) => {
+        if (!st) return;
+        const t = e.touches[0];
+        const dx = t.clientX - st.x0;
+        const dy = t.clientY - st.y0;
+        if (!st.dir) {
+            if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                st.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+            } else { return; }
+        }
+        if (st.dir === "h") {
+            // блокируем вертикальный scroll
+            if (e.cancelable) e.preventDefault();
+            const offset = -st.page * st.w + dx;
+            track.style.transform = `translateX(${offset}px)`;
+        }
+    }, { passive: false });
+
+    function finish(e) {
+        if (!st) return;
+        const local = st; st = null;
+        if (local.dir !== "h") {
+            track.classList.remove("dragging");
+            return;
+        }
+        const t = e.changedTouches[0];
+        const dx = t.clientX - local.x0;
+        const total = Math.max(1, Math.ceil(state.categories.length / state.catsPerPage));
+        const threshold = local.w * 0.18; // 18% ширины — переключение
+        let next = local.page;
+        if (dx < -threshold) next = (local.page + 1) % total;
+        else if (dx > threshold) next = (local.page - 1 + total) % total;
+        snapTo(next, /*animate*/ true);
+    }
+
+    viewport.addEventListener("touchend", finish, { passive: true });
+    viewport.addEventListener("touchcancel", () => {
+        if (st) { snapTo(st.page, true); st = null; }
+    });
+}
+
+// ───────────── Focus guard для edit modal
+function setupFocusGuard(modal) {
+    let guarded = false;
+
+    function isInput(el) { return el?.matches?.("input, textarea, select"); }
+
+    modal.addEventListener("focusin", (e) => {
+        if (isInput(e.target)) {
+            guarded = true;
+            modal.querySelector(".modal-card")?.setAttribute("data-focused", "1");
+        }
+    });
+    modal.addEventListener("focusout", () => {
+        setTimeout(() => {
+            if (!isInput(document.activeElement) || !modal.contains(document.activeElement)) {
+                guarded = false;
+                modal.querySelector(".modal-card")?.removeAttribute("data-focused");
+            }
+        }, 50);
+    });
+
+    // Перехват tap'ов вне сфокусированного input
+    function handlePointer(e) {
+        if (!guarded) return;
+        const active = document.activeElement;
+        if (!isInput(active)) { guarded = false; return; }
+        if (active.contains(e.target) || e.target === active) return;
+
+        // Если тап на другой input/select/textarea — заблокировать, не активировать
+        const tappedInput = e.target.closest("input, textarea, select");
+        if (tappedInput && tappedInput !== active) {
+            e.preventDefault();
+            e.stopPropagation();
+            active.blur();
+            return;
+        }
+
+        // Тап на button (Save/Delete/swipe-action) — дать сработать, но первым делом blur
+        // Тап на пустое место — blur и стоп пропагации (чтобы не активировать).
+        active.blur();
+        if (!e.target.closest("button")) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
+    modal.addEventListener("pointerdown", handlePointer, true);
+}
+
+// Enter в textarea → blur
+function setupTextareaEnter(textarea) {
+    textarea.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            textarea.blur();
+        }
+    });
 }
 
 // ───────────── init
@@ -565,22 +659,15 @@ function bindEvents() {
         renderSideActions();
         closeModals();
     });
+    setupTextareaEnter($("#note-input"));
+    setupTextareaEnter($("#edit-note"));
 
     $("#edit-save").addEventListener("click", saveEdit);
     $("#edit-delete").addEventListener("click", deleteEntry);
 
-    // Swipe для пагинации категорий — fade-анимация при смене страницы
-    const cats = $(".categories");
-    let touchX = 0;
-    cats.addEventListener("touchstart", e => { touchX = e.touches[0].clientX; }, { passive: true });
-    cats.addEventListener("touchend", e => {
-        const dx = e.changedTouches[0].clientX - touchX;
-        if (Math.abs(dx) > 40) {
-            const total = Math.max(1, Math.ceil(state.categories.length / state.catsPerPage));
-            const next = (state.catPage + (dx < 0 ? 1 : -1) + total) % total;
-            switchCatPage(next);
-        }
-    }, { passive: true });
+    setupFocusGuard($("#modal-edit"));
+    setupFocusGuard($("#modal-note"));
+    setupCategorySwipe();
 }
 
 async function init() {
@@ -598,5 +685,8 @@ async function init() {
     state.currency = def;
     render();
 }
+
+// Если viewport ресайзится (rotate) — пересчитать transform
+window.addEventListener("resize", () => snapTo(state.catPage, false));
 
 init();

@@ -1,4 +1,4 @@
-/* Mini App v5. */
+/* Mini App v6. */
 
 :root {
     --bg:           #2b2546;
@@ -123,15 +123,26 @@ h1, h2 { font-weight: 600; margin: 0; }
 .sidebtn.has-note { background: var(--accent); color: var(--bg); }
 .sidebtn.has-note span { color: var(--bg); opacity: 0.7; }
 
-/* ── Categories ──────────────────────────────────────────────── */
-.categories { margin-top: 4px; }
-.categories-grid {
+/* ── Categories: настоящий translate-slider ──────────────────── */
+.categories { margin-top: 4px; touch-action: pan-y; }
+.categories-viewport {
+    overflow: hidden;
+    border-radius: 4px;
+}
+.categories-track {
+    display: flex;
+    width: 100%;
+    transition: transform .28s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+}
+.categories-track.dragging { transition: none; }
+.categories-page {
+    width: 100%;
+    flex-shrink: 0;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
-    transition: opacity .14s ease;
 }
-.categories-grid.fading { opacity: 0; }
 .cat {
     aspect-ratio: 1;
     border-radius: var(--radius);
@@ -165,10 +176,11 @@ h1, h2 { font-weight: 600; margin: 0; }
 .pager .dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--text-muted); opacity: 0.35;
+    transition: opacity .2s, background .2s;
 }
 .pager .dot.active { opacity: 1; background: var(--accent); }
 
-/* ── Day groups (main + history) ─────────────────────────────── */
+/* ── Day groups ─────────────────────────────────────────────── */
 .recent-days, .history-list { margin-top: 10px; }
 .day-group { margin-bottom: 14px; }
 .day-head {
@@ -213,12 +225,12 @@ h1, h2 { font-weight: 600; margin: 0; }
 
 .day-rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 
-/* Wrapper для swipe-to-delete (только в Истории) */
+/* Swipe-to-delete wrapper.
+   КРИТИЧНО: НИКАКОГО background на wrapper'е — red только в reveal. */
 .day-row-wrap {
     position: relative;
     border-radius: var(--radius-sm);
     overflow: hidden;
-    background: var(--danger);
 }
 .day-row-wrap .reveal {
     position: absolute;
@@ -229,8 +241,14 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-size: 20px;
     font-weight: 600;
     background: var(--danger);
+    z-index: 1;
 }
 .day-row-wrap .reveal:active { background: #e85e7c; }
+.day-row-wrap .day-row {
+    position: relative;
+    z-index: 2;
+    background: var(--bg-card);
+}
 
 .day-row {
     display: flex; align-items: center; gap: 8px;
@@ -240,8 +258,6 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-size: 13px;
     transition: transform .22s ease;
     will-change: transform;
-    position: relative;
-    z-index: 1;
 }
 .day-row:active { background: var(--bg-hover); }
 .day-row .icon {
@@ -267,17 +283,9 @@ h1, h2 { font-weight: 600; margin: 0; }
     white-space: nowrap;
     flex-shrink: 0;
 }
-.day-row .amount .num {
-    color: var(--text);
-    font-weight: 600;
-    font-size: 14px;
-}
+.day-row .amount .num { color: var(--text); font-weight: 600; font-size: 14px; }
 .day-row .amount .flag { font-size: 14px; }
-.day-row .amount .ccy {
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 400;
-}
+.day-row .amount .ccy { color: var(--text-muted); font-size: 11px; font-weight: 400; }
 
 .history-hint { color: var(--hint); text-align: center; padding: 20px; font-size: 12px; }
 
@@ -316,7 +324,7 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-size: 14px;
 }
 .modal-card .row:active { background: var(--bg-pressed); }
-.modal-card .row-disabled { color: var(--hint); }
+.modal-card .row-disabled { color: var(--hint); opacity: 0.65; }
 .modal-card .row-disabled small {
     margin-left: auto;
     font-size: 10px;
@@ -377,6 +385,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 .row-actions .primary { background: var(--accent); color: var(--bg); }
 .row-actions .danger  { background: var(--danger); color: var(--bg); }
 
+/* ── Edit blocks ─────────────────────────────────────────────── */
 .edit-block {
     background: var(--bg-elevated);
     border-radius: var(--radius-sm);
@@ -409,6 +418,22 @@ h1, h2 { font-weight: 600; margin: 0; }
     -webkit-appearance: none;
     appearance: none;
 }
+
+/* Inline вариант: label слева, input справа */
+.edit-block.inline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.edit-block.inline .label {
+    flex: 0 0 70px;
+    margin-bottom: 0;
+}
+.edit-block.inline input,
+.edit-block.inline select {
+    flex: 1;
+}
+
 .cat-mini-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -426,7 +451,17 @@ h1, h2 { font-weight: 600; margin: 0; }
     outline-offset: -2px;
 }
 
-/* Toast */
+/* ── Focus guard ──────────────────────────────────────────────
+   Когда любой input в modal-card сфокусирован, добавляется prevent-shield.
+   Тап вне input — глобально blur, без активации других элементов. */
+.modal-card[data-focused="1"] .focus-shield {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    background: transparent;
+}
+
+/* ── Toast ───────────────────────────────────────────────────── */
 .toast {
     position: fixed;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
