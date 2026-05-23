@@ -48,3 +48,4 @@ tools/csv/
 .vscode/
 .idea/
 *.swp
+local/backups/d1-*.sql
