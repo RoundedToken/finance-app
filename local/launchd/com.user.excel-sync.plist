@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.excel-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/stepan/Desktop/excel/.venv/bin/python</string>
+        <string>/Users/stepan/Desktop/excel/local/scripts/sync.py</string>
+        <string>--once</string>
+        <string>--quiet</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/stepan/Desktop/excel</string>
+
+    <!-- Запускать при login и каждые 60 секунд -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <!-- Только когда машина не спит и сеть онлайн -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/stepan/Desktop/excel/local/logs/sync.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/stepan/Desktop/excel/local/logs/sync.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <!-- Низкий приоритет, чтобы не тормозить интерактив -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

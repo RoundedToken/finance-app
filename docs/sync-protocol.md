@@ -78,6 +78,48 @@ Body:
 
 Worker: `BEGIN TRANSACTION; DELETE FROM accounts/categories/...; INSERT ...; COMMIT;` — атомарная замена.
 
+### `POST /v1/sync/heartbeat` — MacBook → Worker
+После каждого `sync.py --once` MacBook шлёт свой статус в D1, чтобы бот мог его показать пользователю.
+
+Headers: `Authorization: Bearer <SYNC_TOKEN>`.
+
+Body:
+```json
+{
+  "device_id": "macbook",
+  "last_sync_attempt_at": "2026-05-23T14:55:41Z",
+  "last_sync_success_at": "2026-05-23T14:55:41Z",
+  "last_pulled": 0,
+  "last_inserted": 0,
+  "last_confirmed": 0,
+  "last_error": null
+}
+```
+
+Worker: UPSERT в `device_heartbeats` по `device_id`. Если sync прервался — heartbeat best-effort, ошибки не валят основной flow.
+
+### `GET /v1/sync/status` — bot / Mini App → Worker
+Возвращает текущее состояние outbox и последний heartbeat от MacBook. Используется командой `/sync` в боте и кнопкой «Sync now» в Mini App.
+
+Headers: `Authorization: Bearer <SYNC_TOKEN>` (через bot) **или** `X-Telegram-Init-Data` (через Mini App).
+
+Возвращает:
+```json
+{
+  "heartbeat": {
+    "device_id": "macbook",
+    "last_seen": "2026-05-23 14:55:41",
+    "last_sync_attempt_at": "2026-05-23T14:55:41Z",
+    "last_sync_success_at": "2026-05-23T14:55:41Z",
+    "last_pulled": 0,
+    "last_inserted": 0,
+    "last_confirmed": 0,
+    "last_error": null
+  },
+  "outbox": { "total": 1, "pending": 0, "confirmed": 1 }
+}
+```
+
 ### `GET /v1/bootstrap` — Mini App → Worker (старт приложения)
 Возвращает справочники, чтобы Mini App мог отрисовать UI:
 ```json
