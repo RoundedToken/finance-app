@@ -25,6 +25,7 @@ import {
     getBootstrapData,
     updateHeartbeat,
     getSyncStatus,
+    replaceReferences,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
 
@@ -32,6 +33,19 @@ export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url);
         const path = url.pathname;
+
+        // CORS preflight для Mini App.
+        if (request.method === "OPTIONS") {
+            return new Response(null, {
+                status: 204,
+                headers: {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
+                    "Access-Control-Max-Age": "86400",
+                },
+            });
+        }
 
         try {
             if (path === "/healthz") return json({ ok: true });
@@ -110,8 +124,16 @@ async function handleConfirm(request: Request, env: Env): Promise<Response> {
 
 async function handlePushReferences(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
-    // TODO: реализация в Этапе 2
-    return json({ ok: true, todo: "implement push of accounts/categories/currencies" });
+    const payload = (await request.json().catch(() => ({}))) as any;
+    await replaceReferences(env, payload);
+    return json({
+        ok: true,
+        replaced: {
+            accounts: payload.accounts?.length ?? null,
+            categories: payload.categories?.length ?? null,
+            currencies: payload.currencies?.length ?? null,
+        },
+    });
 }
 
 async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
@@ -151,6 +173,7 @@ function json(payload: unknown, status: number = 200): Response {
         headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
         },
     });
 }

@@ -155,3 +155,65 @@ export async function getBootstrapData(env: Env) {
         currencies: currencies.results,
     };
 }
+
+interface ReferencePayload {
+    accounts?: any[];
+    categories?: any[];
+    currencies?: any[];
+}
+
+export async function replaceReferences(env: Env, payload: ReferencePayload): Promise<void> {
+    // D1 batch — атомарный replace. На D1 нет multi-statement BEGIN, но batch выполняет
+    // массив команд транзакционно.
+    const statements: D1PreparedStatement[] = [];
+
+    if (payload.currencies) {
+        statements.push(env.DB.prepare("DELETE FROM currencies"));
+        for (const c of payload.currencies) {
+            statements.push(
+                env.DB.prepare(
+                    "INSERT INTO currencies (code, name, emoji, is_crypto, decimals) VALUES (?, ?, ?, ?, ?)",
+                ).bind(c.code, c.name, c.emoji ?? null, c.is_crypto ?? 0, c.decimals ?? 2),
+            );
+        }
+    }
+    if (payload.accounts) {
+        statements.push(env.DB.prepare("DELETE FROM accounts"));
+        for (const a of payload.accounts) {
+            statements.push(
+                env.DB.prepare(
+                    "INSERT INTO accounts (id, name, type, currency, is_active, color, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+                ).bind(
+                    a.id,
+                    a.name,
+                    a.type,
+                    a.currency,
+                    a.is_active ?? 1,
+                    a.color ?? null,
+                ),
+            );
+        }
+    }
+    if (payload.categories) {
+        statements.push(env.DB.prepare("DELETE FROM categories"));
+        for (const c of payload.categories) {
+            statements.push(
+                env.DB.prepare(
+                    "INSERT INTO categories (id, name, type, parent_id, emoji, color, sort_order, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                ).bind(
+                    c.id,
+                    c.name,
+                    c.type,
+                    c.parent_id ?? null,
+                    c.emoji ?? null,
+                    c.color ?? null,
+                    c.sort_order ?? 0,
+                    c.is_active ?? 1,
+                ),
+            );
+        }
+    }
+    if (statements.length > 0) {
+        await env.DB.batch(statements);
+    }
+}
