@@ -62,7 +62,7 @@ Personal finance system для одного пользователя с офла
 │  │  - transactions, snapshots, rates...   │  │
 │  └──────────────┬─────────────────────────┘  │
 │  ┌──────────────▼─────────────────────────┐  │
-│  │ finances/Finances.xlsx                 │  │
+│  │ reports/Finances.generated.xlsx                 │  │
 │  │ Read-only dashboard                    │  │
 │  └────────────────────────────────────────┘  │
 └──────────────────────────────────────────────┘

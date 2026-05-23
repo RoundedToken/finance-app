@@ -13,10 +13,10 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 from _common import ROOT, db_connect, set_sync_state  # noqa: E402
 
-DEFAULT_OUT = ROOT / "finances" / "Finances.generated.xlsx"
+DEFAULT_OUT = ROOT / "reports" / "Finances.generated.xlsx"
 
 
 def main() -> int:

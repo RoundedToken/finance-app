@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""inspect.py — структурный паспорт Finances.xlsx.
+"""inspect_xlsx.py — структурный паспорт Finances.xlsx.
 
 Запускать первым делом перед любой правкой. Показывает листы, размеры, формулы,
 charts, tables, named ranges, data validations, conditional formatting,
 merged cells, freeze panes, защиту.
 
 Usage:
-    python scripts/inspect.py              # human-readable
-    python scripts/inspect.py --json       # machine-readable
-    python scripts/inspect.py path/to/file.xlsx
+    python scripts/inspect_xlsx.py              # human-readable
+    python scripts/inspect_xlsx.py --json       # machine-readable
+    python scripts/inspect_xlsx.py path/to/file.xlsx
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 from _common import WORKBOOK_PATH, inventory, print_json  # noqa: E402
 
 

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""add_formula.py — записывает формулу в указанную ячейку.
+"""set_cell.py — атомарно записывает значение в одну ячейку.
 
-Делает backup и atomic save. Не пересчитывает значения — для пересчёта
-запустить `python scripts/calc.py`.
+Делает backup до записи, atomic save после, и сверяет инвентарь (charts,
+tables, named ranges) — не должны исчезнуть.
 
 Usage:
-    python scripts/add_formula.py Sheet1 C10 "=SUM(C2:C9)"
+    python scripts/set_cell.py <sheet> <address> <value>
+    python scripts/set_cell.py Sheet1 B5 "1234.56"
+    python scripts/set_cell.py --dry-run Sheet1 B5 "new"
+
+Значения парсятся: int / float / true / false → bool / "" → None / иначе строка.
+Для формул использовать add_formula.py.
 """
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 from _common import (  # noqa: E402
     WORKBOOK_PATH,
     assert_not_open,
@@ -23,6 +28,20 @@ from _common import (  # noqa: E402
 )
 
 
+def parse_value(s: str):
+    sl = s.strip().lower()
+    if sl in {"true", "false"}:
+        return sl == "true"
+    if sl in {"none", "null", ""}:
+        return None
+    try:
+        if "." in s or "e" in sl:
+            return float(s)
+        return int(s)
+    except ValueError:
+        return s
+
+
 def _structure_diff(before: dict, after: dict) -> list[str]:
     diffs: list[str] = []
     for sa, sb in zip(before["sheets"], after["sheets"]):
@@ -30,35 +49,38 @@ def _structure_diff(before: dict, after: dict) -> list[str]:
                   "conditional_formats", "merged_cells"):
             if sa[k] != sb[k]:
                 diffs.append(f"{sa['name']}.{k}: {sa[k]} → {sb[k]}")
+    if len(before["defined_names"]) != len(after["defined_names"]):
+        diffs.append(
+            f"defined_names: {len(before['defined_names'])} → {len(after['defined_names'])}"
+        )
     return diffs
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("sheet")
-    ap.add_argument("address")
-    ap.add_argument("formula", help="must start with '='")
+    ap.add_argument("address", help="cell address like B5")
+    ap.add_argument("value")
     ap.add_argument("--file", default=str(WORKBOOK_PATH), type=Path)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-
-    if not args.formula.startswith("="):
-        sys.stderr.write("ERROR: formula must start with '='\n")
-        return 1
 
     assert_not_open(args.file)
     from openpyxl import load_workbook
 
     wb = load_workbook(args.file)
     ws = wb[args.sheet]
-    print(f"{args.sheet}!{args.address}: {ws[args.address].value!r} → {args.formula}")
+    new_value = parse_value(args.value)
+    old_value = ws[args.address].value
+    print(f"{args.sheet}!{args.address}: {old_value!r} → {new_value!r}")
     if args.dry_run:
+        print("dry-run: not saving")
         return 0
 
     before = inventory(args.file)
     backup = create_backup(args.file)
     print(f"backup: {backup}")
-    ws[args.address] = args.formula
+    ws[args.address] = new_value
     atomic_save(wb, args.file)
     after = inventory(args.file)
 
@@ -69,7 +91,7 @@ def main() -> int:
         )
         sys.stderr.write(f"To revert: python scripts/restore.py {backup}\n")
         return 3
-    print("OK — formula saved. Run `python scripts/calc.py` to refresh cached values.")
+    print("OK — saved, inventory intact")
     return 0
 
 

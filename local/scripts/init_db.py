@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.append(str(Path(__file__).resolve().parent))
 from _common import BACKUPS_DIR, DB_PATH, MIGRATIONS_DIR  # noqa: E402
 
 
