@@ -26,6 +26,7 @@ import {
     updateHeartbeat,
     getSyncStatus,
     replaceReferences,
+    replaceExpensesCache,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
 
@@ -54,6 +55,7 @@ export default {
             if (path === "/v1/sync" && request.method === "GET") return handleSync(request, env, url);
             if (path === "/v1/sync/confirm" && request.method === "POST") return handleConfirm(request, env);
             if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
+            if (path === "/v1/admin/expenses-cache" && request.method === "POST") return handlePushExpensesCache(request, env);
             if (path === "/v1/bootstrap" && request.method === "GET") return handleBootstrap(request, env);
             if (path === "/v1/sync/heartbeat" && request.method === "POST") return handleHeartbeat(request, env);
             if (path === "/v1/sync/status" && request.method === "GET") return handleSyncStatus(request, env);
@@ -120,6 +122,14 @@ async function handleConfirm(request: Request, env: Env): Promise<Response> {
     const ids = Array.isArray(body.ids) ? body.ids : [];
     const confirmed = await confirmExpenses(env, ids);
     return json({ ok: true, confirmed });
+}
+
+async function handlePushExpensesCache(request: Request, env: Env): Promise<Response> {
+    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
+    const body = (await request.json().catch(() => ({}))) as any;
+    const expenses = Array.isArray(body.expenses) ? body.expenses : [];
+    const n = await replaceExpensesCache(env, expenses);
+    return json({ ok: true, cached: n });
 }
 
 async function handlePushReferences(request: Request, env: Env): Promise<Response> {
