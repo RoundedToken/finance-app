@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css?v=4">
+    <link rel="stylesheet" href="styles.css?v=5">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -12,7 +12,7 @@
         <!-- ───────────── Main ───────────── -->
         <section class="screen" id="screen-main">
             <header class="topbar">
-                <button class="iconbtn" id="open-history" aria-label="История">📜</button>
+                <button class="iconbtn" id="open-menu" aria-label="меню">☰</button>
                 <div class="display">
                     <span class="display-amount" id="amount-display">0</span>
                     <span class="display-currency">
@@ -20,7 +20,7 @@
                         <span id="currency-display">RSD</span>
                     </span>
                 </div>
-                <span class="iconbtn-placeholder"></span>
+                <button class="iconbtn" id="open-history" aria-label="История">📜</button>
             </header>
 
             <div class="numpad" id="numpad">
@@ -61,6 +61,17 @@
             </header>
             <div class="history-list" id="history-list">
                 <p class="history-hint">Загрузка…</p>
+            </div>
+        </section>
+
+        <!-- ───────────── Menu ───────────── -->
+        <section class="modal" id="modal-menu" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Меню</h2>
+                <button class="row" data-go="history">📜 История</button>
+                <button class="row row-disabled" disabled>📊 Статистика <small>скоро</small></button>
+                <button class="row row-disabled" disabled>⚙️ Настройки <small>скоро</small></button>
             </div>
         </section>
 
@@ -137,6 +148,6 @@
         <div class="toast" id="toast" hidden></div>
     </div>
 
-    <script type="module" src="app.js?v=4"></script>
+    <script type="module" src="app.js?v=5"></script>
 </body>
 </html>
