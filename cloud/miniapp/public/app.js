@@ -61,14 +61,31 @@ function showScreen(name) {
 }
 function openModal(name) {
     const m = $(`#modal-${name}`);
+    if (!m.hidden && m.classList.contains("show")) return;
     m.hidden = false;
-    // Сбросить scroll вверх
     const card = m.querySelector(".modal-card");
     if (card) card.scrollTop = 0;
+    // Force reflow → анимация slide-up на следующем кадре
+    void m.offsetHeight;
+    m.classList.add("show");
 }
 function closeModals() {
     try { document.activeElement?.blur?.(); } catch {}
-    $$(".modal").forEach(m => m.hidden = true);
+    $$(".modal:not([hidden])").forEach(m => {
+        if (!m.classList.contains("show")) { m.hidden = true; return; }
+        m.classList.remove("show");
+        const card = m.querySelector(".modal-card");
+        let done = false;
+        const finish = () => {
+            if (done) return; done = true;
+            m.hidden = true;
+            card?.removeEventListener("transitionend", onEnd);
+        };
+        const onEnd = (e) => { if (e.target === card && e.propertyName === "transform") finish(); };
+        card?.addEventListener("transitionend", onEnd);
+        // fallback на случай если transitionend не сработает
+        setTimeout(finish, 340);
+    });
 }
 function toast(msg, kind = "ok") {
     const el = $("#toast");
@@ -275,9 +292,15 @@ function buildExpenseRow(e, swipeable) {
 
 // iOS-like swipe-to-delete
 function attachSwipeToDelete(row, expense) {
+    const wrap = row.parentElement;  // .day-row-wrap
     const REVEAL = 64, OPEN_AT = 28;
     let startX = 0, startY = 0, dx = 0, dy = 0;
     let active = false, opened = false, moved = false, dirLocked = null;
+
+    function setState(s) {
+        if (s) wrap.setAttribute("data-state", s);
+        else wrap.removeAttribute("data-state");
+    }
 
     row.addEventListener("touchstart", (e) => {
         const t = e.touches[0];
@@ -295,9 +318,10 @@ function attachSwipeToDelete(row, expense) {
         if (!dirLocked) {
             if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
                 dirLocked = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+                if (dirLocked === "h") setState("dragging");
             }
         }
-        if (dirLocked === "v") return; // отдаём scroll'у
+        if (dirLocked === "v") return;
         moved = moved || Math.abs(dx) > 4;
         let pos = (opened ? -REVEAL : 0) + dx;
         if (pos > 0) pos = 0;
@@ -308,20 +332,27 @@ function attachSwipeToDelete(row, expense) {
     row.addEventListener("touchend", () => {
         if (!active) return;
         active = false;
-        row.style.transition = "transform .22s ease";
+        row.style.transition = "";  // вернёмся к CSS transition: var(--dur) var(--ease)
         if (dirLocked === "v") return;
         const projected = (opened ? -REVEAL : 0) + dx;
-        if (projected < -OPEN_AT) { opened = true; row.style.transform = `translateX(-${REVEAL}px)`; }
-        else if (opened && projected > -OPEN_AT) { opened = false; row.style.transform = "translateX(0)"; }
-        else row.style.transform = opened ? `translateX(-${REVEAL}px)` : "translateX(0)";
+        if (projected < -OPEN_AT) {
+            opened = true;
+            row.style.transform = `translateX(-${REVEAL}px)`;
+            setState("open");
+        } else {
+            opened = false;
+            row.style.transform = "translateX(0)";
+            setState(null);
+        }
     });
 
     row.addEventListener("click", (e) => {
         if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; return; }
         if (opened) {
             opened = false;
-            row.style.transition = "transform .22s ease";
+            row.style.transition = "";
             row.style.transform = "translateX(0)";
+            setState(null);
             return;
         }
         openEditModal(expense);

@@ -16,6 +16,10 @@
     --danger:      #fb7185;
     --radius:      14px;
     --radius-sm:   10px;
+    /* Унифицированные параметры анимаций */
+    --ease:        cubic-bezier(.32, .72, 0, 1);
+    --dur:         280ms;
+    --dur-fast:    180ms;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; min-width: 0; }
@@ -132,7 +136,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 .categories-track {
     display: flex;
     width: 100%;
-    transition: transform .28s cubic-bezier(0.32, 0.72, 0, 1);
+    transition: transform var(--dur) var(--ease);
     will-change: transform;
 }
 .categories-track.dragging { transition: none; }
@@ -225,8 +229,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 
 .day-rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 
-/* Swipe-to-delete wrapper.
-   КРИТИЧНО: НИКАКОГО background на wrapper'е — red только в reveal. */
+/* Swipe-to-delete wrapper. */
 .day-row-wrap {
     position: relative;
     border-radius: var(--radius-sm);
@@ -242,6 +245,15 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-weight: 600;
     background: var(--danger);
     z-index: 1;
+    /* Скрыт пока не активен swipe — убирает мерцание при scroll */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+.day-row-wrap[data-state="dragging"] .reveal,
+.day-row-wrap[data-state="open"] .reveal {
+    opacity: 1;
+    pointer-events: auto;
 }
 .day-row-wrap .reveal:active { background: #e85e7c; }
 .day-row-wrap .day-row {
@@ -256,7 +268,7 @@ h1, h2 { font-weight: 600; margin: 0; }
     background: var(--bg-card);
     border-radius: var(--radius-sm);
     font-size: 13px;
-    transition: transform .22s ease;
+    transition: transform var(--dur) var(--ease);
     will-change: transform;
 }
 .day-row:active { background: var(--bg-hover); }
@@ -289,12 +301,17 @@ h1, h2 { font-weight: 600; margin: 0; }
 
 .history-hint { color: var(--hint); text-align: center; padding: 20px; font-size: 12px; }
 
-/* ── Modal ───────────────────────────────────────────────────── */
+/* ── Modal (bottom sheet с slide-up анимацией) ────────────────── */
 .modal {
     position: fixed; inset: 0; z-index: 100;
     display: flex; align-items: flex-end;
 }
-.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+.modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.55);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+}
 .modal-card {
     position: relative;
     width: 100%;
@@ -306,7 +323,11 @@ h1, h2 { font-weight: 600; margin: 0; }
     box-shadow: 0 -10px 28px rgba(0,0,0,0.4);
     max-height: 85vh;
     overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform var(--dur) var(--ease);
 }
+.modal.show .modal-backdrop { opacity: 1; }
+.modal.show .modal-card { transform: translateY(0); }
 .modal-card h2 {
     font-size: 15px;
     margin-bottom: 10px;
@@ -477,7 +498,11 @@ h1, h2 { font-weight: 600; margin: 0; }
 }
 .toast.ok { border-left: 3px solid var(--success); }
 .toast.err { border-left: 3px solid var(--danger); }
-.toast.show { animation: toastIn 0.18s ease-out; }
-@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.toast.show { animation: toastIn var(--dur-fast) var(--ease); }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Screen transitions: fade при переключении main↔history */
+.screen { animation: screenFade var(--dur-fast) var(--ease); }
+@keyframes screenFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 [hidden] { display: none !important; }
