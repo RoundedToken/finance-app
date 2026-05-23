@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Finances</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <main id="app">
+        <header>
+            <h1>Finances</h1>
+            <p class="status" id="status">загрузка…</p>
+        </header>
+        <section id="screen-categories" hidden>
+            <div class="grid" id="categories-grid"></div>
+        </section>
+        <section id="screen-amount" hidden>
+            <div class="selected-category" id="selected-category"></div>
+            <div class="amount-display" id="amount-display">0</div>
+            <div class="numpad" id="numpad"></div>
+        </section>
+        <section id="screen-onboarding">
+            <p>Mini App пока — заглушка Этапа 0.</p>
+            <p>Полный UI появится в Этапе 2.</p>
+        </section>
+    </main>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

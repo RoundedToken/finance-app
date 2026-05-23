@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+*.tmp
+~$*
+.DS_Store
+csv/
+backups/*.xlsx
+!backups/.gitkeep
