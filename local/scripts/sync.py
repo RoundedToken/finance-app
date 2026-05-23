@@ -57,12 +57,55 @@ def confirm(env: dict[str, str], ids: list[str]) -> int:
     return r.json().get("confirmed", 0)
 
 
+def _existing_ids(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r[0] for r in conn.execute(f"SELECT id FROM {table}")}
+
+
+def _existing_codes(conn: sqlite3.Connection, table: str, col: str = "code") -> set[str]:
+    return {r[0] for r in conn.execute(f"SELECT {col} FROM {table}")}
+
+
 def insert_expenses(conn: sqlite3.Connection, rows: list[dict]) -> int:
+    """
+    Резильентно вставляет expenses.
+    Если account_id / category_id / currency не существуют в справочниках —
+    кладёт NULL вместо них и записывает оригинальное значение в note (с пометкой),
+    чтобы потом ручками разобрать. Никогда не теряем сами цифры.
+    """
     if not rows:
         return 0
+
+    accounts = _existing_ids(conn, "accounts")
+    categories = _existing_ids(conn, "categories")
+    currencies = _existing_codes(conn, "currencies")
+
     cur = conn.cursor()
     inserted = 0
     for r in rows:
+        unresolved: list[str] = []
+        account_id = r.get("account_id")
+        if account_id and account_id not in accounts:
+            unresolved.append(f"account={account_id}")
+            account_id = None
+        category_id = r.get("category_id")
+        if category_id and category_id not in categories:
+            unresolved.append(f"category={category_id}")
+            category_id = None
+        currency = r["currency"]
+        if currency not in currencies:
+            # Валюта обязательна и NOT NULL — добавляем на лету (в норме не должно бывать)
+            conn.execute(
+                "INSERT OR IGNORE INTO currencies (code, name) VALUES (?, ?)",
+                (currency, currency),
+            )
+            currencies.add(currency)
+            unresolved.append(f"currency_autocreated={currency}")
+
+        note = r.get("note") or ""
+        if unresolved:
+            tag = "[unresolved: " + ", ".join(unresolved) + "]"
+            note = f"{note} {tag}".strip() if note else tag
+
         cur.execute(
             """
             INSERT OR IGNORE INTO expenses
@@ -73,11 +116,11 @@ def insert_expenses(conn: sqlite3.Connection, rows: list[dict]) -> int:
             (
                 r["id"],
                 r["date"],
-                r.get("account_id"),
+                account_id,
                 r["amount"],
-                r["currency"],
-                r.get("category_id"),
-                r.get("note"),
+                currency,
+                category_id,
+                note or None,
                 r["created_at"],
                 _now_iso(),
             ),
