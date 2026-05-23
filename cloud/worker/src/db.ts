@@ -144,16 +144,45 @@ export async function getSyncStatus(env: Env) {
 }
 
 export async function getBootstrapData(env: Env) {
-    const [accounts, categories, currencies] = await Promise.all([
+    const [accounts, categories, currencies, recent] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         env.DB.prepare("SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, name").all(),
         env.DB.prepare("SELECT * FROM currencies").all(),
+        env.DB.prepare(
+            "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at " +
+            "FROM expenses_cache ORDER BY date DESC, created_at DESC LIMIT 300",
+        ).all(),
     ]);
     return {
         accounts: accounts.results,
         categories: categories.results,
         currencies: currencies.results,
+        recent_expenses: recent.results,
     };
+}
+
+export async function replaceExpensesCache(env: Env, expenses: any[]): Promise<number> {
+    const stmts: D1PreparedStatement[] = [env.DB.prepare("DELETE FROM expenses_cache")];
+    for (const e of expenses) {
+        stmts.push(
+            env.DB.prepare(
+                "INSERT INTO expenses_cache (id, date, account_id, amount, currency, category_id, note, source, created_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ).bind(
+                e.id,
+                e.date,
+                e.account_id ?? null,
+                e.amount,
+                e.currency,
+                e.category_id ?? null,
+                e.note ?? null,
+                e.source,
+                e.created_at,
+            ),
+        );
+    }
+    if (stmts.length > 1) await env.DB.batch(stmts);
+    return expenses.length;
 }
 
 interface ReferencePayload {

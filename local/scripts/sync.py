@@ -234,6 +234,15 @@ def run_once(verbose: bool = True) -> dict:
             "last_confirmed": confirmed,
         },
     )
+    # Если были новые записи — обновим cache в D1 чтобы Mini App видел свежее.
+    if inserted > 0:
+        try:
+            from push_expenses import main as push_expenses_main
+
+            sys.argv = ["push_expenses.py", "--limit", "500"]
+            push_expenses_main()
+        except Exception as e:
+            sys.stderr.write(f"push_expenses (non-fatal): {e}\n")
     result = {
         "ok": True,
         "pulled": pulled,
