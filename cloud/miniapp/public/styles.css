@@ -1,4 +1,4 @@
-/* Mini App — sapphire-violet palette, pastel categories, dense layout for iPhone 15 Pro Max. */
+/* Mini App v5. */
 
 :root {
     --bg:           #2b2546;
@@ -44,7 +44,7 @@ h1, h2 { font-weight: 600; margin: 0; }
     margin: 0 auto;
 }
 
-/* ── Topbar ───────────────────────────────────────────────────── */
+/* ── Topbar ──────────────────────────────────────────────────── */
 .topbar {
     display: grid;
     grid-template-columns: 36px 1fr 36px;
@@ -65,7 +65,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 .back-btn { font-size: 20px; }
 .topbar h1 { text-align: center; font-size: 15px; }
 
-/* ── Display ───────────────────────────────────────────────────── */
+/* ── Display ─────────────────────────────────────────────────── */
 .display {
     text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 1px;
@@ -85,7 +85,7 @@ h1, h2 { font-weight: 600; margin: 0; }
     display: flex; gap: 4px; align-items: center;
 }
 
-/* ── Numpad ────────────────────────────────────────────────────── */
+/* ── Numpad ──────────────────────────────────────────────────── */
 .numpad {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -102,7 +102,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 }
 .numpad button:active { background: var(--accent); color: var(--bg); }
 
-/* ── Side actions ─────────────────────────────────────────────── */
+/* ── Side actions ────────────────────────────────────────────── */
 .side-actions {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -123,13 +123,15 @@ h1, h2 { font-weight: 600; margin: 0; }
 .sidebtn.has-note { background: var(--accent); color: var(--bg); }
 .sidebtn.has-note span { color: var(--bg); opacity: 0.7; }
 
-/* ── Categories ───────────────────────────────────────────────── */
+/* ── Categories ──────────────────────────────────────────────── */
 .categories { margin-top: 4px; }
 .categories-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
+    transition: opacity .14s ease;
 }
+.categories-grid.fading { opacity: 0; }
 .cat {
     aspect-ratio: 1;
     border-radius: var(--radius);
@@ -157,6 +159,7 @@ h1, h2 { font-weight: 600; margin: 0; }
     color: rgba(0,0,0,0.75);
 }
 .cat.disabled { opacity: 0.35; pointer-events: none; }
+.cat-spacer { aspect-ratio: 1; visibility: hidden; }
 
 .pager { display: flex; justify-content: center; gap: 5px; margin-top: 6px; }
 .pager .dot {
@@ -165,7 +168,7 @@ h1, h2 { font-weight: 600; margin: 0; }
 }
 .pager .dot.active { opacity: 1; background: var(--accent); }
 
-/* ── Recent days groups (на главном) и history ─────────────────── */
+/* ── Day groups (main + history) ─────────────────────────────── */
 .recent-days, .history-list { margin-top: 10px; }
 .day-group { margin-bottom: 14px; }
 .day-head {
@@ -174,32 +177,71 @@ h1, h2 { font-weight: 600; margin: 0; }
     margin-bottom: 4px;
     border-bottom: 1px solid var(--accent);
     color: var(--accent-2);
+    gap: 8px;
 }
 .day-head .day-title {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     font-weight: 600;
+    white-space: nowrap;
 }
 .day-head .day-title small {
     color: var(--text-muted);
     font-weight: 400;
     margin-left: 6px;
-    text-transform: none;
-    letter-spacing: 0;
+    letter-spacing: 0.5px;
 }
 .day-head .day-total {
     font-size: 13px;
-    color: var(--text);
+    text-align: right;
     font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
+.day-head .day-total .num { font-weight: 600; }
+.day-head .day-total .flag { font-size: 13px; margin: 0 3px; }
+.day-head .day-total .ccy {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 11px;
+    margin-right: 4px;
+}
+
 .day-rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* Wrapper для swipe-to-delete (только в Истории) */
+.day-row-wrap {
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--danger);
+}
+.day-row-wrap .reveal {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 64px;
+    display: flex; align-items: center; justify-content: center;
+    color: white;
+    font-size: 20px;
+    font-weight: 600;
+    background: var(--danger);
+}
+.day-row-wrap .reveal:active { background: #e85e7c; }
+
 .day-row {
     display: flex; align-items: center; gap: 8px;
-    padding: 6px 4px;
+    padding: 8px 10px;
     background: var(--bg-card);
     border-radius: var(--radius-sm);
     font-size: 13px;
+    transition: transform .22s ease;
+    will-change: transform;
+    position: relative;
+    z-index: 1;
 }
 .day-row:active { background: var(--bg-hover); }
 .day-row .icon {
@@ -221,13 +263,21 @@ h1, h2 { font-weight: 600; margin: 0; }
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .day-row .amount {
-    color: var(--text);
-    font-weight: 500;
+    display: flex; align-items: baseline; gap: 4px;
     white-space: nowrap;
-    display: flex; align-items: center; gap: 4px;
-    font-size: 13px;
+    flex-shrink: 0;
+}
+.day-row .amount .num {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 14px;
 }
 .day-row .amount .flag { font-size: 14px; }
+.day-row .amount .ccy {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 400;
+}
 
 .history-hint { color: var(--hint); text-align: center; padding: 20px; font-size: 12px; }
 
@@ -266,6 +316,14 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-size: 14px;
 }
 .modal-card .row:active { background: var(--bg-pressed); }
+.modal-card .row-disabled { color: var(--hint); }
+.modal-card .row-disabled small {
+    margin-left: auto;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.7;
+}
 
 .currency-grid {
     display: grid;
@@ -312,14 +370,13 @@ h1, h2 { font-weight: 600; margin: 0; }
     resize: vertical;
     min-height: 70px;
 }
-.modal-card textarea::placeholder { color: var(--hint); }
+.modal-card textarea::placeholder, .edit-block textarea::placeholder { color: var(--hint); }
 .row-actions { display: flex; gap: 6px; margin-top: 10px; }
 .row-actions button { flex: 1; padding: 11px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; }
 .row-actions .ghost { background: var(--bg-elevated); }
 .row-actions .primary { background: var(--accent); color: var(--bg); }
 .row-actions .danger  { background: var(--danger); color: var(--bg); }
 
-/* Edit block */
 .edit-block {
     background: var(--bg-elevated);
     border-radius: var(--radius-sm);
@@ -347,7 +404,6 @@ h1, h2 { font-weight: 600; margin: 0; }
     font-size: 14px;
     box-sizing: border-box;
 }
-/* Дата отдельно: иначе iOS даёт ей нативный padding */
 .edit-block-date input {
     min-height: 36px;
     -webkit-appearance: none;
