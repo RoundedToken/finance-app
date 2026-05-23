@@ -23,6 +23,8 @@ import {
     confirmExpenses,
     cleanupConfirmed,
     getBootstrapData,
+    updateHeartbeat,
+    getSyncStatus,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
 
@@ -39,6 +41,8 @@ export default {
             if (path === "/v1/sync/confirm" && request.method === "POST") return handleConfirm(request, env);
             if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
             if (path === "/v1/bootstrap" && request.method === "GET") return handleBootstrap(request, env);
+            if (path === "/v1/sync/heartbeat" && request.method === "POST") return handleHeartbeat(request, env);
+            if (path === "/v1/sync/status" && request.method === "GET") return handleSyncStatus(request, env);
 
             return json({ error: "not found" }, 404);
         } catch (err) {
@@ -108,6 +112,27 @@ async function handlePushReferences(request: Request, env: Env): Promise<Respons
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
     // TODO: реализация в Этапе 2
     return json({ ok: true, todo: "implement push of accounts/categories/currencies" });
+}
+
+async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
+    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
+    const body = (await request.json().catch(() => ({}))) as any;
+    await updateHeartbeat(env, body.device_id ?? "macbook", {
+        last_sync_attempt_at: body.last_sync_attempt_at ?? new Date().toISOString(),
+        last_sync_success_at: body.last_sync_success_at ?? null,
+        last_pulled: body.last_pulled ?? 0,
+        last_inserted: body.last_inserted ?? 0,
+        last_confirmed: body.last_confirmed ?? 0,
+        last_error: body.last_error ?? null,
+        notes: body.notes ?? null,
+    });
+    return json({ ok: true });
+}
+
+async function handleSyncStatus(request: Request, env: Env): Promise<Response> {
+    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
+    const status = await getSyncStatus(env);
+    return json(status);
 }
 
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {

@@ -83,6 +83,66 @@ export async function cleanupConfirmed(env: Env, daysOld: number = 7): Promise<n
     return result.meta.changes ?? 0;
 }
 
+export async function updateHeartbeat(
+    env: Env,
+    deviceId: string,
+    payload: {
+        last_sync_attempt_at: string;
+        last_sync_success_at?: string | null;
+        last_pulled?: number;
+        last_inserted?: number;
+        last_confirmed?: number;
+        last_error?: string | null;
+        notes?: string | null;
+    },
+): Promise<void> {
+    await env.DB.prepare(
+        `INSERT INTO device_heartbeats
+            (device_id, last_seen, last_sync_attempt_at, last_sync_success_at,
+             last_pulled, last_inserted, last_confirmed, last_error, notes)
+         VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(device_id) DO UPDATE SET
+            last_seen = datetime('now'),
+            last_sync_attempt_at = excluded.last_sync_attempt_at,
+            last_sync_success_at = COALESCE(excluded.last_sync_success_at, device_heartbeats.last_sync_success_at),
+            last_pulled = excluded.last_pulled,
+            last_inserted = excluded.last_inserted,
+            last_confirmed = excluded.last_confirmed,
+            last_error = excluded.last_error,
+            notes = excluded.notes`,
+    )
+        .bind(
+            deviceId,
+            payload.last_sync_attempt_at,
+            payload.last_sync_success_at ?? null,
+            payload.last_pulled ?? 0,
+            payload.last_inserted ?? 0,
+            payload.last_confirmed ?? 0,
+            payload.last_error ?? null,
+            payload.notes ?? null,
+        )
+        .run();
+}
+
+export async function getSyncStatus(env: Env) {
+    const [heartbeat, outboxStats] = await Promise.all([
+        env.DB.prepare(
+            `SELECT * FROM device_heartbeats WHERE device_id = 'macbook'`,
+        ).first<any>(),
+        env.DB.prepare(
+            `SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN confirmed_at IS NULL THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN confirmed_at IS NOT NULL THEN 1 ELSE 0 END) AS confirmed
+             FROM expenses_outbox`,
+        ).first<any>(),
+    ]);
+    return {
+        heartbeat: heartbeat ?? null,
+        outbox: outboxStats ?? { total: 0, pending: 0, confirmed: 0 },
+    };
+}
+
 export async function getBootstrapData(env: Env) {
     const [accounts, categories, currencies] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),

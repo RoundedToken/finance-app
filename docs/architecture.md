@@ -79,6 +79,24 @@ Personal finance system для одного пользователя с офла
 
 Если связь пропала между шагами 3 и 4 — Mini App кэширует в `localStorage` и повторяет при появлении сети. UUID не меняется → идемпотентно.
 
+### Триггеры sync
+
+MacBook не имеет публичного endpoint'а (за NAT, без VPS), поэтому **push с Worker'а напрямую невозможен**. Используется **pull-режим**: MacBook сам опрашивает D1.
+
+**Три триггера запуска `sync.py`:**
+
+1. **launchd-агент `com.user.excel-sync.plist`** — `StartInterval = 60` сек.
+   Запускает `sync.py --once --quiet` каждую минуту, когда MacBook не спит. `RunAtLoad=true` гарантирует пуск сразу после login.
+2. **Пользователь явно нажал `/sync` в боте.**
+   Команда возвращает текущий outbox-status + heartbeat. Это не "push to MacBook", а информационный запрос. Так как launchd опрашивает раз в минуту, max ожидание ≤ 60 секунд.
+3. **Кнопка «🔄 Sync now» в Mini App** (Этап 2).
+   Делает то же самое: показывает статус и количество ожидающих записей.
+
+**Heartbeat-механизм:**
+- При каждом `sync.py` MacBook посылает heartbeat в D1 (`POST /v1/sync/heartbeat`).
+- Bot и Mini App читают `GET /v1/sync/status`: видят `last_seen` MacBook, outbox-counters, последнюю ошибку.
+- Пользователь всегда видит честную картину: «MacBook был онлайн 30s назад, в outbox 3 ожидают».
+
 ### Поток 2: синхронизация MacBook → локальный SQLite
 1. macOS просыпается / пользователь логинится.
 2. `launchd`-агент `com.user.excel-sync.plist` запускает `local/scripts/sync.py`.

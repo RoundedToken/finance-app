@@ -18,30 +18,34 @@
 - [ ] Заглушка Cloudflare Worker (TypeScript-скелет)
 - [ ] Заглушка Mini App (HTML)
 
-## Этап 1 — End-to-end "минимальная цепочка"
+## Этап 1 — End-to-end "минимальная цепочка" ✅
 
 Цель: запись с iPhone → попадание в локальный SQLite. UI ещё нет, бот текстовый.
 
-- [ ] Worker: webhook `/tg` принимает сообщение от bot
-- [ ] Worker: парсит строку `<amount> <currency> <category>` (например, `25 EUR food`)
-- [ ] Worker: пишет в `expenses_outbox` D1
-- [ ] Worker: отправляет confirmation в чат
-- [ ] D1 schema deployed
-- [ ] `local/scripts/sync.py` — pull + insert + confirm
-- [ ] `local/scripts/init_db.py` — создание БД
-- [ ] launchd-агент для автоматического sync
-- [ ] Smoke-test: одна тестовая трата заехала с телефона в local SQLite
+- [x] Worker: webhook `/tg` принимает сообщение от bot
+- [x] Worker: парсит строку `<amount> <currency> <category>` (например, `25 EUR food`)
+- [x] Worker: пишет в `expenses_outbox` D1
+- [x] Worker: отправляет confirmation в чат
+- [x] D1 schema deployed (база `finances-outbox`)
+- [x] `local/scripts/sync.py` — pull + insert + confirm + heartbeat
+- [x] `local/scripts/init_db.py` — создание БД, миграции
+- [x] launchd-агент `com.user.excel-sync.plist` — каждые 60 сек
+- [x] Heartbeat protocol: `/v1/sync/heartbeat`, `/v1/sync/status`
+- [x] Bot команда `/sync` — статус MacBook + outbox
+- [x] Smoke-test: трата `25 EUR food тест` доехала end-to-end
 
 ## Этап 2 — Mini App с UI «Расходы ОК»
 
 Цель: красивый UI ввода, копия UX «Расходы ОК».
 
 - [ ] HTML/CSS Mini App: сетка категорий, числовая клавиатура, выбор счёта
+- [ ] **Выбор валюты на каждом вводе** (мульти-валютность с первого дня)
 - [ ] Telegram WebApp API: получение `initData`, отправка на Worker
 - [ ] Worker: валидация `initData`, авторизация по telegram_id
 - [ ] Pages deploy для Mini App
 - [ ] Bootstrap-endpoint `/v1/bootstrap` — Mini App подтягивает справочники
 - [ ] LocalStorage outbox в Mini App для офлайн-ввода
+- [ ] Кнопка «🔄 Sync now» — вызывает `/v1/sync/status` и показывает статус MacBook
 - [ ] @BotFather: установлен `setmenubutton` → Mini App URL
 
 ## Этап 3 — Курсы и дашборд
@@ -54,11 +58,15 @@
   - Implicit cashflow между снапшотами
 - [ ] launchd: ежедневный fetch_rates
 
-## Этап 4 — Импорт CSV из «Расходы ОК»
+## Этап 4 — Импорт CSV из «Расходы ОК» (2-3 года истории, валюта RSD)
 
-- [ ] Получить тестовый CSV-экспорт от пользователя
-- [ ] `local/scripts/import_ok_csv.py` — парсер с маппингом категорий
-- [ ] Прогнать импорт, проверить итоги
+- [ ] Получить полный CSV-экспорт за 2-3 года (от пользователя)
+- [ ] Изучить структуру: какие колонки, формат дат, разделитель, кодировка
+- [ ] При необходимости — миграция схемы (доп. поля для соответствия CSV)
+- [ ] Маппинг категорий из «ОК» в наш справочник `categories`
+- [ ] `local/scripts/import_ok_csv.py` — резильентный импорт (соответствует sync.py резильентности)
+- [ ] Все траты заходят в `currency = 'RSD'` (исторический эксклюзив этого CSV)
+- [ ] Sanity-check: суммы в локальной БД совпадают с суммами в CSV
 
 ## Этап 5 — Снапшоты и обмены через Mini App
 

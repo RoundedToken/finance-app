@@ -57,6 +57,21 @@ def confirm(env: dict[str, str], ids: list[str]) -> int:
     return r.json().get("confirmed", 0)
 
 
+def send_heartbeat(env: dict[str, str], payload: dict) -> None:
+    """Best-effort: ошибки логируем, но не падаем — heartbeat не должен ломать sync."""
+    try:
+        import requests
+
+        url = env["CF_WORKER_URL"].rstrip("/") + "/v1/sync/heartbeat"
+        headers = {
+            "Authorization": f"Bearer {env['SYNC_TOKEN']}",
+            "Content-Type": "application/json",
+        }
+        requests.post(url, json=payload, headers=headers, timeout=15)
+    except Exception as e:
+        sys.stderr.write(f"heartbeat failed (non-fatal): {e}\n")
+
+
 def _existing_ids(conn: sqlite3.Connection, table: str) -> set[str]:
     return {r[0] for r in conn.execute(f"SELECT id FROM {table}")}
 
@@ -207,6 +222,17 @@ def run_once(verbose: bool = True) -> dict:
         inserted=inserted,
         confirmed=confirmed,
         duration_ms=duration_ms,
+    )
+    send_heartbeat(
+        env,
+        {
+            "device_id": "macbook",
+            "last_sync_attempt_at": started_at,
+            "last_sync_success_at": _now_iso(),
+            "last_pulled": pulled,
+            "last_inserted": inserted,
+            "last_confirmed": confirmed,
+        },
     )
     result = {
         "ok": True,

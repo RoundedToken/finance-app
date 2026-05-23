@@ -3,7 +3,7 @@
  * Минимальный текстовый bot для bootstrap и smoke-теста.
  */
 import type { Env } from "./types";
-import { isAuthorizedUser, insertExpense } from "./db";
+import { isAuthorizedUser, insertExpense, getSyncStatus } from "./db";
 
 interface TelegramUpdate {
     message?: {
@@ -49,11 +49,18 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
             ``,
             `Команды:`,
             `  /id — показать ваш ID`,
+            `  /sync — статус синхронизации с MacBook`,
             `  <code>50 EUR food продукты</code> — записать трату`,
             ``,
             `<i>Mini App с полноценным UI — в Этапе 2.</i>`,
         ];
         await sendMessage(env, chatId, lines.join("\n"));
+        return;
+    }
+
+    if (text === "/sync") {
+        const status = await getSyncStatus(env);
+        await sendMessage(env, chatId, formatSyncStatus(status));
         return;
     }
 
@@ -125,4 +132,58 @@ async function sendMessage(env: Env, chatId: number, text: string): Promise<void
 
 function escapeHtml(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatSyncStatus(s: { heartbeat: any | null; outbox: any }): string {
+    const lines: string[] = [`🔄 <b>Sync status</b>`, ``];
+    const out = s.outbox;
+    lines.push(`📥 Outbox:`);
+    lines.push(`  • ожидают: <b>${out.pending ?? 0}</b>`);
+    lines.push(`  • подтверждены: ${out.confirmed ?? 0} <i>(чистятся через 7 дней)</i>`);
+    lines.push(``);
+
+    if (!s.heartbeat) {
+        lines.push(`💻 MacBook: <i>ещё ни разу не выходил на связь</i>`);
+        lines.push(`Откройте ноутбук — sync произойдёт автоматически.`);
+        return lines.join("\n");
+    }
+
+    const h = s.heartbeat;
+    const seenAgo = humanAgo(h.last_seen);
+    const syncedAgo = h.last_sync_success_at ? humanAgo(h.last_sync_success_at) : "никогда";
+    lines.push(`💻 MacBook:`);
+    lines.push(`  • last seen: <b>${seenAgo}</b>`);
+    lines.push(`  • last successful sync: ${syncedAgo}`);
+    lines.push(`  • last batch: pulled=${h.last_pulled}, inserted=${h.last_inserted}, confirmed=${h.last_confirmed}`);
+    if (h.last_error) {
+        lines.push(`  • ⚠️ last error: ${escapeHtml(String(h.last_error)).slice(0, 200)}`);
+    }
+    lines.push(``);
+    const seenSec = secAgo(h.last_seen);
+    if (seenSec < 90) {
+        lines.push(`✅ MacBook online — sync произойдёт в течение минуты.`);
+    } else if (seenSec < 600) {
+        lines.push(`⏱️ MacBook был онлайн недавно. Очередная проверка скоро.`);
+    } else {
+        lines.push(`💤 MacBook давно не выходил на связь. Откройте ноутбук — sync произойдёт автоматически.`);
+    }
+    return lines.join("\n");
+}
+
+function secAgo(isoUtc: string | null): number {
+    if (!isoUtc) return Infinity;
+    // SQLite datetime('now') возвращает "YYYY-MM-DD HH:MM:SS" в UTC без timezone.
+    const normalized = isoUtc.includes("T") ? isoUtc : isoUtc.replace(" ", "T") + "Z";
+    const t = Date.parse(normalized);
+    if (isNaN(t)) return Infinity;
+    return Math.max(0, (Date.now() - t) / 1000);
+}
+
+function humanAgo(isoUtc: string | null): string {
+    if (!isoUtc) return "никогда";
+    const s = secAgo(isoUtc);
+    if (s < 60) return `${Math.round(s)}s назад`;
+    if (s < 3600) return `${Math.round(s / 60)} мин назад`;
+    if (s < 86400) return `${Math.round(s / 3600)} ч назад`;
+    return `${Math.round(s / 86400)} дн назад`;
 }
