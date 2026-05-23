@@ -24,6 +24,7 @@ import {
     cleanupConfirmed,
     getBootstrapData,
 } from "./db";
+import { handleTelegramUpdate } from "./bot";
 
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
@@ -57,10 +58,14 @@ export default {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function handleTelegramWebhook(request: Request, env: Env): Promise<Response> {
-    // TODO Stage 1: парсинг "<amount> <ccy> <category> [note]" из text
-    // Пока — просто принимаем и логируем.
     const body = await request.json().catch(() => null);
-    console.log("tg webhook:", JSON.stringify(body));
+    if (!body) return json({ ok: false, reason: "bad json" });
+    try {
+        await handleTelegramUpdate(body as any, env);
+    } catch (e) {
+        console.error("bot error", e);
+    }
+    // Telegram считает webhook успешным только при 200 OK.
     return json({ ok: true });
 }
 

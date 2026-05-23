@@ -159,14 +159,49 @@ TELEGRAM_BOT_TOKEN=<token>
 
 Никогда не коммитить.
 
+## Авторизация: добавление пользователей в whitelist
+
+**Bot полностью молчит для всех, кого нет в `authorized_users`** — это намеренное security-решение (см. `docs/decisions.md` ADR-009). Поэтому отправлять `/start` от незарегистрированного аккаунта **бесполезно** — бот не ответит, только запишет попытку в Worker logs.
+
+### Как узнать Telegram ID нового пользователя
+
+Три варианта по убыванию удобства:
+
+1. **`@userinfobot`** в Telegram → перешлите ему любое сообщение от целевого пользователя → бот вернёт ID.
+2. **Worker logs**: попросите целевого пользователя написать любое сообщение нашему боту. В `wrangler tail` появится строка вида:
+   ```json
+   {"event":"unauthorized_attempt","user_id":"307411613","username":"...","text_preview":"hi"}
+   ```
+3. **Сам пользователь** через сторонний бот: `@username_to_id_bot` или `@getmyid_bot`.
+
+### Как добавить в whitelist
+
+```bash
+cd cloud/worker
+wrangler d1 execute finances-outbox --remote \
+  --command="INSERT OR IGNORE INTO authorized_users (telegram_id, name) VALUES ('123456789', 'Имя')"
+```
+
+### Как проверить кто в whitelist
+
+```bash
+wrangler d1 execute finances-outbox --remote --command="SELECT * FROM authorized_users"
+```
+
+### Как убрать пользователя
+
+```bash
+wrangler d1 execute finances-outbox --remote \
+  --command="DELETE FROM authorized_users WHERE telegram_id = '123456789'"
+```
+
 ## Проверочный smoke-test
 
-После всего setup'а:
-1. Отправить в Telegram бот: `/start` → бот ответит приветствием.
-2. Открыть Mini App через `/menubutton` или прямую ссылку.
-3. Ввести тестовую трату «1 EUR / Test».
-4. На MacBook: `python local/scripts/sync.py --once` → должно показать «pulled 1, inserted 1».
-5. Открыть `finances/Finances.xlsx` → новая трата на дашборде.
+После всего setup'а (включая добавление в whitelist):
+1. Отправить в Telegram боту: `/start` → бот ответит приветствием **только если вы в whitelist**.
+2. Отправить `25 EUR food магазин` → бот подтвердит запись.
+3. На MacBook: `python local/scripts/sync.py --once` → должно показать «pulled 1, inserted 1, confirmed 1».
+4. (Этап 3) Открыть `finances/Finances.generated.xlsx` → новая трата в листе Expenses.
 
 ## Troubleshooting
 

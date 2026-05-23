@@ -2,6 +2,7 @@ name = "finances-worker"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "121eac1ba4e295b54152de288b8036e9"
 
 # Минимально-возможное consumption (free tier)
 # usage_model = "bundled"  # default — оставим
@@ -13,7 +14,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "finances-outbox"
-database_id = "TODO_FILL_AFTER_wrangler_d1_create"
+database_id = "36fbd044-7524-4ac5-9c8d-8d0a5679fee5"
 
 # Cron Trigger: чистка outbox раз в сутки в 03:00 UTC
 [triggers]

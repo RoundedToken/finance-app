@@ -81,6 +81,8 @@ excel/
 
 10. **Когда непонятно direction — спросить пользователя.** Не угадывать архитектурные решения.
 
+11. **Bot не отвечает никому, кроме `authorized_users`.** Это правило безопасности (`docs/decisions.md` ADR-009). Не добавлять «фолбэк-приветствия» для unauthorized — только логирование в Worker logs. Для добавления нового пользователя — `wrangler d1 execute INSERT INTO authorized_users` (см. `docs/setup.md`).
+
 ## Где что искать
 
 | Вопрос | Файл |
