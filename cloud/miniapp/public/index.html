@@ -2,30 +2,135 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <main id="app">
-        <header>
-            <h1>Finances</h1>
-            <p class="status" id="status">загрузка…</p>
-        </header>
-        <section id="screen-categories" hidden>
-            <div class="grid" id="categories-grid"></div>
+        <!-- ───────────────── Main screen: numpad + categories ────────────── -->
+        <section class="screen" id="screen-main">
+            <header class="topbar">
+                <button class="iconbtn" id="open-menu" aria-label="меню">☰</button>
+                <div class="display">
+                    <span class="display-amount" id="amount-display">0</span>
+                    <span class="display-currency" id="currency-display">RSD</span>
+                </div>
+                <button class="iconbtn" id="open-sync" aria-label="sync">🔄</button>
+            </header>
+
+            <div class="numpad" id="numpad">
+                <button class="num">1</button>
+                <button class="num">2</button>
+                <button class="num">3</button>
+                <button class="num">4</button>
+                <button class="num">5</button>
+                <button class="num">6</button>
+                <button class="num">7</button>
+                <button class="num">8</button>
+                <button class="num">9</button>
+                <button class="num" data-key="dot">.</button>
+                <button class="num">0</button>
+                <button class="num" data-key="back">⌫</button>
+            </div>
+
+            <div class="side-actions">
+                <button class="sidebtn" id="open-currency" title="валюта">💱<span id="side-currency">RSD</span></button>
+                <button class="sidebtn" id="open-date" title="дата">📅<span id="side-date">сегодня</span></button>
+                <button class="sidebtn" id="open-note" title="комментарий">💬<span id="side-note-indicator"></span></button>
+            </div>
+
+            <div class="categories">
+                <div class="categories-grid" id="categories-grid"></div>
+                <div class="pager" id="categories-pager"></div>
+            </div>
+
+            <footer class="footer">
+                <div class="footer-line">Потрачено сегодня: <b id="spent-today">—</b></div>
+                <div class="footer-line">Потрачено вчера: <b id="spent-yesterday">—</b></div>
+                <ul class="recent" id="recent-list"></ul>
+            </footer>
         </section>
-        <section id="screen-amount" hidden>
-            <div class="selected-category" id="selected-category"></div>
-            <div class="amount-display" id="amount-display">0</div>
-            <div class="numpad" id="numpad"></div>
+
+        <!-- ───────────────── History ─────────────────────────────────────── -->
+        <section class="screen" id="screen-history" hidden>
+            <header class="topbar">
+                <button class="iconbtn back-btn" data-back>←</button>
+                <h1>История</h1>
+                <span class="iconbtn-placeholder"></span>
+            </header>
+            <div class="history-list" id="history-list">
+                <p class="hint">Здесь только траты, которые вы внесли через это приложение.</p>
+            </div>
         </section>
-        <section id="screen-onboarding">
-            <p>Mini App пока — заглушка Этапа 0.</p>
-            <p>Полный UI появится в Этапе 2.</p>
+
+        <!-- ───────────────── Sync status ────────────────────────────────── -->
+        <section class="screen" id="screen-sync" hidden>
+            <header class="topbar">
+                <button class="iconbtn back-btn" data-back>←</button>
+                <h1>Sync</h1>
+                <button class="iconbtn" id="sync-refresh">↻</button>
+            </header>
+            <div class="sync-body" id="sync-body">
+                <p class="hint">Загрузка…</p>
+            </div>
         </section>
+
+        <!-- ───────────────── Menu (drawer modal) ────────────────────────── -->
+        <section class="modal" id="modal-menu" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Меню</h2>
+                <button class="row" data-go="history">📜 История</button>
+                <button class="row" data-go="sync">🔄 Sync</button>
+                <button class="row" id="menu-close" data-close>Закрыть</button>
+            </div>
+        </section>
+
+        <!-- ───────────────── Currency picker ────────────────────────────── -->
+        <section class="modal" id="modal-currency" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Валюта</h2>
+                <div class="currency-grid" id="currency-grid"></div>
+            </div>
+        </section>
+
+        <!-- ───────────────── Date picker ────────────────────────────────── -->
+        <section class="modal" id="modal-date" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Дата</h2>
+                <button class="row" data-date-shift="0">Сегодня</button>
+                <button class="row" data-date-shift="-1">Вчера</button>
+                <button class="row" data-date-shift="-2">Позавчера</button>
+                <label class="date-manual">
+                    <span>другая</span>
+                    <input type="date" id="date-input">
+                </label>
+                <button class="row" data-close>Готово</button>
+            </div>
+        </section>
+
+        <!-- ───────────────── Note editor ────────────────────────────────── -->
+        <section class="modal" id="modal-note" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Комментарий</h2>
+                <textarea id="note-input" rows="4" placeholder="свободный текст"></textarea>
+                <div class="row-actions">
+                    <button class="ghost" id="note-clear">Очистить</button>
+                    <button class="ghost" data-close>Отмена</button>
+                    <button class="primary" id="note-save">OK</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ───────────────── Toast ──────────────────────────────────────── -->
+        <div class="toast" id="toast" hidden></div>
     </main>
-    <script type="module" src="app.js"></script>
+
+    <script type="module" src="app.js?v=2"></script>
 </body>
 </html>
