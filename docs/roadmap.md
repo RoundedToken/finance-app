@@ -1,107 +1,101 @@
 # Roadmap
 
-Что сделано, что в работе, что впереди.
+Что сделано, что в работе, что впереди. Обновляется по факту.
 
-## Этап 0 — Инфраструктура и документация ✅ В работе
+---
 
-- [x] Структура директорий (`finances/`, `local/`, `cloud/`, `docs/`)
-- [x] Архитектурная документация (`docs/*.md`, корневой `CLAUDE.md`)
-- [x] Excel-инспекционные tools в `finances/scripts/` (inspect, backup, diff, ...)
-- [x] Установлены brew пакеты: python@3.13, node
-- [ ] Создан venv в `.venv/` + pip install
-- [ ] Установлен wrangler
-- [ ] Создан Cloudflare-аккаунт (требует действий пользователя)
-- [ ] Создан Telegram bot через @BotFather (требует действий пользователя)
-- [ ] git init + первый коммит
-- [ ] SQLite-схема для локальной БД (`local/schema.sql`)
-- [ ] SQLite-схема для D1 (`cloud/worker/schema.sql`)
-- [ ] Заглушка Cloudflare Worker (TypeScript-скелет)
-- [ ] Заглушка Mini App (HTML)
+## ✅ Завершено
 
-## Этап 1 — End-to-end "минимальная цепочка" ✅
+### Этап 0 — Инфраструктура и документация
+- [x] Структура директорий (`data/`, `local/`, `cloud/`, `docs/`, `tools/`, `reports/`)
+- [x] Архитектурная документация (`docs/*.md`, корневой `CLAUDE.md`, ADR-001…011)
+- [x] Excel-инспекционные tools в `tools/excel/` (12 утилит)
+- [x] brew пакеты: `python@3.13`, `node`. `.venv/` + `pip install -r requirements.txt`
+- [x] `wrangler` глобально через npm
+- [x] Cloudflare-аккаунт + Telegram bot через @BotFather
+- [x] git init + первый коммит, репозиторий с историей
+- [x] SQLite-схемы (local + D1), миграции
+- [x] Cloudflare Worker (TypeScript) + Pages для Mini App
 
-Цель: запись с iPhone → попадание в локальный SQLite. UI ещё нет, бот текстовый.
+### Этап 1 — End-to-end "минимальная цепочка"
+- [x] Worker `/tg` webhook + Telegram bot (silent для не-whitelist)
+- [x] CRUD endpoints (`/v1/expenses` POST/GET/PUT/DELETE, `/v1/bootstrap`, `/v1/admin/*`)
+- [x] D1 schema deployed (база `finances-outbox` — имя историческое)
+- [x] launchd-агент `com.user.excel-sync.plist`
+- [x] Smoke-test: трата с телефона доехала end-to-end
 
-- [x] Worker: webhook `/tg` принимает сообщение от bot
-- [x] Worker: парсит строку `<amount> <currency> <category>` (например, `25 EUR food`)
-- [x] Worker: пишет в `expenses_outbox` D1
-- [x] Worker: отправляет confirmation в чат
-- [x] D1 schema deployed (база `finances-outbox`)
-- [x] `local/scripts/sync.py` — pull + insert + confirm + heartbeat
-- [x] `local/scripts/init_db.py` — создание БД, миграции
-- [x] launchd-агент `com.user.excel-sync.plist` — каждые 60 сек
-- [x] Heartbeat protocol: `/v1/sync/heartbeat`, `/v1/sync/status`
-- [x] Bot команда `/sync` — статус MacBook + outbox
-- [x] Smoke-test: трата `25 EUR food тест` доехала end-to-end
+### Этап 2 — Mini App (UI ввода трат)
+- [x] Mini App на Cloudflare Pages: numpad + сетка категорий с пагинацией + история
+- [x] Мульти-валютность с флагами (EUR/USD/RUB/RSD/USDT)
+- [x] Telegram WebApp API: `initData` авторизация
+- [x] @BotFather: `setChatMenuButton` → Mini App URL
+- [x] Пастельные цвета категорий (миграция 005)
+- [x] iOS swipe-to-delete в Истории, edit-modal с CRUD
+- [x] Унифицированные анимации через `--ease` / `--dur` CSS-vars
+- [x] Direction lock на свайпе категорий (нет диагонального scroll)
+- [x] Focus guard в edit modal: tap вне input → blur, не активирует чужой элемент
+- [x] `interactive-widget=overlays-content` — нет layout-jump при клавиатуре
 
-## Этап 2 — Mini App с UI «Расходы ОК»
+### Этап 4 — Импорт CSV из «Расходы ОК»
+- [x] `local/scripts/import_ok_csv.py` — TSV парсер, UUID5 идемпотентность
+- [x] Миграции 003 (источник-аккаунт + 7 категорий) и 004 (ещё 4 категории)
+- [x] **1822 трат за 2024-01-10 → 2026-05-23, 7.78M RSD** — в D1
 
-Цель: красивый UI ввода, копия UX «Расходы ОК».
+### D1-centric pivot (ADR-011)
+- [x] D1 как единственный источник правды (1822 expenses, 32 категории, 5 валют, 2 счёта)
+- [x] MacBook сведён к backup: `backup_d1.py` через `wrangler d1 export`, launchd раз в день
+- [x] Удалены устаревшие: `sync.py`, `push_*.py`, `regenerate_xlsx.py`, `expenses_outbox`, `expenses_cache`, `device_heartbeats`, cron в Worker, `/v1/sync/*` endpoints
 
-- [ ] HTML/CSS Mini App: сетка категорий, числовая клавиатура, выбор счёта
-- [ ] **Выбор валюты на каждом вводе** (мульти-валютность с первого дня)
-- [ ] Telegram WebApp API: получение `initData`, отправка на Worker
-- [ ] Worker: валидация `initData`, авторизация по telegram_id
-- [ ] Pages deploy для Mini App
-- [ ] Bootstrap-endpoint `/v1/bootstrap` — Mini App подтягивает справочники
-- [ ] LocalStorage outbox в Mini App для офлайн-ввода
-- [ ] Кнопка «🔄 Sync now» — вызывает `/v1/sync/status` и показывает статус MacBook
-- [ ] @BotFather: установлен `setmenubutton` → Mini App URL
+---
 
-## Этап 3 — Курсы и дашборд
+## 🔄 В работе
 
-- [ ] `local/scripts/fetch_rates.py` — Google Sheets CSV → таблица `rates`
-- [ ] `local/scripts/regenerate_xlsx.py` — генерация `Finances.xlsx` с дашбордом:
-  - Сводка балансов по счетам
-  - Аллокация по валютам / группам
-  - Динамика капитала (график)
-  - Implicit cashflow между снапшотами
-- [ ] launchd: ежедневный fetch_rates
+(пусто — Stage 2 закрыт, выбираем следующий)
 
-## Этап 4 — Импорт CSV из «Расходы ОК» (2-3 года истории, валюта RSD)
+---
 
-- [ ] Получить полный CSV-экспорт за 2-3 года (от пользователя)
-- [ ] Изучить структуру: какие колонки, формат дат, разделитель, кодировка
-- [ ] При необходимости — миграция схемы (доп. поля для соответствия CSV)
-- [ ] Маппинг категорий из «ОК» в наш справочник `categories`
-- [ ] `local/scripts/import_ok_csv.py` — резильентный импорт (соответствует sync.py резильентности)
-- [ ] Все траты заходят в `currency = 'RSD'` (исторический эксклюзив этого CSV)
-- [ ] Sanity-check: суммы в локальной БД совпадают с суммами в CSV
+## 📋 Дальше
 
-## Этап 5 — Снапшоты и обмены через Mini App
+### Этап 3 (переосмыслен) — Аналитика и курсы валют
 
-- [ ] Mini App: вкладка «Снапшоты» — ввод баланса по счёту
-- [ ] Mini App: вкладка «Обмен» — мульти-валютная форма с фиксацией курса
-- [ ] Mini App: цепочки (chain_id) — связать несколько обменов в одну операцию
-- [ ] Worker: новые endpoints `/v1/snapshots`, `/v1/transactions`
+После D1-centric pivot Excel/Google Sheets dashboard больше не нужен. Вместо него:
+- [ ] Курсы валют автоматически из публичного источника (Frankfurter/ECB/CBR-XML/CoinGecko).
+- [ ] Хранение курсов в D1 (новая таблица `rates`).
+- [ ] В Mini App: конверсия в выбранную базовую валюту (EUR/RSD).
+- [ ] Аналитика прямо в Mini App: pie-chart по категориям, столбцы по дням/неделям/месяцам, фильтры по периодам и валютам.
+- [ ] Bottom-tab или вкладка «📊 Статистика» в меню.
 
-## Этап 6 — Миграция Legacy
+### Этап 5 — Снапшоты и обмены через Mini App
 
-- [ ] Из текущего `Finances.xlsx` (Legacy) восстановить Snapshots в нативных валютах:
-  - По историческим курсам ЕЦБ/ЦБ РФ обратная конверсия EUR-eq → RUB/RSD/USDT
-  - Записать как `source = 'estimated_from_legacy'`
-- [ ] Сохранить `finances/Finances.xlsx` как `finances/Legacy.xlsx`
-- [ ] Регенерируемый Finances.xlsx становится основным
+Расширение модели от только-трат к полному финансовому учёту.
 
-## Этап 7 — Инвестиции (опционально, на будущее)
+- [ ] D1 schema: `accounts` с полями для всех счетов (Сбер/Cash EUR/Биржи/Кошельки/...).
+- [ ] D1 schema: `snapshots` (UUID + дата + account_id + native_amount + source).
+- [ ] D1 schema: `transactions` (exchange/transfer/income/interest, from/to/amounts/rate/fee/chain_id).
+- [ ] В Mini App: вкладка «💼 Счета» — снапшоты с возможностью записать «сегодня в Сбере X RUB».
+- [ ] В Mini App: вкладка «🔄 Обмены» — UI для обмена валют с фиксацией курса.
+- [ ] Цепочки (chain_id): связать RUB→USDT→EUR в одну операцию, показать total PnL.
 
-- [ ] Поле `yield_pct` на Account (уже в схеме)
-- [ ] Автоматическая транзакция типа `interest` при ежемесячном начислении
-- [ ] Дашборд: ожидаемый доход за период
-- [ ] (когда появятся) Holdings: акции/ETF с тикерами
+### Этап 6 — Миграция Legacy
+
+- [ ] Из текущего `data/legacy/Finances.xlsx` (33 снимка в EUR-eq) восстановить snapshots в нативных валютах.
+- [ ] По историческим курсам ECB/CBR обратная конверсия EUR-eq → RUB/RSD/USDT/USD.
+- [ ] Записать в D1 с `source = 'estimated_from_legacy'`.
+
+### Этап 7 — Инвестиции
+
+- [ ] Поле `yield_pct` на Account (уже в схеме).
+- [ ] Автоматическая транзакция типа `interest` при ежемесячном начислении.
+- [ ] Дашборд: ожидаемый доход за период.
+- [ ] (когда появятся) Holdings: акции/ETF.
+
+### Технический долг
+- [ ] **#20**: переименовать корень с `excel/` → что-то осмысленное (`finance/`, `pfs/`, `ledger/`).
+- [ ] Удалить мёртвый код в `tools/excel/` если Legacy будет полностью мигрирован.
+- [ ] `init_db.py` + `migrate_to_d1.py` — больше не нужны после полной миграции, переместить в `legacy/scripts/` или удалить.
+
+---
 
 ## Текущий этап
-**Этап 0**. После завершения переходим к Этапу 1 (требует Cloudflare-аккаунт + bot token от пользователя).
 
-## Метрики готовности
-
-| Этап | Готов когда |
-|---|---|
-| 0 | Все папки на месте, документация написана, venv активирован, git инициализирован, brew пакеты стоят |
-| 1 | Smoke-test (трата с телефона → local SQLite) проходит |
-| 2 | Mini App открывается в Telegram, ввод работает, UI выглядит как «Расходы ОК» |
-| 3 | `Finances.xlsx` регенерируется и показывает дашборд с актуальными курсами |
-| 4 | Полная история из «Расходы ОК» — в локальной БД |
-| 5 | Снапшоты и обмены вводятся с телефона |
-| 6 | Legacy-данные восстановлены, новый Finances.xlsx — единственный |
-| 7 | Прогноз доходов от инвестиций есть на дашборде |
+**Stage 2 закрыт.** Следующий этап выбирается из: 3 (курсы + аналитика), 5 (снапшоты + обмены), 6 (миграция Legacy), 7 (инвестиции).
