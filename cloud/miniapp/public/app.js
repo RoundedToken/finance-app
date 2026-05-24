@@ -6,9 +6,21 @@ const WORKER_BASE = "https://finances-worker.stepan-mikhalev-99.workers.dev";
 const WEEKDAYS_SHORT = ["ВС", "ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ"];
 const MONTHS_GEN = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
 
+const SETTINGS_KEY = "finances.settings.v1";
+
+function loadSettings() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); } catch { return {}; }
+}
+function saveSettings(patch) {
+    const s = { ...loadSettings(), ...patch };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
 // ───────────── state
 const state = {
     accounts: [], categories: [], allCategories: [], currencies: [], expenses: [],
+    rates: { date: null, base: "EUR", quotes: {} },
+    baseCurrency: loadSettings().baseCurrency || "EUR",
     bootstrapped: false, bootstrapError: null,
     amount: "0", currency: "RSD", date: todayISO(), note: "",
     catPage: 0, catsPerPage: 8,
@@ -44,6 +56,7 @@ async function bootstrap() {
         state.accounts = data.accounts || [];
         state.currencies = data.currencies || [];
         state.expenses = data.expenses || [];
+        state.rates = data.rates || { date: null, base: "EUR", quotes: {} };
         state.bootstrapped = true; state.bootstrapError = null;
     } catch (e) { state.bootstrapError = String(e.message || e); }
 }
@@ -121,6 +134,41 @@ function humanDayTitle(iso) {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function amountHTML(amount, currency) {
     return `<span class="num">${fmt(amount)}</span><span class="flag">${flagOf(currency)}</span><span class="ccy">${currency}</span>`;
+}
+
+/** Конверсия amount из currency в state.baseCurrency.
+ *  Все курсы хранятся как 1 EUR = rate ccy → переход через EUR. */
+function rateEURto(quote) {
+    if (quote === "EUR") return 1;
+    const r = state.rates.quotes[quote];
+    return (r && isFinite(r) && r > 0) ? r : null;
+}
+function convertToBase(amount, currency) {
+    if (currency === state.baseCurrency) return amount;
+    const rCcy = rateEURto(currency);          // 1 EUR = rCcy currency
+    const rBase = rateEURto(state.baseCurrency);
+    if (!rCcy || !rBase) return null;
+    const inEUR = amount / rCcy;
+    return inEUR * rBase;
+}
+
+/** Возвращает HTML для day-total: оригинальные суммы + конверсия в base, если есть смысл. */
+function dayTotalHTML(sums) {
+    if (sums.size === 0) return `<span style="color:var(--text-muted);font-weight:400;">—</span>`;
+    const originals = [...sums.entries()].map(([c, n]) => amountHTML(n, c)).join(" ");
+    // Считаем общую сумму в base
+    let baseTotal = 0;
+    let allConverted = true;
+    for (const [ccy, n] of sums) {
+        const c = convertToBase(n, ccy);
+        if (c == null) { allConverted = false; break; }
+        baseTotal += c;
+    }
+    const showConversion = allConverted && (sums.size > 1 || !sums.has(state.baseCurrency));
+    const convHTML = showConversion
+        ? `<span class="base-conv">≈ <span class="num">${fmt(Math.round(baseTotal * 100) / 100)}</span> ${flagOf(state.baseCurrency)} ${state.baseCurrency}</span>`
+        : "";
+    return originals + convHTML;
 }
 
 // ───────────── render
@@ -231,7 +279,7 @@ function buildDayGroup(day, swipeable, showEmpty) {
     for (const e of items) sums.set(e.currency, (sums.get(e.currency) || 0) + e.amount);
     const totalHtml = sums.size === 0
         ? (showEmpty ? `<span style="color:var(--text-muted);font-weight:400;">—</span>` : "")
-        : [...sums.entries()].map(([c, n]) => amountHTML(n, c)).join(" ");
+        : dayTotalHTML(sums);
 
     const t = humanDayTitle(day);
     const head = document.createElement("div");
@@ -388,7 +436,7 @@ function renderHistoryScreen() {
         const items = byDate.get(d);
         const sums = new Map();
         for (const e of items) sums.set(e.currency, (sums.get(e.currency) || 0) + e.amount);
-        const totalHtml = [...sums.entries()].map(([c, n]) => amountHTML(n, c)).join(" ");
+        const totalHtml = dayTotalHTML(sums);
         const t = humanDayTitle(d);
         const head = document.createElement("div");
         head.className = "day-head";
@@ -421,6 +469,32 @@ function renderCurrencyPicker() {
             closeModals();
         });
         grid.appendChild(btn);
+    }
+}
+
+function renderSettings() {
+    const grid = $("#settings-base-grid");
+    grid.innerHTML = "";
+    for (const c of state.currencies) {
+        const btn = document.createElement("button");
+        btn.className = c.code === state.baseCurrency ? "active" : "";
+        btn.innerHTML = `<span class="ccy-flag">${c.emoji || "💱"}</span>
+                         <span class="ccy-code">${c.code}</span>
+                         <span class="ccy-name">${escapeHtml(c.name)}</span>`;
+        btn.addEventListener("click", () => {
+            state.baseCurrency = c.code;
+            saveSettings({ baseCurrency: c.code });
+            renderSettings();
+            render();
+            if (!$("#screen-history").hidden) renderHistoryScreen();
+        });
+        grid.appendChild(btn);
+    }
+    const info = $("#settings-rates-info");
+    if (state.rates.date) {
+        info.textContent = `Курсы от ${state.rates.date}, источник open.er-api.com`;
+    } else {
+        info.textContent = "Курсы ещё не загружены";
     }
 }
 
@@ -658,6 +732,10 @@ function bindEvents() {
 
     $("#open-menu").addEventListener("click", () => openModal("menu"));
     $("#open-history").addEventListener("click", () => { renderHistoryScreen(); showScreen("history"); });
+    $("#open-settings").addEventListener("click", () => {
+        closeModals();
+        setTimeout(() => { renderSettings(); openModal("settings"); }, 300);
+    });
     $("#open-currency").addEventListener("click", () => { renderCurrencyPicker(); openModal("currency"); });
     $("#open-date").addEventListener("click", () => { $("#date-input").value = state.date; openModal("date"); });
     $("#open-note").addEventListener("click", () => { $("#note-input").value = state.note; openModal("note"); });

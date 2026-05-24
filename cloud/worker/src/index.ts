@@ -25,8 +25,20 @@ import {
     replaceReferences,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
+import { fetchLatestRatesEUR, saveRates, getLatestRates } from "./rates";
 
 export default {
+    /** Cron Trigger handler — ежедневно тянет курсы валют. */
+    async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+        try {
+            const payload = await fetchLatestRatesEUR();
+            const n = await saveRates(env, payload);
+            console.log(`scheduled rates: saved ${n} for date ${payload.date}`);
+        } catch (e) {
+            console.error("scheduled rates failed:", e);
+        }
+    },
+
     async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url);
         const path = url.pathname;
@@ -59,6 +71,9 @@ export default {
 
             if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
             if (path === "/v1/admin/migrate-expenses" && request.method === "POST") return handleMigrate(request, env);
+
+            if (path === "/v1/rates" && request.method === "GET") return handleGetRates(request, env);
+            if (path === "/v1/admin/refresh-rates" && request.method === "POST") return handleRefreshRates(request, env);
 
             return json({ error: "not found" }, 404);
         } catch (err) {
@@ -135,6 +150,20 @@ async function handlePushReferences(request: Request, env: Env): Promise<Respons
             currencies: body.currencies?.length ?? null,
         },
     });
+}
+
+async function handleGetRates(request: Request, env: Env): Promise<Response> {
+    const auth = await authenticateMiniApp(request, env);
+    if (!auth.ok) return auth.response;
+    const data = await getLatestRates(env);
+    return json(data);
+}
+
+async function handleRefreshRates(request: Request, env: Env): Promise<Response> {
+    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401);
+    const payload = await fetchLatestRatesEUR();
+    const n = await saveRates(env, payload);
+    return json({ ok: true, saved: n, date: payload.date });
 }
 
 async function handleMigrate(request: Request, env: Env): Promise<Response> {

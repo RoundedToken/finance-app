@@ -174,7 +174,7 @@ export async function replaceReferences(env: Env, payload: ReferencePayload): Pr
 // ─── Bootstrap (для Mini App при старте) ────────────────────────────────────
 
 export async function getBootstrapData(env: Env) {
-    const [accounts, categories, currencies, expenses] = await Promise.all([
+    const [accounts, categories, currencies, expenses, ratesMaxDate] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         env.DB.prepare("SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, name").all(),
         env.DB.prepare("SELECT * FROM currencies").all(),
@@ -182,11 +182,21 @@ export async function getBootstrapData(env: Env) {
             "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at, updated_at " +
             "FROM expenses WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC LIMIT 500",
         ).all(),
+        env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
     ]);
+    const date = ratesMaxDate?.d ?? null;
+    let rates: Record<string, number> = {};
+    if (date) {
+        const r = await env.DB.prepare(
+            "SELECT quote, rate FROM rates WHERE date = ? AND base = 'EUR'",
+        ).bind(date).all<{ quote: string; rate: number }>();
+        for (const row of r.results) rates[row.quote] = row.rate;
+    }
     return {
         accounts: accounts.results,
         categories: categories.results,
         currencies: currencies.results,
         expenses: expenses.results,
+        rates: { date, base: "EUR", quotes: rates },
     };
 }

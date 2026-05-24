@@ -16,9 +16,9 @@ binding = "DB"
 database_name = "finances-outbox"
 database_id = "36fbd044-7524-4ac5-9c8d-8d0a5679fee5"
 
-# Cron Trigger удалён — после D1-centric pivot outbox не существует.
-# [triggers]
-# crons = []
+# Cron Trigger: ежедневный fetch курсов валют через open.er-api.com.
+[triggers]
+crons = ["0 6 * * *"]
 
 # Secrets устанавливаются через `wrangler secret put`:
 #   TELEGRAM_BOT_TOKEN
