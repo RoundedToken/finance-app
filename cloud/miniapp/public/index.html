@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=overlays-content">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css?v=7">
+    <link rel="stylesheet" href="styles.css?v=8">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -73,7 +73,20 @@
                 <h2>Меню</h2>
                 <button class="row" data-go="history">📜 История</button>
                 <button class="row row-disabled" disabled>📊 Статистика <small>скоро</small></button>
-                <button class="row row-disabled" disabled>⚙️ Настройки <small>скоро</small></button>
+                <button class="row" id="open-settings">⚙️ Настройки</button>
+            </div>
+        </section>
+
+        <!-- ───────────── Settings ───────────── -->
+        <section class="modal" id="modal-settings" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2>Настройки</h2>
+                <div class="edit-block">
+                    <span class="label">Базовая валюта <small style="color:var(--hint);">для итогов и аналитики</small></span>
+                    <div class="currency-grid" id="settings-base-grid"></div>
+                </div>
+                <div class="info-strip" id="settings-rates-info"></div>
             </div>
         </section>
 
@@ -153,6 +166,6 @@
         <div class="toast" id="toast" hidden></div>
     </div>
 
-    <script type="module" src="app.js?v=7"></script>
+    <script type="module" src="app.js?v=8"></script>
 </body>
 </html>
