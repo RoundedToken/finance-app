@@ -44,8 +44,9 @@ def parse_history(text: str) -> dict[str, dict[str, float]]:
     rows = [row for row in reader if any(c.strip() for c in row)]
     if len(rows) < 2:
         raise SystemExit("history csv: less than 2 rows, ничего парсить")
-    # rows[0] = ["Date","Close","","Date","Close","","Date","Close"]
-    quotes = [("USD", 0, 1), ("RUB", 3, 4), ("RSD", 6, 7)]
+    # rows[0] = ["Date","Close","","Date","Close","","Date","Close","","Date","Close"]
+    # Колонки: A/B = USD, D/E = RUB, G/H = RSD, J/K = TRY (added 2026-05-25).
+    quotes = [("USD", 0, 1), ("RUB", 3, 4), ("RSD", 6, 7), ("TRY", 9, 10)]
     by_date: dict[str, dict[str, float]] = {}
     for row in rows[1:]:
         for quote, di, ci in quotes:

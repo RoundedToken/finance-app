@@ -30,11 +30,9 @@ for _k, _v in _dotenv.items():
 
 SHEET_TITLE = os.environ.get("RATES_SHEET_TITLE", "Finance Rates")
 OWNER_EMAIL = os.environ.get("RATES_SHEET_OWNER_EMAIL")
-if not OWNER_EMAIL:
-    raise SystemExit(
-        f"RATES_SHEET_OWNER_EMAIL не задан в {ENV_PATH} — это email, на который "
-        "Google Sheet будет расшарен как writer.",
-    )
+# Если email не задан — пропускаем step «расшарить как writer». Это OK
+# при повторном запуске (sheet уже расшарен ранее), скрипт всё равно
+# update'нёт формулы.
 HISTORY_START = os.environ.get("RATES_HISTORY_START", "2024-01-10")
 
 
@@ -106,16 +104,17 @@ def fill_latest(ss):
     ws.clear()
     ws.update(
         values=[
-            ["date", "EURUSD", "EURRUB", "EURRSD", "EURUSDT"],
+            ["date", "EURUSD", "EURRUB", "EURRSD", "EURUSDT", "EURTRY"],
             [
                 '=TEXT(TODAY(),"YYYY-MM-DD")',
                 '=GOOGLEFINANCE("CURRENCY:EURUSD")',
                 '=GOOGLEFINANCE("CURRENCY:EURRUB")',
                 '=GOOGLEFINANCE("CURRENCY:EURRSD")',
                 '=IFERROR(GOOGLEFINANCE("CURRENCY:EURUSDT"), GOOGLEFINANCE("CURRENCY:EURUSD"))',
+                '=GOOGLEFINANCE("CURRENCY:EURTRY")',
             ],
         ],
-        range_name="A1:E2",
+        range_name="A1:F2",
         value_input_option="USER_ENTERED",
     )
     return ws
@@ -124,7 +123,7 @@ def fill_latest(ss):
 def fill_history(ss, start_iso: str):
     y, m, d = (int(x) for x in start_iso.split("-"))
     start_expr = f"DATE({y},{m},{d})"
-    ws = get_or_make_worksheet(ss, "history", rows=1200, cols=10)
+    ws = get_or_make_worksheet(ss, "history", rows=1200, cols=14)
     ws.clear()
     formulas = [
         f'=GOOGLEFINANCE("CURRENCY:EURUSD","close",{start_expr},TODAY(),"DAILY")',
@@ -132,10 +131,12 @@ def fill_history(ss, start_iso: str):
         f'=GOOGLEFINANCE("CURRENCY:EURRUB","close",{start_expr},TODAY(),"DAILY")',
         "", "",
         f'=GOOGLEFINANCE("CURRENCY:EURRSD","close",{start_expr},TODAY(),"DAILY")',
+        "", "",
+        f'=GOOGLEFINANCE("CURRENCY:EURTRY","close",{start_expr},TODAY(),"DAILY")',
     ]
     ws.update(
         values=[formulas],
-        range_name="A1:G1",
+        range_name="A1:J1",
         value_input_option="USER_ENTERED",
     )
     return ws
@@ -196,8 +197,11 @@ def main() -> int:
     print(f"▶ open sheet {sheet_id}…")
     ss = open_by_id(client, sheet_id)
 
-    print(f"▶ share with {OWNER_EMAIL} (writer)…")
-    ensure_share(ss, OWNER_EMAIL)
+    if OWNER_EMAIL:
+        print(f"▶ share with {OWNER_EMAIL} (writer)…")
+        ensure_share(ss, OWNER_EMAIL)
+    else:
+        print("▶ skip share (RATES_SHEET_OWNER_EMAIL не задан в .env — предполагаем что sheet уже расшарен)")
     print("▶ make public-read (anyone with link)…")
     ensure_public_read(ss)
 
