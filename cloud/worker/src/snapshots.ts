@@ -18,7 +18,7 @@ export interface SnapshotPayload {
 
 export async function listSnapshots(env: Env, opts: { limit?: number; from?: string; accountId?: string }): Promise<any[]> {
     const limit = Math.min(opts.limit ?? 1000, 20000);
-    let sql = "SELECT id, date, account_id, amount, note, source, created_at, updated_at " +
+    let sql = "SELECT id, date, account_id, amount, note, source, transaction_id, created_at, updated_at " +
               "FROM snapshots WHERE deleted_at IS NULL";
     const params: any[] = [];
     if (opts.from) { sql += " AND date >= ?"; params.push(opts.from); }

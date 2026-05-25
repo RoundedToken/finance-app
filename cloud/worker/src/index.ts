@@ -68,6 +68,14 @@ import {
     updateContribution,
     deleteContribution,
 } from "./goals";
+import {
+    listTransactions,
+    getChainDetail,
+    createTransaction,
+    createChain,
+    deleteTransaction,
+    deleteChain,
+} from "./transactions";
 
 export default {
     /** Cron Trigger — ежедневно тянет курсы. */
@@ -146,6 +154,16 @@ export default {
             if (contribMatch) {
                 if (request.method === "PUT") return handleWebContributionsUpdate(request, env, contribMatch[1]);
                 if (request.method === "DELETE") return handleWebContributionsDelete(request, env, contribMatch[1]);
+            }
+            if (path === "/v1/web/transactions" && request.method === "GET") return handleWebTransactionsList(request, env, url);
+            if (path === "/v1/web/transactions" && request.method === "POST") return handleWebTransactionsCreate(request, env);
+            const txMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)$/);
+            if (txMatch && request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
+            if (path === "/v1/web/chains" && request.method === "POST") return handleWebChainsCreate(request, env);
+            const chainMatch = path.match(/^\/v1\/web\/chains\/([0-9a-fA-F-]+)$/);
+            if (chainMatch) {
+                if (request.method === "GET") return handleWebChainsDetail(request, env, chainMatch[1]);
+                if (request.method === "DELETE") return handleWebChainsDelete(request, env, chainMatch[1]);
             }
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
@@ -431,6 +449,64 @@ async function handleWebContributionsDelete(request: Request, env: Env, id: stri
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
     const r = await deleteContribution(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
+}
+
+// ── Web Admin · transactions ──────────────────────────────────────────────
+async function handleWebTransactionsList(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const limit = parseInt(url.searchParams.get("limit") ?? "1000", 10);
+    const rows = await listTransactions(env, {
+        limit,
+        from: url.searchParams.get("from") ?? undefined,
+        to: url.searchParams.get("to") ?? undefined,
+        type: (url.searchParams.get("type") as any) ?? undefined,
+        accountId: url.searchParams.get("account_id") ?? undefined,
+        chainId: url.searchParams.get("chain_id") ?? undefined,
+    });
+    return json({ transactions: rows }, 200, request, env);
+}
+
+async function handleWebTransactionsCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createTransaction(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted, snapshot_ids: r.snapshot_ids }, 200, request, env);
+}
+
+async function handleWebTransactionsDelete(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteTransaction(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
+}
+
+async function handleWebChainsCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createChain(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, chain_id: r.chain_id, transaction_ids: r.transaction_ids, snapshot_ids: r.snapshot_ids }, 200, request, env);
+}
+
+async function handleWebChainsDetail(request: Request, env: Env, chainId: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const detail = await getChainDetail(env, chainId);
+    if (!detail) return json({ error: "not found" }, 404, request, env);
+    return json(detail, 200, request, env);
+}
+
+async function handleWebChainsDelete(request: Request, env: Env, chainId: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteChain(env, chainId);
     return json({ ok: true, ...r }, 200, request, env);
 }
 

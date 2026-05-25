@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type {
     AccountsResponse,
+    ChainCreatePayload,
+    ChainDetail,
     ContributionCreatePayload,
     ContributionUpdatePayload,
     ExpensesResponse,
@@ -19,6 +21,8 @@ import type {
     SnapshotCreatePayload,
     SnapshotUpdatePayload,
     SnapshotsResponse,
+    TransactionCreatePayload,
+    TransactionsResponse,
 } from "./types";
 
 export function useMe() {
@@ -281,5 +285,72 @@ export function useDeleteContribution() {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal"] });
         },
+    });
+}
+
+// ── Transactions / chains ──────────────────────────────────────────────────
+
+export function useTransactions() {
+    return useQuery({
+        queryKey: ["transactions"],
+        queryFn: () => apiFetch<TransactionsResponse>("/v1/web/transactions?limit=20000"),
+        staleTime: 30_000,
+    });
+}
+
+export function useChainDetail(chainId: string | undefined) {
+    return useQuery({
+        queryKey: ["chain", chainId],
+        queryFn: () => apiFetch<ChainDetail>(`/v1/web/chains/${chainId}`),
+        enabled: !!chainId,
+        staleTime: 30_000,
+    });
+}
+
+function invalidateOnTxMutation(qc: ReturnType<typeof useQueryClient>) {
+    qc.invalidateQueries({ queryKey: ["transactions"] });
+    qc.invalidateQueries({ queryKey: ["snapshots"] });
+    qc.invalidateQueries({ queryKey: ["accounts"] });
+}
+
+export function useCreateTransaction() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: TransactionCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean; snapshot_ids: string[] }>("/v1/web/transactions", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+export function useCreateChain() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: ChainCreatePayload) =>
+            apiFetch<{ ok: true; chain_id: string; transaction_ids: string[]; snapshot_ids: string[] }>("/v1/web/chains", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+export function useDeleteTransaction() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            apiFetch<{ ok: true; deleted: boolean; deleted_snapshots: number }>(`/v1/web/transactions/${id}`, { method: "DELETE" }),
+        onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+export function useDeleteChain() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (chainId: string) =>
+            apiFetch<{ ok: true; deleted_transactions: number; deleted_snapshots: number }>(`/v1/web/chains/${chainId}`, { method: "DELETE" }),
+        onSuccess: () => { invalidateOnTxMutation(qc); },
     });
 }

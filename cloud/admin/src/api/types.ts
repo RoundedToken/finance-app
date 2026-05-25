@@ -44,7 +44,8 @@ export interface Snapshot {
     account_id: string;
     amount: number;
     note: string | null;
-    source: string;
+    source: string;               // 'manual' | 'auto_transaction'
+    transaction_id: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -231,4 +232,69 @@ export interface ContributionUpdatePayload {
     currency_code?: string;
     account_id?: string | null;
     note?: string | null;
+}
+
+export type TransactionType = "exchange" | "transfer";
+
+export interface Transaction {
+    id: string;
+    type: TransactionType;
+    date: string;
+    from_account_id: string;
+    to_account_id: string;
+    from_amount: number;
+    from_currency: string;
+    to_amount: number;
+    to_currency: string;
+    fee_amount: number | null;
+    fee_currency: string | null;
+    note: string | null;
+    chain_id: string | null;
+    chain_sequence: number | null;
+    goal_id: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface TransactionsResponse {
+    transactions: Transaction[];
+}
+
+export interface ChainDetail {
+    chain_id: string;
+    transactions: Transaction[];
+    initial: { account_id: string; amount: number; currency: string } | null;
+    final: { account_id: string; amount: number; currency: string } | null;
+    effective_rate: number | null;
+    step_count: number;
+}
+
+export interface TransactionCreatePayload {
+    id?: string;
+    type: TransactionType;
+    date: string;
+    from_account_id: string;
+    to_account_id: string;
+    from_amount: number;
+    to_amount: number;
+    fee_amount?: number | null;
+    fee_currency?: string | null;
+    note?: string | null;
+}
+
+export interface ChainStepPayload {
+    type: TransactionType;
+    from_account_id: string;
+    to_account_id: string;
+    from_amount: number;
+    to_amount: number;
+    fee_amount?: number | null;
+    fee_currency?: string | null;
+}
+
+export interface ChainCreatePayload {
+    chain_id?: string;
+    date: string;
+    note?: string | null;
+    steps: ChainStepPayload[];
 }

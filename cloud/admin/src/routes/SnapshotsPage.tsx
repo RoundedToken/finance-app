@@ -109,6 +109,7 @@ export function SnapshotsPage() {
                                 const acc = accById.get(s.account_id);
                                 const isCash = acc?.form === "cash";
                                 const Icon = isCash ? Banknote : Coins;
+                                const isAuto = s.source === "auto_transaction";
                                 return (
                                     <tr key={s.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
                                         <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(s.date)}</td>
@@ -121,6 +122,12 @@ export function SnapshotsPage() {
                                                     <Icon className="h-3.5 w-3.5" />
                                                 </span>
                                                 <span>{acc?.name ?? s.account_id}</span>
+                                                {isAuto && (
+                                                    <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
+                                                          title="Создан автоматически при обмене/переводе. Редактировать нельзя — изменится через удаление транзакции.">
+                                                        auto
+                                                    </span>
+                                                )}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2.5 text-right num font-medium tabular-nums whitespace-nowrap">
@@ -132,12 +139,16 @@ export function SnapshotsPage() {
                                                 : <span className="text-muted-foreground italic">—</span>}
                                         </td>
                                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                            <button onClick={() => openEdit(s)} className="btn-icon" aria-label="Редактировать">
-                                                <Pencil className="h-4 w-4" />
-                                            </button>
-                                            <button onClick={() => handleDelete(s)} className="btn-icon text-destructive" aria-label="Удалить">
-                                                <Trash2 className="h-4 w-4" />
-                                            </button>
+                                            {!isAuto && (
+                                                <>
+                                                    <button onClick={() => openEdit(s)} className="btn-icon" aria-label="Редактировать">
+                                                        <Pencil className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(s)} className="btn-icon text-destructive" aria-label="Удалить">
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 );
