@@ -363,10 +363,15 @@ async def scenario_short_viewport_modal(page, base: str) -> None:
     await page.screenshot(path=str(out))
     print(f"  ✓ {out.name}")
 
-    # Прокручиваем overlay в самый низ — должны увидеть футер с кнопками.
+    # Прокручиваем scroll-container в самый низ — должны увидеть футер
+    # с кнопками. Backdrop fixed, не должен «съезжать».
     await page.evaluate("""() => {
-        const overlay = document.querySelector('.fixed.inset-0.z-50.overflow-y-auto');
-        if (overlay) overlay.scrollTop = overlay.scrollHeight;
+        const candidates = document.querySelectorAll('.overflow-y-auto');
+        for (const el of candidates) {
+            if (el.scrollHeight > el.clientHeight) {
+                el.scrollTop = el.scrollHeight;
+            }
+        }
     }""")
     await page.wait_for_timeout(150)
     out = OUT_DIR / "admin-modal-short-bottom.png"
