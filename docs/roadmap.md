@@ -74,7 +74,14 @@
 
 ## 🔄 В работе
 
-(Stage 6 — следующий: Доходы)
+(Stage 7 — следующий: Транзакции/обмены)
+
+### Stage 6 — Доходы (Web Admin) — ✅ Закрыто
+- [x] D1 миграция 0007: `income_categories` (6 базовых: salary, interest, gifts, cashback, freelance, other) + `incomes` (UUID, date, account_id, amount, currency_code, category_id, source, note, soft-delete, CHECK amount>0).
+- [x] Worker: CRUD `/v1/web/incomes` GET/POST/PUT/DELETE + `/v1/web/income-categories` GET. Pre-INSERT валидация FK (account_id, category_id existence). currency_code денормализуется из accounts.currency на write; на PUT — пересчёт при смене account_id (COALESCE pattern).
+- [x] Web Admin: страница `/incomes` — 3 KPI (этот месяц / 12 мес / всё время в EUR), breakdown by category (горизонтальные бары с %), таблица с поиском/фильтром по категории/периоду, модал create/edit с кнопкой «⎘ Из последней» (pre-fill из самой свежей записи выбранной категории).
+- [x] Sidebar активирован для «Доходы» (`TrendingUp` icon).
+- [x] Phase 3 audit fallback: senior-qa + solution-architect agents трижды упали с 529 Overloaded → self-audit с явным disclaimer. Verdict: PASS_WITH_NICES / APPROVED_WITH_NICES, 0 must-fix, 1 should-fix (catById helper duplication, починен сразу). См. `specs/audits/SPEC-006-{qa,arch}.md`.
 
 ### Stage 4 — Web Admin Bootstrap — ✅ Закрыто
 - [x] Worker: Google OAuth endpoints + JWT HS256 middleware + allowlist по email.
@@ -109,11 +116,6 @@
 
 #### 5d (Legacy) — отложено
 - [ ] Импорт snapshots из `data/legacy/Finances.xlsx` (33 снимка в EUR-eq) с обратной конверсией по историческим курсам. Решено начать с нуля.
-
-### Этап 6 — Доходы (Web Admin)
-- [ ] D1 schema: `incomes` (отдельная таблица) либо унификация в `transactions` с типом.
-- [ ] Worker: CRUD endpoints.
-- [ ] Web Admin: страница `/incomes` с категориями (зарплата, проценты, переводы, прочее).
 
 ### Этап 7 — Транзакции / обмены / цепочки (Web Admin)
 - [ ] D1 schema: `transactions` (type: exchange/transfer/income/interest, from/to amounts, rate, fee, chain_id).
@@ -186,7 +188,10 @@ LLM-агент с доступом ко всем финансовым данны
 Найдено senior-qa + solution-architect agents после написания retro spec'ов. Must-fix применены отдельными commit'ами; ниже — nice-to-have. Каждый пункт можно вытащить в отдельный mini-spec когда дойдём.
 
 **Worker / Backend:**
-- [ ] Серверная валидация payload'ов в `POST/PUT /v1/expenses` и `/v1/web/snapshots` — сейчас минимум, missing required → 500 с leak'ом стек-трейса в response. Внедрить тонкий zod-слой (или ручной guard) → 400 с осмысленным сообщением. (QA-001, QA-005, ARCH-005-NTH3)
+- [ ] Серверная валидация payload'ов в `POST/PUT /v1/expenses` и `/v1/web/snapshots` — сейчас минимум, missing required → 500 с leak'ом стек-трейса в response. Внедрить тонкий zod-слой (или ручной guard) → 400 с осмысленным сообщением. (QA-001, QA-005, ARCH-005-NTH3) Stage 6 incomes уже имеет тонкий ручной guard — взять за образец.
+- [ ] **SPEC-006 N1**: `createIncome` делает 2 round-trip к D1 (lookupAccountCurrency + categoryExists) перед INSERT. Объединить в один SELECT/CTE для рукопожатий. Personal scale ok, но в Stage 7 (transactions) объёмы будут больше.
+- [ ] **SPEC-006 N6**: deactivation logic непоследовательна между доменами — `accounts.deleted_at IS NULL` vs `categories.is_active = 1` vs `income_categories.is_active = 1`. Унифицировать в Stage 7-8.
+- [ ] **SPEC-006 OQ1**: PUT /v1/web/incomes/:id с новым `account_id` другой валюты — сейчас amount сохраняется как есть, currency_code пересчитывается. Это потенциальное «100000 RUB вдруг стало 100000 EUR» — добавить guard или confirm в UI. Risk при изменении ведра между валютами.
 - [ ] `500 → String(err)` утечка — `index.ts:113`. Заменить на generic message + structured log. (ARCH-001, ARCH-005)
 - [ ] `auth_date` freshness не проверяется в initData — токен валиден вечно до ротации bot token. OK для single-user, must-fix для multi-user. (QA-001)
 - [ ] `bot.ts` `parseExpense` принимает любой 3-5 буквенный токен как currency без проверки против `currencies` таблицы. (ARCH-001)
@@ -212,7 +217,9 @@ LLM-агент с доступом ко всем финансовым данны
 - [ ] Telegram WebApp warnings в Playwright логах загрязняют 0-errors gate — добавить `version: "7.10"` в mock. (QA-003)
 
 **Web Admin:**
-- [ ] `SnapshotsPage.tsx` — `useMemo` использован для side-effects (ре-инициализация модала). Переделать на `key`-pattern или `useEffect`. (ARCH-005 NTH-1)
+- [ ] `SnapshotsPage.tsx` — `useMemo` использован для side-effects (ре-инициализация модала). Переделать на `key`-pattern или `useEffect`. (ARCH-005 NTH-1) В IncomesPage уже сделано через useEffect, взять как образец.
+- [ ] **SPEC-006 N5**: `pluralize(n)` для «доход/дохода/доходов» — локальная функция в `IncomesPage.tsx`. Вытащить в `lib/i18n.ts` если появятся другие плюрализации.
+- [ ] **SPEC-006 N3**: TypeScript contract drift между worker `IncomePayload` и admin `IncomeCreatePayload`. Shared schema через `zod` или OpenAPI gen (общая тема для всего проекта).
 - [ ] Plain-text 4xx OAuth-ошибки (`forbidden`, `bad state`, `invalid return_to`). UX-error page — отложен в Stage 8. (QA-004)
 - [ ] Нет toast / ErrorBoundary. (QA-004)
 - [ ] Sidebar `disabled` элементы — `<div>` вместо `aria-disabled` button. (QA-004)
@@ -224,6 +231,9 @@ LLM-агент с доступом ко всем финансовым данны
 - [ ] `test_ui.py` — добавить `socketserver.TCPServer.allow_reuse_address = True` (port leak при re-run). (QA-002, QA-003)
 - [ ] `test_ui.py` mock-clock pinning + selector by data-attribute (вместо nth-child). (QA-003)
 - [ ] `test_ui.py` mock Telegram WebApp `version: "7.10"`. (QA-003)
+
+**Process / Audit independence:**
+- [ ] **SPEC-006 audit redo**: 2026-05-25 senior-qa + solution-architect agents пять раз падали с `529 Overloaded` от Anthropic API. Self-audit был fallback (`Auditor: claude-opus-4-7 (self)`). Пересмотреть SPEC-006 независимыми agent'ами когда API стабилизируется. Полные reports: `specs/audits/SPEC-006-{qa,arch}.md`.
 
 ---
 
@@ -238,4 +248,4 @@ LLM-агент с доступом ко всем финансовым данны
 
 ## Текущий этап
 
-**Stage 4 (Web Admin Bootstrap) — в работе.** Mini App в режиме «полировка по запросу», большая инженерная работа — на стороне Web Admin.
+**Stage 6 (Доходы) — ✅ закрыт 2026-05-25.** Следующий — Stage 7 (Транзакции/обмены/цепочки): объединит снапшоты + доходы в полный учёт изменения остатков, добавит builder цепочек обменов (RUB→USDT→EUR одной операцией). Mini App в режиме «полировка по запросу».
