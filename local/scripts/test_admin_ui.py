@@ -115,6 +115,25 @@ GOALS = [
      "created_at": "2025-09-01 10:00:00", "updated_at": "2026-05-20 11:00:00"},
 ]
 
+TRANSACTIONS = [
+    {"id": "tx1", "type": "exchange", "date": "2026-05-25",
+     "from_account_id": "rub-bank", "to_account_id": "usdt",
+     "from_amount": 100000, "from_currency": "RUB",
+     "to_amount": 1212.12, "to_currency": "USDT",
+     "fee_amount": None, "fee_currency": None,
+     "note": "через Garantex P2P",
+     "chain_id": None, "chain_sequence": None, "goal_id": None,
+     "created_at": "2026-05-25 10:00:00", "updated_at": "2026-05-25 10:00:00"},
+    {"id": "tx2", "type": "transfer", "date": "2026-05-22",
+     "from_account_id": "rub-bank", "to_account_id": "acc_money_ok_rsd",
+     "from_amount": 5000, "from_currency": "RUB",
+     "to_amount": 5000, "to_currency": "RUB",
+     "fee_amount": None, "fee_currency": None,
+     "note": "снял наличкой",
+     "chain_id": None, "chain_sequence": None, "goal_id": None,
+     "created_at": "2026-05-22 14:00:00", "updated_at": "2026-05-22 14:00:00"},
+]
+
 GOAL_DETAIL = {
     "g1": {
         "goal": GOALS[0],
@@ -240,6 +259,9 @@ async def setup_mocks(page, base: str) -> None:
                                            body=json.dumps(detail))
             return await route.fulfill(status=404, content_type="application/json",
                                        body=json.dumps({"error": "not found"}))
+        if "/v1/web/transactions" in url and method == "GET":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps({"transactions": TRANSACTIONS}))
         if "/v1/web/goals" in url and method == "GET":
             # Фильтр status из query
             status = "active"
@@ -458,6 +480,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
             await scenario_goals_list(page, base)
             await scenario_goal_detail(page, base)
+            await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
             await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 

@@ -1,4 +1,4 @@
--- D1 schema (текущий снапшот после миграций 0001-0008).
+-- D1 schema (текущий снапшот после миграций 0001-0009).
 -- Source of truth для всех финансовых данных (ADR-011).
 -- Для свежей базы — применить этот файл; для существующей — миграции из migrations/.
 
@@ -75,21 +75,50 @@ CREATE TABLE IF NOT EXISTS rates (
 );
 CREATE INDEX IF NOT EXISTS idx_rates_quote_date ON rates(quote, date);
 
--- ─── Снапшоты балансов (Stage 5) ──────────────────────────────────────────
+-- ─── Снапшоты балансов (Stage 5; +transaction_id Stage 7.5) ───────────────
 CREATE TABLE IF NOT EXISTS snapshots (
-    id          TEXT PRIMARY KEY,                -- UUID v4
-    date        TEXT NOT NULL,                    -- YYYY-MM-DD
-    account_id  TEXT NOT NULL REFERENCES accounts(id),
-    amount      REAL NOT NULL,                    -- в native currency аккаунта
-    note        TEXT,
-    source      TEXT NOT NULL DEFAULT 'manual',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    deleted_at  TEXT
+    id              TEXT PRIMARY KEY,
+    date            TEXT NOT NULL,
+    account_id      TEXT NOT NULL REFERENCES accounts(id),
+    amount          REAL NOT NULL,
+    note            TEXT,
+    source          TEXT NOT NULL DEFAULT 'manual',         -- 'manual' | 'auto_transaction'
+    transaction_id  TEXT REFERENCES transactions(id),       -- Stage 7.5: cascade soft-delete
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_date         ON snapshots(date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_account_date ON snapshots(account_id, date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_active_date  ON snapshots(date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_snapshots_transaction  ON snapshots(transaction_id);
+
+-- ─── Транзакции (Stage 7.5) ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS transactions (
+    id               TEXT PRIMARY KEY,
+    type             TEXT NOT NULL CHECK (type IN ('exchange','transfer')),
+    date             TEXT NOT NULL,
+    from_account_id  TEXT NOT NULL REFERENCES accounts(id),
+    to_account_id    TEXT NOT NULL REFERENCES accounts(id),
+    from_amount      REAL NOT NULL CHECK (from_amount > 0),
+    from_currency    TEXT NOT NULL REFERENCES currencies(code),
+    to_amount        REAL NOT NULL CHECK (to_amount > 0),
+    to_currency      TEXT NOT NULL REFERENCES currencies(code),
+    fee_amount       REAL CHECK (fee_amount IS NULL OR fee_amount >= 0),
+    fee_currency     TEXT REFERENCES currencies(code),
+    note             TEXT,
+    chain_id         TEXT,
+    chain_sequence   INTEGER,
+    goal_id          TEXT REFERENCES goals(id),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_date    ON transactions(date);
+CREATE INDEX IF NOT EXISTS idx_transactions_chain   ON transactions(chain_id, chain_sequence);
+CREATE INDEX IF NOT EXISTS idx_transactions_from    ON transactions(from_account_id, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_to      ON transactions(to_account_id, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_active  ON transactions(date) WHERE deleted_at IS NULL;
 
 -- ─── Категории доходов (Stage 6) ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS income_categories (

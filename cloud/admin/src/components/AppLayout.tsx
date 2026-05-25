@@ -18,7 +18,7 @@ const NAV: NavItem[] = [
     { to: "/expenses", icon: ListChecks, label: "Расходы" },
     { to: "/incomes", icon: TrendingUp, label: "Доходы" },
     { to: "/goals", icon: Target, label: "Цели" },
-    { to: "/transactions", icon: ArrowRightLeft, label: "Обмены", disabled: true },
+    { to: "/transactions", icon: ArrowRightLeft, label: "Обмены" },
 ];
 
 export function AppLayout() {
