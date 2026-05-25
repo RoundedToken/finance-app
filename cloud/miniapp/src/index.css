@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        color-scheme: light dark;
+    }
+    html, body, #root {
+        height: 100%;
+    }
+    body {
+        margin: 0;
+        background: theme(colors.bg);
+        color: theme(colors.text);
+        font-family: theme(fontFamily.sans);
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior: none;
+        /* безопасные зоны iOS (notch / home indicator) */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    /* убрать синюю подсветку тапа на iOS */
+    * { -webkit-tap-highlight-color: transparent; }
+    button { font: inherit; color: inherit; }
+}
+
+@layer utilities {
+    .num { font-variant-numeric: tabular-nums; }
+    .no-select { -webkit-user-select: none; user-select: none; }
+}
