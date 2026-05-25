@@ -86,10 +86,23 @@ INCOMES = [
 
 RATES = {"date": "2026-05-24", "base": "EUR", "quotes": {"USD": 1.16, "RSD": 117.41, "RUB": 82.63, "USDT": 1.16, "EUR": 1.0, "TRY": 39.5}}
 
-EXPENSES = []  # пока пусто; страница /expenses не цель этого теста
+EXPENSES = [
+    {"id": "e1", "user_id": "u", "date": "2026-05-25", "account_id": "acc_money_ok_rsd", "amount": 450,  "currency": "RSD",  "category_id": "groceries", "note": "Maxi",      "source": "mini_app", "created_at": "2026-05-25 10:00:00", "updated_at": "2026-05-25 10:00:00"},
+    {"id": "e2", "user_id": "u", "date": "2026-05-24", "account_id": "acc_money_ok_rsd", "amount": 1200, "currency": "RSD",  "category_id": "cafe",      "note": "Lavazza",   "source": "mini_app", "created_at": "2026-05-24 14:00:00", "updated_at": "2026-05-24 14:00:00"},
+    {"id": "e3", "user_id": "u", "date": "2026-05-22", "account_id": "acc_money_ok_rsd", "amount": 280,  "currency": "RSD",  "category_id": "transport","note": "Метро",      "source": "mini_app", "created_at": "2026-05-22 09:00:00", "updated_at": "2026-05-22 09:00:00"},
+    {"id": "e4", "user_id": "u", "date": "2026-05-20", "account_id": "acc_money_ok_rsd", "amount": 2800, "currency": "RSD",  "category_id": "food",      "note": "Ужин",       "source": "mini_app", "created_at": "2026-05-20 19:00:00", "updated_at": "2026-05-20 19:00:00"},
+    {"id": "e5", "user_id": "u", "date": "2026-05-18", "account_id": "acc_money_ok_rsd", "amount": 850,  "currency": "RSD",  "category_id": "groceries", "note": "Idea",      "source": "mini_app", "created_at": "2026-05-18 11:00:00", "updated_at": "2026-05-18 11:00:00"},
+    {"id": "e6", "user_id": "u", "date": "2026-05-10", "account_id": "acc_money_ok_rsd", "amount": 4500, "currency": "RSD",  "category_id": "entertainment","note": "Кино",  "source": "mini_app", "created_at": "2026-05-10 20:00:00", "updated_at": "2026-05-10 20:00:00"},
+    {"id": "e7", "user_id": "u", "date": "2026-04-28", "account_id": "acc_money_ok_rsd", "amount": 1100, "currency": "RSD",  "category_id": "food",      "note": "Доставка",   "source": "mini_app", "created_at": "2026-04-28 13:00:00", "updated_at": "2026-04-28 13:00:00"},
+    {"id": "e8", "user_id": "u", "date": "2026-04-15", "account_id": "acc_money_ok_rsd", "amount": 600,  "currency": "RSD",  "category_id": "transport","note": "Такси",     "source": "mini_app", "created_at": "2026-04-15 22:00:00", "updated_at": "2026-04-15 22:00:00"},
+]
 
 CATEGORIES = [
-    {"id": "food", "name": "Еда", "type": "expense", "parent_id": None, "emoji": "🍔", "color": "#FFB199", "sort_order": 10, "is_active": 1},
+    {"id": "food",          "name": "Еда",          "type": "expense", "parent_id": None, "emoji": "🍔", "color": "#FFB199", "sort_order": 10, "is_active": 1},
+    {"id": "groceries",     "name": "Продукты",     "type": "expense", "parent_id": None, "emoji": "🛒", "color": "#B5E3C5", "sort_order": 20, "is_active": 1},
+    {"id": "cafe",          "name": "Кафе",         "type": "expense", "parent_id": None, "emoji": "☕", "color": "#D7B894", "sort_order": 30, "is_active": 1},
+    {"id": "transport",     "name": "Транспорт",    "type": "expense", "parent_id": None, "emoji": "🚗", "color": "#A8C8F0", "sort_order": 40, "is_active": 1},
+    {"id": "entertainment", "name": "Развлечения",  "type": "expense", "parent_id": None, "emoji": "🎬", "color": "#C9A8E8", "sort_order": 50, "is_active": 1},
 ]
 
 CURRENCIES = [
@@ -255,6 +268,17 @@ async def scenario_period_prev_month(page, base: str) -> None:
     print(f"  ✓ {out.name}")
 
 
+async def scenario_expenses_week(page, base: str) -> None:
+    """Expenses page: переключиться на «Нед» — новый таб."""
+    await page.goto(f"{base}/expenses", wait_until="networkidle")
+    await page.wait_for_selector("text=Расходы", timeout=5000)
+    await page.get_by_role("button", name="Нед", exact=True).click()
+    await page.wait_for_timeout(200)
+    out = OUT_DIR / "admin-expenses-week.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
 async def scenario_period_custom(page, base: str) -> None:
     """Custom range: открыть «Период» — должны появиться date inputs."""
     await page.goto(f"{base}/incomes", wait_until="networkidle")
@@ -320,6 +344,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/accounts", "admin-accounts.png", "Счета")
             await scenario_full_page(page, base, "/snapshots", "admin-snapshots.png", "Снапшоты")
             await scenario_full_page(page, base, "/expenses", "admin-expenses.png", "Расходы")
+            await scenario_expenses_week(page, base)
             await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
             await scenario_sidebar_navigation(page, base)
 
