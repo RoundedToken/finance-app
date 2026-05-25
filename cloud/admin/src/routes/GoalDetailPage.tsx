@@ -56,9 +56,10 @@ export function GoalDetailPage() {
     }
 
     const { goal, contributions } = data;
-    const ccy = goal.target_currency ?? "EUR";
+    const ccy = goal.target_currency;
+    const needsCurrency = !ccy;
     const color = goal.color ?? "#94a3b8";
-    const hasTarget = goal.target_amount != null && goal.target_amount > 0;
+    const hasTarget = !!ccy && goal.target_amount != null && goal.target_amount > 0;
     const percent = hasTarget ? Math.min(100, (goal.balance / goal.target_amount!) * 100) : null;
     const overdue = goal.deadline && goal.deadline < todayISO() && goal.status === "active";
     const daysToDeadline = goal.deadline ? Math.round((new Date(goal.deadline).getTime() - Date.now()) / 86_400_000) : null;
@@ -138,12 +139,22 @@ export function GoalDetailPage() {
                     </div>
                 </div>
 
-                {hasTarget ? (
+                {needsCurrency ? (
+                    <div className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+                        <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-px" />
+                        <div>
+                            <div className="font-medium text-amber-700 dark:text-amber-300">Валюта цели не задана</div>
+                            <div className="text-amber-700/80 dark:text-amber-200/80 mt-1">
+                                Эта цель создана до того, как валюта стала обязательной. Открой <Pencil className="h-3 w-3 inline mb-0.5" /> редактирование и выбери валюту — пересчитаем баланс корректно.
+                            </div>
+                        </div>
+                    </div>
+                ) : hasTarget ? (
                     <div className="space-y-2">
                         <div className="flex items-baseline justify-between flex-wrap gap-2">
                             <div className="text-2xl font-semibold num tabular-nums">
-                                {formatAmount(goal.balance, ccy)} <span className="text-muted-foreground text-base">/ {formatAmount(goal.target_amount!, ccy)}</span>{" "}
-                                <Currency code={ccy} size="sm" />
+                                {formatAmount(goal.balance, ccy!)} <span className="text-muted-foreground text-base">/ {formatAmount(goal.target_amount!, ccy!)}</span>{" "}
+                                <Currency code={ccy!} size="sm" />
                             </div>
                             <div className="text-sm text-muted-foreground tabular-nums">{percent!.toFixed(1)}%</div>
                         </div>
@@ -153,7 +164,7 @@ export function GoalDetailPage() {
                     </div>
                 ) : (
                     <div className="text-2xl font-semibold num tabular-nums">
-                        {formatAmount(goal.balance, ccy)} <Currency code={ccy} size="sm" />
+                        {formatAmount(goal.balance, ccy!)} <Currency code={ccy!} size="sm" />
                     </div>
                 )}
 
@@ -204,7 +215,7 @@ export function GoalDetailPage() {
                 )}
             </div>
 
-            <ContributionModal open={contribOpen} onClose={() => setContribOpen(false)} goalId={goal.id} defaultCurrency={ccy} />
+            <ContributionModal open={contribOpen} onClose={() => setContribOpen(false)} goalId={goal.id} defaultCurrency={ccy ?? "EUR"} />
             <GoalEditModal open={editOpen} onClose={() => setEditOpen(false)} goal={goal} />
         </div>
     );

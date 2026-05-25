@@ -86,16 +86,16 @@ function convertVia(amount: number, from: string, to: string, rates: Record<stri
 
 export async function validateGoalPayload(env: Env, payload: GoalPayload): Promise<Result> {
     if (!payload.name || !payload.name.trim()) return { ok: false, error: "name is required" };
+    // target_currency обязательно — без него балансы из разных валют
+    // некуда сводить (см. SPEC-007 §11 R3).
+    if (!payload.target_currency) return { ok: false, error: "target_currency is required" };
+    if (!(await currencyExists(env, payload.target_currency))) {
+        return { ok: false, error: "unknown target_currency" };
+    }
     if (payload.target_amount != null) {
         if (typeof payload.target_amount !== "number" || payload.target_amount <= 0) {
             return { ok: false, error: "target_amount must be positive" };
         }
-        if (!payload.target_currency) {
-            return { ok: false, error: "target_currency required when target_amount is set" };
-        }
-    }
-    if (payload.target_currency != null && !(await currencyExists(env, payload.target_currency))) {
-        return { ok: false, error: "unknown target_currency" };
     }
     if (payload.deadline != null && payload.deadline !== "" && !ISO_DATE.test(payload.deadline)) {
         return { ok: false, error: "deadline must be YYYY-MM-DD" };
@@ -168,7 +168,10 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
             if (!goal) continue;
             const acc = balances.get(row.goal_id)!;
             acc.count += 1;
-            const target = goal.target_currency ?? row.currency_code;
+            // После SPEC-007 invariant fix target_currency required. Для старых
+            // записей без него — конверсия в EUR (нейтральный знаменатель), а
+            // на фронте такая goal помечается как «требует редактирования».
+            const target = goal.target_currency ?? "EUR";
             const conv = convertVia(row.amount, row.currency_code, target, rates);
             if (conv == null) acc.missing += 1;
             else acc.sum += conv;
