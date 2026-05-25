@@ -10,6 +10,8 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useExpenses, useReferences } from "@/api/queries";
+import { Currency } from "@/components/Currency";
+import { Select } from "@/components/Select";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Expense } from "@/api/types";
 
@@ -92,8 +94,8 @@ export function ExpensesPage() {
             cell: info => {
                 const r = info.row.original;
                 return (
-                    <span className="num font-medium tabular-nums">
-                        {formatAmount(r.amount, r.currency)} <span className="text-muted-foreground">{r.currency}</span>
+                    <span className="num font-medium tabular-nums whitespace-nowrap inline-flex items-center gap-1">
+                        {formatAmount(r.amount, r.currency)} <Currency code={r.currency} />
                     </span>
                 );
             },
@@ -105,9 +107,9 @@ export function ExpensesPage() {
             cell: info => {
                 const v = info.getValue() ?? 0;
                 if (!v) return <span className="text-muted-foreground">—</span>;
-                return <span className="num text-muted-foreground tabular-nums">{formatAmount(v, "EUR")}</span>;
+                return <span className="num text-muted-foreground tabular-nums whitespace-nowrap inline-flex items-center gap-1">{formatAmount(v, "EUR")} <Currency code="EUR" size="xs" /></span>;
             },
-            size: 130,
+            size: 150,
             sortDescFirst: true,
         }),
         columnHelper.accessor("account_name", {
@@ -167,30 +169,33 @@ export function ExpensesPage() {
                         className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <Select value={periodFilter} onChange={v => setPeriodFilter(v as any)}
-                    options={[
-                        { v: "all", l: "За всё время" },
-                        { v: "month", l: "Этот месяц" },
-                        { v: "30d", l: "Последние 30 дней" },
-                        { v: "90d", l: "Последние 90 дней" },
-                        { v: "ytd", l: "С начала года" },
-                    ]} />
-                <Select value={categoryFilter} onChange={setCategoryFilter} placeholder="Все категории"
-                    options={[{ v: "", l: "Все категории" }, ...categories.map(c => ({ v: c.id, l: `${c.emoji ?? ""} ${c.name}` }))]} />
-                <Select value={currencyFilter} onChange={setCurrencyFilter} placeholder="Все валюты"
-                    options={[{ v: "", l: "Все валюты" }, ...currencies.map(c => ({ v: c.code, l: c.code }))]} />
+                <Select value={periodFilter} onChange={e => setPeriodFilter(e.target.value as any)} aria-label="Период">
+                    <option value="all">За всё время</option>
+                    <option value="month">Этот месяц</option>
+                    <option value="30d">Последние 30 дней</option>
+                    <option value="90d">Последние 90 дней</option>
+                    <option value="ytd">С начала года</option>
+                </Select>
+                <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} aria-label="Категория">
+                    <option value="">Все категории</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.emoji ?? ""} {c.name}</option>)}
+                </Select>
+                <Select value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)} aria-label="Валюта">
+                    <option value="">Все валюты</option>
+                    {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code}</option>)}
+                </Select>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <Stat label="Записей" value={filtered.length.toLocaleString("ru-RU")} />
-                <Stat label="Сумма (EUR-эквив)" value={formatAmount(totalEur, "EUR", { withSymbol: true })} />
+                <Stat label="Сумма (EUR-эквив)" value={<><span>{formatAmount(totalEur, "EUR")}</span> <Currency code="EUR" /></>} />
                 <Stat
                     label="В исходных валютах"
                     value={
                         <div className="flex flex-wrap gap-x-3 gap-y-1">
                             {byCurrency.slice(0, 3).map(([ccy, sum]) => (
-                                <span key={ccy} className="text-sm num">
-                                    {formatAmount(sum, ccy)} <span className="text-muted-foreground">{ccy}</span>
+                                <span key={ccy} className="text-sm num inline-flex items-center gap-1">
+                                    {formatAmount(sum, ccy)} <Currency code={ccy} />
                                 </span>
                             ))}
                         </div>
@@ -262,26 +267,6 @@ function filterByPeriod<T extends { date: string }>(rows: T[], period: "30d" | "
     else from = new Date(now.getFullYear(), now.getMonth(), 1);
     const fromISO = from.toISOString().slice(0, 10);
     return rows.filter(r => r.date >= fromISO);
-}
-
-interface SelectOption { v: string; l: string }
-interface SelectProps {
-    value: string;
-    onChange: (v: string) => void;
-    options: SelectOption[];
-    placeholder?: string;
-}
-
-function Select({ value, onChange, options }: SelectProps) {
-    return (
-        <select
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[10rem]"
-        >
-            {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-        </select>
-    );
 }
 
 interface StatProps { label: string; value: React.ReactNode }

@@ -232,6 +232,16 @@ async def scenario_modal_open(page, base: str) -> None:
     await page.wait_for_timeout(200)
 
 
+async def scenario_full_page(page, base: str, route: str, fname: str, label: str) -> None:
+    """Открыть route и сделать full-page скриншот."""
+    await page.goto(f"{base}{route}", wait_until="networkidle")
+    await page.wait_for_selector(f"text={label}", timeout=5000)
+    await page.wait_for_timeout(300)
+    out = OUT_DIR / fname
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
 async def scenario_sidebar_navigation(page, base: str) -> None:
     """Sidebar active state: переключаемся по 4 пунктам, делаем 4 скриншота."""
     pages = [
@@ -270,6 +280,10 @@ async def run(headed: bool) -> int:
             print("running scenarios:")
             await scenario_incomes_initial(page, base)
             await scenario_modal_open(page, base)
+            await scenario_full_page(page, base, "/accounts", "admin-accounts.png", "Счета")
+            await scenario_full_page(page, base, "/snapshots", "admin-snapshots.png", "Снапшоты")
+            await scenario_full_page(page, base, "/expenses", "admin-expenses.png", "Расходы")
+            await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
             await scenario_sidebar_navigation(page, base)
 
             await browser.close()

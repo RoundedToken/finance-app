@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Wallet, TrendingDown, Clock, ListChecks } from "lucide-react";
 import { useExpenses, useReferences } from "@/api/queries";
+import { Currency } from "@/components/Currency";
 import { formatAmount } from "@/lib/utils";
 
 export function DashboardPage() {
@@ -51,9 +52,9 @@ export function DashboardPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <KpiCard icon={ListChecks} label="Всего трат" value={String(stats.total)} sub="за всё время" />
-                    <KpiCard icon={TrendingDown} label="В этом месяце" value={formatAmount(stats.monthSum, stats.base, { withSymbol: true })} sub="EUR-эквивалент" tone="negative" />
-                    <KpiCard icon={Wallet} label="За 30 дней" value={formatAmount(stats.last30Sum, stats.base, { withSymbol: true })} sub="EUR-эквивалент" />
-                    <KpiCard icon={Clock} label="Первая запись" value={stats.earliest ? new Date(stats.earliest).toLocaleDateString("ru-RU", { year: "numeric", month: "short", day: "2-digit" }) : "—"} sub="старт истории" />
+                    <KpiCard icon={TrendingDown} label="В этом месяце" value={<><span>{formatAmount(stats.monthSum, stats.base)}</span> <Currency code={stats.base} /></>} sub="EUR-эквивалент" tone="negative" />
+                    <KpiCard icon={Wallet} label="За 30 дней" value={<><span>{formatAmount(stats.last30Sum, stats.base)}</span> <Currency code={stats.base} /></>} sub="EUR-эквивалент" />
+                    <KpiCard icon={Clock} label="Первая запись" value={stats.earliest ? new Date(stats.earliest).toLocaleDateString("ru-RU", { year: "numeric", month: "2-digit", day: "2-digit" }) : "—"} sub="старт истории" />
                 </div>
             )}
 
@@ -71,7 +72,7 @@ export function DashboardPage() {
 interface KpiCardProps {
     icon: typeof Wallet;
     label: string;
-    value: string;
+    value: React.ReactNode;
     sub?: string;
     tone?: "default" | "positive" | "negative";
 }
