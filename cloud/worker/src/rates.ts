@@ -1,10 +1,15 @@
 /**
- * Currency rates. Источник: open.er-api.com (бесплатно, без ключа).
- * EUR — фиксированная база, остальные валюты конвертируются через неё.
+ * Currency rates. Источник: Google Sheets с формулами GOOGLEFINANCE (ADR-006).
+ * Worker фетчит опубликованный CSV (anyone-with-link), парсит две строки
+ * (header + values) и пишет в D1. EUR — фиксированная база.
+ *
+ * Ожидаемый формат CSV (лист `latest`):
+ *   date,EURUSD,EURRUB,EURRSD,EURUSDT
+ *   2026-05-24,1.1604,82.63,117.41,1.1604
  */
 import type { Env } from "./types";
 
-const SYMBOLS = ["USD", "RUB", "RSD", "USDT"];  // что хранить из всех returned
+const RATE_SOURCE = "google-sheets";
 
 export interface FetchedRates {
     base: string;
@@ -12,31 +17,47 @@ export interface FetchedRates {
     rates: Record<string, number>;
 }
 
-export async function fetchLatestRatesEUR(): Promise<FetchedRates> {
-    const r = await fetch("https://open.er-api.com/v6/latest/EUR", {
-        cf: { cacheTtl: 1800 } as any,
-    });
+export async function fetchLatestRatesEUR(env: Env): Promise<FetchedRates> {
+    const url = env.GOOGLE_RATES_LATEST_CSV;
+    if (!url) throw new Error("GOOGLE_RATES_LATEST_CSV not configured");
+
+    const r = await fetch(url, { cf: { cacheTtl: 1800 } as any });
     if (!r.ok) throw new Error(`rates fetch http ${r.status}`);
-    const data = await r.json() as any;
-    if (data.result !== "success") throw new Error("rates fetch result != success");
-    const date = data.time_last_update_utc
-        ? new Date(data.time_last_update_utc).toISOString().slice(0, 10)
-        : new Date().toISOString().slice(0, 10);
-    return { base: "EUR", date, rates: data.rates ?? {} };
+    const text = await r.text();
+
+    const { date, rates } = parseLatestCsv(text);
+    return { base: "EUR", date, rates };
+}
+
+/** Парсит CSV из листа `latest`. Возвращает дату и map quote→rate. */
+export function parseLatestCsv(text: string): { date: string; rates: Record<string, number> } {
+    const lines = text.replace(/\r/g, "").trim().split("\n");
+    if (lines.length < 2) throw new Error("rates csv: not enough rows");
+    const header = lines[0].split(",").map(s => s.trim());
+    const values = lines[1].split(",").map(s => s.trim());
+    if (header[0].toLowerCase() !== "date") throw new Error("rates csv: first column must be 'date'");
+
+    const date = values[0]; // ожидается YYYY-MM-DD из =TEXT(TODAY(),"YYYY-MM-DD")
+    const rates: Record<string, number> = {};
+    for (let i = 1; i < header.length; i++) {
+        const col = header[i];                     // например "EURUSD"
+        const quote = col.startsWith("EUR") ? col.slice(3) : col;
+        const raw = values[i];
+        const num = parseFloat(raw);
+        if (isFinite(num) && num > 0) rates[quote] = num;
+    }
+    return { date, rates };
 }
 
 export async function saveRates(env: Env, payload: FetchedRates): Promise<number> {
     const stmts = [];
-    for (const q of SYMBOLS) {
-        let rate = payload.rates[q];
-        // USDT pegged ≈ USD, если провайдер его не вернул
-        if (q === "USDT" && rate == null) rate = payload.rates["USD"];
-        if (rate == null || !isFinite(rate)) continue;
+    for (const [quote, rate] of Object.entries(payload.rates)) {
+        if (!isFinite(rate) || rate <= 0) continue;
         stmts.push(
             env.DB.prepare(
                 "INSERT OR REPLACE INTO rates (date, base, quote, rate, source, fetched_at) " +
-                "VALUES (?, ?, ?, ?, 'open-er-api', datetime('now'))",
-            ).bind(payload.date, payload.base, q, rate),
+                "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+            ).bind(payload.date, payload.base, quote, rate, RATE_SOURCE),
         );
     }
     if (!stmts.length) return 0;

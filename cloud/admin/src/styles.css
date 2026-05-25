@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 220 17% 99%;
+        --foreground: 224 71% 4%;
+        --card: 220 17% 100%;
+        --card-foreground: 224 71% 4%;
+        --popover: 220 17% 100%;
+        --popover-foreground: 224 71% 4%;
+        --primary: 158 64% 40%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 14% 96%;
+        --secondary-foreground: 224 71% 4%;
+        --muted: 220 14% 96%;
+        --muted-foreground: 220 8% 46%;
+        --accent: 220 14% 96%;
+        --accent-foreground: 224 71% 4%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 220 13% 91%;
+        --input: 220 13% 91%;
+        --ring: 158 64% 40%;
+        --positive: 158 64% 40%;
+        --negative: 0 84% 60%;
+        --radius: 0.75rem;
+    }
+
+    .dark {
+        --background: 222 18% 8%;
+        --foreground: 210 20% 96%;
+        --card: 222 18% 10%;
+        --card-foreground: 210 20% 96%;
+        --popover: 222 18% 10%;
+        --popover-foreground: 210 20% 96%;
+        --primary: 158 64% 52%;
+        --primary-foreground: 222 18% 8%;
+        --secondary: 222 14% 16%;
+        --secondary-foreground: 210 20% 96%;
+        --muted: 222 14% 16%;
+        --muted-foreground: 215 14% 65%;
+        --accent: 222 14% 16%;
+        --accent-foreground: 210 20% 96%;
+        --destructive: 0 70% 60%;
+        --destructive-foreground: 210 20% 96%;
+        --border: 222 12% 20%;
+        --input: 222 12% 20%;
+        --ring: 158 64% 52%;
+        --positive: 158 64% 52%;
+        --negative: 0 70% 60%;
+    }
+
+    * { @apply border-border; }
+    html, body, #root { @apply h-full; }
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    }
+}
+
+@layer components {
+    .num {
+        font-variant-numeric: tabular-nums;
+    }
+    .card {
+        @apply rounded-2xl bg-card text-card-foreground border shadow-sm;
+    }
+    .btn {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    }
+    .btn-primary { @apply btn bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2; }
+    .btn-ghost   { @apply btn hover:bg-accent hover:text-accent-foreground px-3 py-2; }
+    .btn-icon    { @apply btn h-9 w-9 hover:bg-accent; }
+}

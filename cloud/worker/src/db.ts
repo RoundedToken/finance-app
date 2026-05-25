@@ -76,7 +76,7 @@ export async function deleteExpense(env: Env, id: string, userId: string): Promi
 }
 
 export async function listExpenses(env: Env, options: { limit?: number; from?: string }): Promise<any[]> {
-    const limit = Math.min(options.limit ?? 500, 2000);
+    const limit = Math.min(options.limit ?? 10000, 20000);
     let sql = "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at, updated_at " +
               "FROM expenses WHERE deleted_at IS NULL";
     const params: any[] = [];
@@ -180,7 +180,7 @@ export async function getBootstrapData(env: Env) {
         env.DB.prepare("SELECT * FROM currencies").all(),
         env.DB.prepare(
             "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at, updated_at " +
-            "FROM expenses WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC LIMIT 500",
+            "FROM expenses WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC LIMIT 20000",
         ).all(),
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
     ]);

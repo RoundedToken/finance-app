@@ -25,6 +25,7 @@ const state = {
     amount: "0", currency: "RSD", date: todayISO(), note: "",
     catPage: 0, catsPerPage: 8,
     editingId: null, editingCategory: null,
+    statsPeriod: { type: "month", offset: 0 },
 };
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -417,6 +418,10 @@ function confirmAndDelete(id) {
     }).catch(e => toast("Ошибка: " + e.message, "err"));
 }
 
+// Сколько дней истории рендерим за раз. На iOS Telegram WebView 1800+ строк со
+// swipe-handlers крашит экран — пагинируем чанками + lazy load on scroll.
+const HISTORY_PAGE_DAYS = 30;
+
 function renderHistoryScreen() {
     const list = $("#history-list");
     list.innerHTML = "";
@@ -424,20 +429,35 @@ function renderHistoryScreen() {
         list.innerHTML = `<p class="history-hint">Пока пусто.</p>`;
         return;
     }
+    // Группируем по дате (один проход).
     const byDate = new Map();
     for (const e of state.expenses) {
         if (!byDate.has(e.date)) byDate.set(e.date, []);
         byDate.get(e.date).push(e);
     }
     const dates = [...byDate.keys()].sort((a, b) => a < b ? 1 : -1);
-    for (const d of dates) {
-        const block = document.createElement("div");
-        block.className = "day-group";
-        const items = byDate.get(d);
+    state.historyCtx = { dates, byDate, rendered: 0 };
+    renderHistoryChunk();
+}
+
+function renderHistoryChunk() {
+    const ctx = state.historyCtx;
+    if (!ctx) return;
+    const list = $("#history-list");
+    // Удалить старый sentinel/btn если есть
+    list.querySelectorAll(".history-loader").forEach(el => el.remove());
+
+    const end = Math.min(ctx.rendered + HISTORY_PAGE_DAYS, ctx.dates.length);
+    for (let i = ctx.rendered; i < end; i++) {
+        const d = ctx.dates[i];
+        const items = ctx.byDate.get(d);
         const sums = new Map();
         for (const e of items) sums.set(e.currency, (sums.get(e.currency) || 0) + e.amount);
         const totalHtml = dayTotalHTML(sums);
         const t = humanDayTitle(d);
+
+        const block = document.createElement("div");
+        block.className = "day-group";
         const head = document.createElement("div");
         head.className = "day-head";
         head.innerHTML = `
@@ -445,11 +465,44 @@ function renderHistoryScreen() {
             <span class="day-total">${totalHtml}</span>
         `;
         block.appendChild(head);
+
         const ul = document.createElement("ul");
         ul.className = "day-rows";
         for (const e of items) ul.appendChild(buildExpenseRow(e, /*swipeable*/ true));
         block.appendChild(ul);
         list.appendChild(block);
+    }
+    ctx.rendered = end;
+
+    // Sentinel + кнопка для следующего чанка
+    if (ctx.rendered < ctx.dates.length) {
+        const left = ctx.dates.length - ctx.rendered;
+        const loader = document.createElement("div");
+        loader.className = "history-loader";
+        loader.innerHTML = `
+            <button class="history-loader-btn">
+                Показать ещё <small>(дней осталось: ${left})</small>
+            </button>
+        `;
+        loader.querySelector("button").addEventListener("click", () => renderHistoryChunk());
+        list.appendChild(loader);
+
+        // Авто-подгрузка при подходе к sentinel через IntersectionObserver
+        if ("IntersectionObserver" in window) {
+            const io = new IntersectionObserver((entries) => {
+                if (entries.some(e => e.isIntersecting)) {
+                    io.disconnect();
+                    renderHistoryChunk();
+                }
+            }, { root: $("#app"), rootMargin: "200px" });
+            io.observe(loader);
+        }
+    } else if (ctx.rendered > HISTORY_PAGE_DAYS) {
+        // Опционально — финальный маркер «конец»
+        const done = document.createElement("div");
+        done.className = "history-loader history-loader-done";
+        done.textContent = "— конец истории —";
+        list.appendChild(done);
     }
 }
 
@@ -492,7 +545,7 @@ function renderSettings() {
     }
     const info = $("#settings-rates-info");
     if (state.rates.date) {
-        info.textContent = `Курсы от ${state.rates.date}, источник open.er-api.com`;
+        info.textContent = `Курсы от ${state.rates.date}, источник Google (GOOGLEFINANCE)`;
     } else {
         info.textContent = "Курсы ещё не загружены";
     }
@@ -746,7 +799,16 @@ function bindEvents() {
         const t = el.dataset.go;
         closeModals();
         if (t === "history") { renderHistoryScreen(); showScreen("history"); }
+        else if (t === "stats") { openStatsScreen(); }
     }));
+    $$("#stats-tabs button").forEach(b => b.addEventListener("click", () => {
+        state.statsPeriod = { type: b.dataset.period, offset: 0 };
+        renderStatsScreen();
+    }));
+    $("#stats-prev").addEventListener("click", () => { state.statsPeriod.offset -= 1; renderStatsScreen(); });
+    $("#stats-next").addEventListener("click", () => {
+        if (state.statsPeriod.offset < 0) { state.statsPeriod.offset += 1; renderStatsScreen(); }
+    });
     $$("[data-date-shift]").forEach(el => el.addEventListener("click", () => {
         state.date = dateShift(parseInt(el.dataset.dateShift, 10));
         renderSideActions();
@@ -793,6 +855,431 @@ async function init() {
     const def = state.accounts.find(a => a.type !== "external")?.currency || "RSD";
     state.currency = def;
     render();
+}
+
+// ───────────── Stats screen ────────────────────────────────────
+function isoDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+}
+function addDays(d, n)   { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function addMonths(d, n) { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
+function startOfWeek(d) {
+    const day = d.getDay() || 7; // Sunday → 7
+    const r = new Date(d);
+    r.setDate(d.getDate() - day + 1);
+    r.setHours(0, 0, 0, 0);
+    return r;
+}
+function pluralRu(n, forms) {
+    const a = Math.abs(n) % 100, b = a % 10;
+    if (a > 10 && a < 20) return forms[2];
+    if (b > 1 && b < 5) return forms[1];
+    if (b === 1) return forms[0];
+    return forms[2];
+}
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+function diffDaysISO(from, to) {
+    const f = new Date(from + "T00:00:00"), t = new Date(to + "T00:00:00");
+    return Math.round((t - f) / 86400000) + 1;
+}
+
+function getStatsRange(type, offset) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (type === "week") {
+        const start = addDays(startOfWeek(today), offset * 7);
+        const end = addDays(start, 6);
+        const sameMonth = start.getMonth() === end.getMonth();
+        const label = sameMonth
+            ? `${start.getDate()}–${end.getDate()} ${MONTHS_GEN[start.getMonth()]}`
+            : `${start.getDate()} ${MONTHS_GEN[start.getMonth()]} – ${end.getDate()} ${MONTHS_GEN[end.getMonth()]}`;
+        return { type, from: isoDate(start), to: isoDate(end), label };
+    }
+    if (type === "month") {
+        const ref = addMonths(today, offset);
+        const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+        const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+        const monthName = capitalize(MONTHS_GEN[ref.getMonth()].replace(/я$/, "ь").replace(/а$/, ""));
+        // Для месяцев в родительном падеже нет — берём именительный через Date#toLocaleString.
+        const label = capitalize(ref.toLocaleString("ru-RU", { month: "long", year: "numeric" }).replace(" г.", ""));
+        return { type, from: isoDate(start), to: isoDate(end), label };
+    }
+    if (type === "year") {
+        const y = today.getFullYear() + offset;
+        return { type, from: `${y}-01-01`, to: `${y}-12-31`, label: String(y) };
+    }
+    // "all"
+    if (!state.expenses.length) {
+        return { type: "all", from: isoDate(today), to: isoDate(today), label: "Всё время" };
+    }
+    const dates = state.expenses.map(e => e.date).filter(Boolean);
+    const min = dates.reduce((a, b) => a < b ? a : b);
+    const max = dates.reduce((a, b) => a > b ? a : b);
+    return { type: "all", from: min, to: max, label: "Всё время" };
+}
+
+function aggregateForPeriod(from, to) {
+    let total = 0, missing = 0, count = 0;
+    const byCat = new Map(), byDate = new Map();
+    for (const e of state.expenses) {
+        if (e.date < from || e.date > to) continue;
+        count++;
+        const c = convertToBase(e.amount, e.currency);
+        if (c == null) { missing++; continue; }
+        total += c;
+        byCat.set(e.category_id, (byCat.get(e.category_id) || 0) + c);
+        byDate.set(e.date, (byDate.get(e.date) || 0) + c);
+    }
+    return { total, missing, count, byCat, byDate };
+}
+
+// Дискриминированная палитра для charts (donut + cat list).
+// Hue-разнесённые тёплые/холодные тона при одинаковой светлоте; контрастны
+// на тёмном фоне и легко различимы между собой. Пастельные cat.color остаются
+// только для тайлов на главной.
+// Порядок цветов специально такой, что соседние индексы максимально разнесены
+// по hue — даже когда в donut выпали топ-2 (а не 8) категории, они не сливаются.
+const CHART_PALETTE = [
+    "#a78bfa", // 1. violet (hue ~270°)
+    "#fbbf24", // 2. amber  (~45°)
+    "#34d399", // 3. emerald (~160°)
+    "#fb7185", // 4. rose   (~350°)
+    "#22d3ee", // 5. cyan   (~190°)
+    "#a3e635", // 6. lime   (~80°)
+    "#f472b6", // 7. pink   (~320°)
+    "#60a5fa", // 8. sky    (~220°)
+    "#fdba74", // 9. orange (~30°)
+    "#c084fc", //10. light-purple (~280°)
+    "#86efac", //11. light-green (~140°)
+    "#fca5a5", //12. light-red   (~0°)
+];
+const CHART_OTHER = "#5a5378";   // donut «Прочее»
+const CHART_TAIL  = "#6b6494";   // tail в списке (топ-N+) — мягкий лиловый
+
+function buildStatsPalette(byCat) {
+    const items = [...byCat.entries()].sort((a, b) => b[1] - a[1]);
+    const TOP_N = 8;
+    const colorByCat = new Map();
+    items.forEach(([cid, sum], i) => {
+        colorByCat.set(cid, i < TOP_N ? CHART_PALETTE[i] : CHART_TAIL);
+    });
+    return { items, colorByCat, topIds: items.slice(0, TOP_N).map(([cid]) => cid) };
+}
+
+function openStatsScreen() { showScreen("stats"); renderStatsScreen(); }
+
+function renderStatsScreen() {
+    $$("#stats-tabs button").forEach(b => b.classList.toggle("active", b.dataset.period === state.statsPeriod.type));
+    const range = getStatsRange(state.statsPeriod.type, state.statsPeriod.offset);
+    $("#stats-period-label").textContent = range.label;
+    $("#stats-next").disabled = state.statsPeriod.offset >= 0 || range.type === "all";
+    $("#stats-prev").disabled = range.type === "all";
+
+    const agg = aggregateForPeriod(range.from, range.to);
+    let prevAgg = null;
+    if (range.type !== "all") {
+        const prevRange = getStatsRange(range.type, state.statsPeriod.offset - 1);
+        prevAgg = aggregateForPeriod(prevRange.from, prevRange.to);
+    }
+
+    const palette = buildStatsPalette(agg.byCat);
+    renderStatsKPI(agg, prevAgg, range);
+    renderStatsDonut(agg, palette);
+    renderStatsCats(agg, palette);
+    renderStatsTrend(agg, range);
+}
+
+function renderStatsKPI(agg, prevAgg, range) {
+    const el = $("#stats-kpi");
+    const flag = flagOf(state.baseCurrency);
+    if (agg.count === 0) {
+        el.innerHTML = `<div class="stats-kpi-empty">Трат в этом периоде нет</div>`;
+        return;
+    }
+    const todayStr = todayISO();
+    const days = diffDaysISO(range.from, range.to);
+    const elapsed = (range.to >= todayStr) ? diffDaysISO(range.from, todayStr) : days;
+    const avgPerDay = agg.total / Math.max(1, elapsed);
+
+    let deltaHtml = "";
+    if (prevAgg) {
+        if (prevAgg.total > 0) {
+            const pct = ((agg.total - prevAgg.total) / prevAgg.total) * 100;
+            const cls = Math.abs(pct) < 0.5 ? "flat" : (pct > 0 ? "up" : "down");
+            const arrow = cls === "flat" ? "→" : (pct > 0 ? "▲" : "▼");
+            deltaHtml = `<span class="stats-kpi-delta ${cls}" title="к прошлому периоду">${arrow} ${Math.abs(pct).toFixed(0)}%</span>`;
+        } else if (agg.total > 0) {
+            deltaHtml = `<span class="stats-kpi-delta up" title="к прошлому периоду">▲ new</span>`;
+        }
+    }
+
+    const missingHtml = agg.missing > 0
+        ? `<span style="color:var(--danger);font-weight:500;">! ${agg.missing} без курса</span>`
+        : "";
+
+    el.innerHTML = `
+        <div class="stats-kpi-total">
+            <span>${fmt(Math.round(agg.total))}</span>
+            <span class="kpi-ccy">${flag} ${state.baseCurrency}</span>
+        </div>
+        <div class="stats-kpi-meta">
+            <span>≈ ${fmt(Math.round(avgPerDay))} ${flag}/день</span>
+            <span>${agg.count} ${pluralRu(agg.count, ["трата", "траты", "трат"])}</span>
+            ${deltaHtml}
+            ${missingHtml}
+        </div>
+    `;
+}
+
+function renderStatsDonut(agg, palette) {
+    const el = $("#stats-donut");
+    el.innerHTML = "";
+    if (agg.total <= 0) {
+        el.innerHTML = `<div style="color:var(--hint);font-size:13px;padding:60px 0;">Нет данных</div>`;
+        return;
+    }
+
+    // В donut: топ-8 + Прочее (всё что вне top-N).
+    const groups = [];
+    let other = 0;
+    palette.items.forEach(([cid, sum], i) => {
+        if (palette.topIds.includes(cid)) {
+            groups.push({ id: cid, sum, color: palette.colorByCat.get(cid), name: catOf(cid)?.name || "—" });
+        } else {
+            other += sum;
+        }
+    });
+    if (other > 0) groups.push({ id: "__other__", sum: other, color: CHART_OTHER, name: "Прочее" });
+
+    const RAD = 42, GAP_DEG = 1.0;  // воздушный gap между сегментами для визуальной читабельности
+    const C = 2 * Math.PI * RAD;
+    const gapLen = (GAP_DEG / 360) * C;
+    let acc = 0;
+    const segs = groups.map(g => {
+        const frac = g.sum / agg.total;
+        const dash = Math.max(0.4, frac * C - gapLen);
+        const offset = -acc;
+        acc += frac * C;
+        return { ...g, dash, gap: C - dash, offset };
+    });
+
+    const flag = flagOf(state.baseCurrency);
+    const totalStr = fmt(Math.round(agg.total));
+    // Адаптивный шрифт total: длинное число — мельче, чтобы не упиралось в стенки.
+    const totalFs = totalStr.length > 8 ? 13 : totalStr.length > 6 ? 17 : totalStr.length > 4 ? 21 : 24;
+    const segsSvg = segs.map(s => `
+        <circle class="donut-seg" cx="50" cy="50" r="${RAD}"
+                stroke="${s.color}" stroke-width="13"
+                stroke-dasharray="${s.dash.toFixed(2)} ${s.gap.toFixed(2)}"
+                stroke-dashoffset="${s.offset.toFixed(2)}"
+                transform="rotate(-90 50 50)"
+                data-cat="${s.id}"
+                stroke-linecap="butt">
+            <title>${escapeHtml(s.name)}: ${fmt(Math.round(s.sum))} ${state.baseCurrency} (${Math.round(s.sum / agg.total * 100)}%)</title>
+        </circle>
+    `).join("");
+
+    // В SVG <text> emoji-флаги в Telegram WebView не рендерятся как color font —
+    // показывают пустой плейсхолдер. Поэтому в центре donut'a выводим только код валюты.
+    el.innerHTML = `
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-label="Распределение по категориям">
+            <circle class="donut-track" cx="50" cy="50" r="${RAD}" stroke-width="13"></circle>
+            ${segsSvg}
+            <text x="50" y="48" class="donut-center-total" font-size="${totalFs}">${totalStr}</text>
+            <text x="50" y="60" class="donut-center-sub">${state.baseCurrency}</text>
+        </svg>
+    `;
+    // Stagger fade-in сегментов — премиум-ощущение появления.
+    $$(".donut-seg").forEach((seg, i) => {
+        seg.style.opacity = "0";
+        seg.style.transition = "opacity 320ms var(--ease)";
+        seg.addEventListener("click", () => {
+            const id = seg.dataset.cat;
+            if (id && id !== "__other__") openCategoryDrilldown(id);
+        });
+        setTimeout(() => { seg.style.opacity = "1"; }, 40 + i * 35);
+    });
+}
+
+function renderStatsCats(agg, palette) {
+    const el = $("#stats-cats");
+    el.innerHTML = "";
+    if (agg.byCat.size === 0 || agg.total <= 0) return;
+    const flag = flagOf(state.baseCurrency);
+    for (const [cid, sum] of palette.items) {
+        const pct = (sum / agg.total) * 100;
+        const color = palette.colorByCat.get(cid);
+        const cat = catOf(cid);
+        const name = cat?.name || "—";
+        const emoji = cat?.emoji || "•";
+        const pctStr = pct >= 1 ? Math.round(pct) : pct.toFixed(1);
+        const row = document.createElement("button");
+        row.className = "stats-cat";
+        row.innerHTML = `
+            <span class="dot" style="background:${color}"><span class="dot-emoji">${emoji}</span></span>
+            <span class="cat-name">${escapeHtml(name)}</span>
+            <span class="cat-pct">${pctStr}%</span>
+            <span class="cat-amount">${fmt(Math.round(sum))}<span class="ccy">${flag}</span></span>
+            <span class="cat-bar"><span class="cat-bar-fill" style="background:${color};width:0"></span></span>
+        `;
+        row.addEventListener("click", () => openCategoryDrilldown(cid));
+        el.appendChild(row);
+        requestAnimationFrame(() => {
+            row.querySelector(".cat-bar-fill").style.width = `${pct.toFixed(2)}%`;
+        });
+    }
+}
+
+function renderStatsTrend(agg, range) {
+    const chart = $("#stats-trend-chart");
+    const axis = $("#stats-trend-axis");
+    const title = $("#stats-trend-title");
+    const meta = $("#stats-trend-meta");
+    chart.innerHTML = "";
+    axis.innerHTML = "";
+
+    if (agg.total <= 0) {
+        title.textContent = "Тренд";
+        meta.textContent = "";
+        return;
+    }
+
+    const flag = flagOf(state.baseCurrency);
+    const todayStr = todayISO();
+    const bins = []; // { label, sum, isToday, full }
+
+    if (range.type === "week" || range.type === "month") {
+        const start = new Date(range.from + "T00:00:00");
+        const end = new Date(range.to + "T00:00:00");
+        const isWeek = range.type === "week";
+        for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
+            const iso = isoDate(d);
+            // Для недели — короткие weekday-метки (ПН/ВТ/…), для месяца — число дня.
+            const label = isWeek ? WEEKDAYS_SHORT[d.getDay()] : String(d.getDate());
+            bins.push({ label, sum: agg.byDate.get(iso) || 0, isToday: iso === todayStr, full: iso });
+        }
+        title.textContent = isWeek ? "По дням недели" : "Тренд по дням";
+    } else {
+        // year / all → по месяцам
+        const start = new Date(range.from + "T00:00:00");
+        const end = new Date(range.to + "T00:00:00");
+        const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+        const tail = new Date(end.getFullYear(), end.getMonth(), 1);
+        const todayYM = todayStr.slice(0, 7);
+        const showYear = range.type === "all"; // если диапазон > одного года — показываем год в axis
+        while (cur <= tail) {
+            const ym = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
+            let sum = 0;
+            for (const [iso, v] of agg.byDate) if (iso.startsWith(ym)) sum += v;
+            const m = cur.toLocaleString("ru-RU", { month: "short" }).replace(".", "");
+            // Для «Всё время» label = "MM'YY" (например, "май 25") — год обязателен для понимания
+            const label = showYear ? `${m} '${String(cur.getFullYear()).slice(2)}` : m;
+            bins.push({ label, sum, isToday: ym === todayYM, full: ym });
+            cur.setMonth(cur.getMonth() + 1);
+        }
+        title.textContent = "Тренд по месяцам";
+    }
+
+    const elapsedBins = Math.max(1, bins.filter(b => b.full <= todayStr.slice(0, b.full.length)).length);
+    const avg = agg.total / elapsedBins;
+    const max = bins.reduce((m, b) => Math.max(m, b.sum), 0) || 1;
+    const maxBin = bins.reduce((mx, b) => b.sum > mx.sum ? b : mx, { sum: 0 });
+    meta.textContent = `средн. ${fmt(Math.round(avg))} ${flag} · макс. ${fmt(Math.round(maxBin.sum))} ${flag}`;
+
+    const CHART_H = 62; // px
+    for (const b of bins) {
+        const bar = document.createElement("div");
+        bar.className = "stats-trend-bar" + (b.sum === 0 ? " zero" : "") + (b.isToday ? " today" : "");
+        bar.title = `${b.label}: ${fmt(Math.round(b.sum))} ${state.baseCurrency}`;
+        chart.appendChild(bar);
+        const h = b.sum === 0 ? 2 : Math.max(2, (b.sum / max) * CHART_H);
+        requestAnimationFrame(() => { bar.style.height = `${h.toFixed(1)}px`; });
+    }
+    const avgPct = (avg / max);
+    if (avgPct > 0 && avgPct < 1) {
+        const line = document.createElement("div");
+        line.className = "stats-trend-avg";
+        line.style.bottom = `${(avgPct * CHART_H + 4).toFixed(1)}px`;
+        chart.appendChild(line);
+    }
+
+    // Ось X.
+    // - week: 7 подписей (по одной на бар, помещается).
+    // - month/year/all: разреженные тики с space-between, чтобы длинные label
+    //   ("май '26") не зажимались узкой ячейкой бара.
+    axis.innerHTML = "";
+    axis.className = "stats-trend-axis";
+    if (range.type === "week") {
+        axis.classList.add("dense");
+        for (const b of bins) {
+            const sp = document.createElement("span");
+            sp.textContent = b.label;
+            if (b.isToday) sp.classList.add("today");
+            axis.appendChild(sp);
+        }
+    } else {
+        const n = bins.length;
+        const tickCount = range.type === "month" ? 5 : Math.min(6, n);
+        const picks = [];
+        if (n === 1) {
+            picks.push(0);
+        } else {
+            for (let i = 0; i < tickCount; i++) {
+                picks.push(Math.round((n - 1) * (i / (tickCount - 1))));
+            }
+        }
+        for (const idx of picks) {
+            const sp = document.createElement("span");
+            sp.textContent = bins[idx].label;
+            axis.appendChild(sp);
+        }
+    }
+}
+
+function openCategoryDrilldown(catId) {
+    const range = getStatsRange(state.statsPeriod.type, state.statsPeriod.offset);
+    const items = state.expenses
+        .filter(e => e.date >= range.from && e.date <= range.to && e.category_id === catId)
+        .sort((a, b) => b.date.localeCompare(a.date) || (b.created_at || "").localeCompare(a.created_at || ""));
+    const cat = catOf(catId);
+    $("#stats-detail-title").textContent = cat?.name || "—";
+    const total = items.reduce((s, e) => {
+        const c = convertToBase(e.amount, e.currency);
+        return s + (c == null ? 0 : c);
+    }, 0);
+    const flag = flagOf(state.baseCurrency);
+    $("#stats-detail-meta").textContent =
+        `${range.label} · ${items.length} ${pluralRu(items.length, ["трата", "траты", "трат"])} · ${fmt(Math.round(total))} ${flag} ${state.baseCurrency}`;
+
+    const ul = $("#stats-detail-list");
+    ul.innerHTML = "";
+    if (!items.length) {
+        ul.innerHTML = `<p class="history-hint">Нет трат</p>`;
+    } else {
+        for (const e of items) {
+            const li = document.createElement("li");
+            const t = humanDayTitle(e.date);
+            const row = document.createElement("div");
+            row.className = "day-row";
+            const titleHtml = e.note
+                ? escapeHtml(e.note)
+                : `<span style="color:var(--text-muted);font-weight:400;">Без описания</span>`;
+            row.innerHTML = `
+                <span class="icon" style="background:${cat?.color || "var(--bg-elevated)"}">${cat?.emoji || "📌"}</span>
+                <div class="body">
+                    <div class="name">${titleHtml}</div>
+                    <div class="note">${escapeHtml(t.prefix)} · ${escapeHtml(t.weekday)}</div>
+                </div>
+                <span class="amount">${amountHTML(e.amount, e.currency)}</span>
+            `;
+            row.addEventListener("click", () => { closeModals(); setTimeout(() => openEditModal(e), 320); });
+            li.appendChild(row);
+            ul.appendChild(li);
+        }
+    }
+    openModal("stats-detail");
 }
 
 // Если viewport ресайзится (rotate) — пересчитать transform
