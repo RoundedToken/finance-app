@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouter } from "@tanstack/react-router";
+import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles } from "lucide-react";
 import { useMe } from "@/api/queries";
 import { clearToken } from "@/lib/auth";
@@ -23,7 +23,9 @@ const NAV: NavItem[] = [
 export function AppLayout() {
     const router = useRouter();
     const { data: me } = useMe();
-    const path = router.state.location.pathname;
+    // useRouter().state — снапшот, не реактивный. Подписываемся через
+    // useRouterState, иначе active pill «застревает» на стартовом маршруте.
+    const path = useRouterState({ select: s => s.location.pathname });
 
     const logout = () => {
         clearToken();

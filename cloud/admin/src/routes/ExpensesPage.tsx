@@ -64,7 +64,7 @@ export function ExpensesPage() {
     const columns = useMemo(() => [
         columnHelper.accessor("date", {
             header: "Дата",
-            cell: info => <span className="num text-muted-foreground">{formatDate(info.getValue())}</span>,
+            cell: info => <span className="num text-muted-foreground whitespace-nowrap">{formatDate(info.getValue())}</span>,
             size: 110,
         }),
         columnHelper.accessor("category_name", {

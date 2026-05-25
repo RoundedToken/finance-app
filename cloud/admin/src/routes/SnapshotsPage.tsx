@@ -108,7 +108,7 @@ export function SnapshotsPage() {
                                 const Icon = isCash ? Banknote : Coins;
                                 return (
                                     <tr key={s.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
-                                        <td className="px-4 py-2.5 num text-muted-foreground">{formatDate(s.date)}</td>
+                                        <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(s.date)}</td>
                                         <td className="px-4 py-2.5">
                                             <span className="inline-flex items-center gap-2">
                                                 <span
@@ -211,7 +211,7 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                         {accounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+                            <option key={a.id} value={a.id}>{a.name}</option>
                         ))}
                     </select>
                 </Field>
