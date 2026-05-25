@@ -90,9 +90,10 @@ export function GoalsPage() {
 }
 
 function GoalCard({ goal }: { goal: Goal }) {
-    const ccy = goal.target_currency ?? "EUR";
+    const ccy = goal.target_currency;
+    const needsCurrency = !ccy;
     const color = goal.color ?? "#94a3b8";
-    const hasTarget = goal.target_amount != null && goal.target_amount > 0;
+    const hasTarget = goal.target_amount != null && goal.target_amount > 0 && !!ccy;
     const percent = hasTarget ? Math.min(100, (goal.balance / goal.target_amount!) * 100) : null;
     const overdue = goal.deadline && goal.deadline < new Date().toISOString().slice(0, 10) && goal.status === "active";
 
@@ -115,12 +116,17 @@ function GoalCard({ goal }: { goal: Goal }) {
                 </div>
             </div>
 
-            {hasTarget ? (
+            {needsCurrency ? (
+                <div className="mt-4 flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-px" />
+                    <span>Не задана валюта цели — открой редактирование и выбери валюту.</span>
+                </div>
+            ) : hasTarget ? (
                 <div className="mt-4 space-y-1.5">
                     <div className="flex items-baseline justify-between text-sm tabular-nums">
                         <span className="num font-medium">
-                            {formatAmount(goal.balance, ccy)} <span className="text-muted-foreground">/ {formatAmount(goal.target_amount!, ccy)}</span>
-                            {" "}<Currency code={ccy} size="xs" />
+                            {formatAmount(goal.balance, ccy!)} <span className="text-muted-foreground">/ {formatAmount(goal.target_amount!, ccy!)}</span>
+                            {" "}<Currency code={ccy!} size="xs" />
                         </span>
                         <span className="text-xs text-muted-foreground">{percent!.toFixed(1)}%</span>
                     </div>
@@ -133,7 +139,7 @@ function GoalCard({ goal }: { goal: Goal }) {
                 </div>
             ) : (
                 <div className="mt-4 text-xl font-semibold num tabular-nums">
-                    {formatAmount(goal.balance, ccy)} <Currency code={ccy} size="sm" />
+                    {formatAmount(goal.balance, ccy!)} <Currency code={ccy!} size="sm" />
                 </div>
             )}
 
@@ -230,8 +236,9 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
     const currencies = refs?.currencies ?? [];
     const hasTarget = targetAmount.trim() !== "";
     const numTarget = parseFloat(targetAmount);
-    const valid = name.trim().length > 0 &&
-        (!hasTarget || (Number.isFinite(numTarget) && numTarget > 0));
+    const valid = name.trim().length > 0
+        && !!targetCurrency
+        && (!hasTarget || (Number.isFinite(numTarget) && numTarget > 0));
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -243,7 +250,7 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                 emoji: emoji.trim() || null,
                 color,
                 target_amount: hasTarget ? numTarget : null,
-                target_currency: hasTarget ? targetCurrency : null,
+                target_currency: targetCurrency,    // обязательно даже без target_amount
                 deadline: deadline || null,
                 note: note.trim() || null,
             };
@@ -334,29 +341,29 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                     </div>
                 </Field>
 
+                <Field label="Валюта цели">
+                    <Select
+                        fullWidth
+                        value={targetCurrency}
+                        onChange={e => setTargetCurrency(e.target.value)}
+                        aria-label="Валюта цели"
+                    >
+                        {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code} — {c.name}</option>)}
+                    </Select>
+                </Field>
+
                 <div className="grid grid-cols-2 gap-3">
                     <Field label="Целевая сумма (опц.)">
-                        <div className="flex gap-2">
-                            <input
-                                type="number"
-                                inputMode="decimal"
-                                step="any"
-                                min="0"
-                                value={targetAmount}
-                                onChange={e => setTargetAmount(e.target.value)}
-                                placeholder="не задано"
-                                className="w-full min-w-0 px-3 py-2 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                            />
-                            <Select
-                                value={targetCurrency}
-                                onChange={e => setTargetCurrency(e.target.value)}
-                                disabled={!hasTarget}
-                                className="!min-w-0 w-[6.5rem]"
-                                aria-label="Валюта цели"
-                            >
-                                {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code}</option>)}
-                            </Select>
-                        </div>
+                        <input
+                            type="number"
+                            inputMode="decimal"
+                            step="any"
+                            min="0"
+                            value={targetAmount}
+                            onChange={e => setTargetAmount(e.target.value)}
+                            placeholder="не задано"
+                            className="w-full min-w-0 px-3 py-2 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
                     </Field>
                     <Field label="Дедлайн (опц.)">
                         <input
