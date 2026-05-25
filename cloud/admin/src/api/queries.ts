@@ -3,6 +3,10 @@ import { apiFetch } from "./client";
 import type {
     AccountsResponse,
     ExpensesResponse,
+    IncomeCategoriesResponse,
+    IncomeCreatePayload,
+    IncomeUpdatePayload,
+    IncomesResponse,
     MeResponse,
     ReferencesResponse,
     SnapshotCreatePayload,
@@ -89,6 +93,61 @@ export function useDeleteSnapshot() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
             qc.invalidateQueries({ queryKey: ["accounts"] });
+        },
+    });
+}
+
+export function useIncomeCategories() {
+    return useQuery({
+        queryKey: ["income-categories"],
+        queryFn: () => apiFetch<IncomeCategoriesResponse>("/v1/web/income-categories"),
+        staleTime: 5 * 60_000,
+    });
+}
+
+export function useIncomes() {
+    return useQuery({
+        queryKey: ["incomes"],
+        queryFn: () => apiFetch<IncomesResponse>("/v1/web/incomes?limit=20000"),
+        staleTime: 30_000,
+    });
+}
+
+export function useCreateIncome() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: IncomeCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean }>("/v1/web/incomes", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["incomes"] });
+        },
+    });
+}
+
+export function useUpdateIncome() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: IncomeUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/incomes/${id}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["incomes"] });
+        },
+    });
+}
+
+export function useDeleteIncome() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/incomes/${id}`, { method: "DELETE" }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["incomes"] });
         },
     });
 }

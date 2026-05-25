@@ -14,6 +14,10 @@
  *   GET    /v1/web/me                 — sanity-check сессии (Bearer JWT)
  *   GET    /v1/web/expenses           — read-only список для Admin (Bearer JWT)
  *   GET    /v1/web/references         — accounts/categories/currencies (Bearer JWT)
+ *   GET    /v1/web/accounts           — buckets + latest_snapshot (Bearer JWT)
+ *   *      /v1/web/snapshots[/:id]    — CRUD snapshots (Bearer JWT)
+ *   GET    /v1/web/income-categories  — список категорий доходов (Bearer JWT)
+ *   *      /v1/web/incomes[/:id]      — CRUD incomes (Bearer JWT)
  *
  *   POST   /v1/admin/references       — push refs (system bearer)
  *   POST   /v1/admin/migrate-expenses — bulk insert (system bearer)
@@ -46,6 +50,13 @@ import {
     deleteSnapshot,
     listBuckets,
 } from "./snapshots";
+import {
+    listIncomes,
+    listIncomeCategories,
+    createIncome,
+    updateIncome,
+    deleteIncome,
+} from "./incomes";
 
 export default {
     /** Cron Trigger — ежедневно тянет курсы. */
@@ -100,6 +111,14 @@ export default {
             if (snapMatch) {
                 if (request.method === "PUT") return handleWebSnapshotsUpdate(request, env, snapMatch[1]);
                 if (request.method === "DELETE") return handleWebSnapshotsDelete(request, env, snapMatch[1]);
+            }
+            if (path === "/v1/web/income-categories" && request.method === "GET") return handleWebIncomeCategories(request, env);
+            if (path === "/v1/web/incomes" && request.method === "GET") return handleWebIncomesList(request, env, url);
+            if (path === "/v1/web/incomes" && request.method === "POST") return handleWebIncomesCreate(request, env);
+            const incMatch = path.match(/^\/v1\/web\/incomes\/([0-9a-fA-F-]+)$/);
+            if (incMatch) {
+                if (request.method === "PUT") return handleWebIncomesUpdate(request, env, incMatch[1]);
+                if (request.method === "DELETE") return handleWebIncomesDelete(request, env, incMatch[1]);
             }
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
@@ -244,6 +263,61 @@ async function handleWebSnapshotsDelete(request: Request, env: Env, id: string):
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
     const r = await deleteSnapshot(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
+}
+
+// ── Web Admin · incomes ───────────────────────────────────────────────────
+async function handleWebIncomeCategories(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const categories = await listIncomeCategories(env);
+    return json({ categories }, 200, request, env);
+}
+
+async function handleWebIncomesList(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const limit = parseInt(url.searchParams.get("limit") ?? "1000", 10);
+    const from = url.searchParams.get("from") ?? undefined;
+    const to = url.searchParams.get("to") ?? undefined;
+    const accountId = url.searchParams.get("account_id") ?? undefined;
+    const categoryId = url.searchParams.get("category_id") ?? undefined;
+    const rows = await listIncomes(env, { limit, from, to, accountId, categoryId });
+    return json({ incomes: rows }, 200, request, env);
+}
+
+async function handleWebIncomesCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    if (!body.date || !body.account_id || !body.category_id || typeof body.amount !== "number") {
+        return json({ error: "date, account_id, amount, category_id are required" }, 400, request, env);
+    }
+    if (body.amount <= 0) return json({ error: "amount must be positive" }, 400, request, env);
+    const r = await createIncome(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
+}
+
+async function handleWebIncomesUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    if (body.amount !== undefined) {
+        if (typeof body.amount !== "number") return json({ error: "amount must be a number" }, 400, request, env);
+        if (body.amount <= 0) return json({ error: "amount must be positive" }, 400, request, env);
+    }
+    const r = await updateIncome(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebIncomesDelete(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteIncome(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 

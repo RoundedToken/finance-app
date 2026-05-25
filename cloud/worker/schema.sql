@@ -1,4 +1,4 @@
--- D1 schema (текущий снапшот после миграций 0001-0006).
+-- D1 schema (текущий снапшот после миграций 0001-0007).
 -- Source of truth для всех финансовых данных (ADR-011).
 -- Для свежей базы — применить этот файл; для существующей — миграции из migrations/.
 
@@ -90,3 +90,33 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshots_date         ON snapshots(date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_account_date ON snapshots(account_id, date);
 CREATE INDEX IF NOT EXISTS idx_snapshots_active_date  ON snapshots(date) WHERE deleted_at IS NULL;
+
+-- ─── Категории доходов (Stage 6) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS income_categories (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    emoji       TEXT,
+    color       TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ─── Доходы (Stage 6) ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS incomes (
+    id            TEXT PRIMARY KEY,
+    date          TEXT NOT NULL,
+    account_id    TEXT NOT NULL REFERENCES accounts(id),
+    amount        REAL NOT NULL CHECK (amount > 0),
+    currency_code TEXT NOT NULL REFERENCES currencies(code),
+    category_id   TEXT NOT NULL REFERENCES income_categories(id),
+    source        TEXT,
+    note          TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_incomes_date         ON incomes(date);
+CREATE INDEX IF NOT EXISTS idx_incomes_account_date ON incomes(account_id, date);
+CREATE INDEX IF NOT EXISTS idx_incomes_category     ON incomes(category_id);
+CREATE INDEX IF NOT EXISTS idx_incomes_active_date  ON incomes(date) WHERE deleted_at IS NULL;
