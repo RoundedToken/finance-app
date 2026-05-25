@@ -618,21 +618,23 @@ function ChainContinueModal({ open, onClose, source, accounts }: ContinueModalPr
         setDate(todayISO()); setToId(""); setToAmt(""); setType("exchange"); setNote(""); setSubmitting(false);
     }, [open, source?.id]);
 
-    if (!source) return null;
-
-    const fromAcc = accounts.find(a => a.id === source.to_account_id);
+    // ВСЕ хуки должны быть вызваны ДО early-return — иначе React падает с
+    // «Rendered fewer/more hooks than during the previous render» (#310).
+    const fromAcc = source ? accounts.find(a => a.id === source.to_account_id) : undefined;
     const toAcc = accounts.find(a => a.id === toId);
     const numTo = parseFloat(toAmt);
+    const rateText = useMemo(() => {
+        if (!source || !fromAcc || !toAcc || type === "transfer") return null;
+        return formatExchangeRate(source.to_amount, fromAcc.currency, numTo, toAcc.currency);
+    }, [fromAcc, toAcc, source?.to_amount, numTo, type]);
+
+    if (!source) return null;
+
     const sameBucket = toId === source.to_account_id;
     const sameCurrency = fromAcc && toAcc && fromAcc.currency === toAcc.currency;
     const valid = !!date && !!toId && !sameBucket && Number.isFinite(numTo) && numTo > 0
         && fromAcc && toAcc
         && (type === "transfer" ? sameCurrency : !sameCurrency);
-
-    const rateText = useMemo(() => {
-        if (!fromAcc || !toAcc || type === "transfer") return null;
-        return formatExchangeRate(source.to_amount, fromAcc.currency, numTo, toAcc.currency);
-    }, [fromAcc, toAcc, source.to_amount, numTo, type]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -742,6 +744,7 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
     const [note, setNote] = useState("");
     const [goalId, setGoalId] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open || !tx) return;
@@ -753,15 +756,22 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
         setNote(tx.note ?? "");
         setGoalId(tx.goal_id ?? "");
         setSubmitting(false);
+        setError(null);
     }, [open, tx?.id]);
 
-    if (!tx) return null;
-
-    const inChain = tx.chain_id != null;
+    // ВСЕ хуки до early-return (React rules of hooks #310).
     const fromAcc = accounts.find(a => a.id === fromId);
     const toAcc = accounts.find(a => a.id === toId);
     const numFrom = parseFloat(fromAmt);
     const numTo = parseFloat(toAmt);
+    const rateText = useMemo(
+        () => (tx?.type === "exchange" && fromAcc && toAcc) ? formatExchangeRate(numFrom, fromAcc.currency, numTo, toAcc.currency) : null,
+        [tx?.type, fromAcc, toAcc, numFrom, numTo],
+    );
+
+    if (!tx) return null;
+
+    const inChain = tx.chain_id != null;
     const sameBucket = fromId === toId;
     const valid = !!date && !!fromId && !!toId && !sameBucket
         && Number.isFinite(numFrom) && numFrom > 0
@@ -769,19 +779,12 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
         && fromAcc && toAcc
         && (tx.type === "transfer" ? fromAcc.currency === toAcc.currency && numFrom === numTo : fromAcc.currency !== toAcc.currency);
 
-    const rateText = useMemo(
-        () => (tx.type === "exchange" && fromAcc && toAcc) ? formatExchangeRate(numFrom, fromAcc.currency, numTo, toAcc.currency) : null,
-        [tx.type, fromAcc, toAcc, numFrom, numTo],
-    );
-
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!valid) return;
         setSubmitting(true);
+        setError(null);
         try {
-            // Стратегия: посылаем только реально изменённые поля. Для chain
-            // tx — только safe-to-edit. Для standalone — всё что мог менять
-            // user.
             const patch: TransactionUpdatePayload = {
                 note: note.trim() || null,
                 goal_id: goalId || null,
@@ -795,6 +798,10 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
             }
             await update.mutateAsync({ id: tx.id, patch });
             onClose();
+        } catch (err: any) {
+            setError(err?.message ?? "Не удалось сохранить — посмотри консоль");
+            // Также логируем в консоль для отладки.
+            console.error("EditTxModal submit failed:", err);
         } finally {
             setSubmitting(false);
         }
@@ -846,6 +853,12 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
                 <Field label="Цель (опц.)">
                     <GoalSelector value={goalId} onChange={setGoalId} />
                 </Field>
+
+                {error && (
+                    <div className="text-sm rounded-lg p-3 border border-destructive/40 bg-destructive/10 text-destructive">
+                        {error}
+                    </div>
+                )}
 
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
