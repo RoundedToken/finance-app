@@ -57,6 +57,17 @@ import {
     updateIncome,
     deleteIncome,
 } from "./incomes";
+import {
+    listGoals,
+    getGoalDetail,
+    createGoal,
+    updateGoal,
+    setGoalStatus,
+    deleteGoal,
+    createContribution,
+    updateContribution,
+    deleteContribution,
+} from "./goals";
 
 export default {
     /** Cron Trigger — ежедневно тянет курсы. */
@@ -119,6 +130,22 @@ export default {
             if (incMatch) {
                 if (request.method === "PUT") return handleWebIncomesUpdate(request, env, incMatch[1]);
                 if (request.method === "DELETE") return handleWebIncomesDelete(request, env, incMatch[1]);
+            }
+            if (path === "/v1/web/goals" && request.method === "GET") return handleWebGoalsList(request, env, url);
+            if (path === "/v1/web/goals" && request.method === "POST") return handleWebGoalsCreate(request, env);
+            const goalStatusMatch = path.match(/^\/v1\/web\/goals\/([0-9a-fA-F-]+)\/status$/);
+            if (goalStatusMatch && request.method === "POST") return handleWebGoalsSetStatus(request, env, goalStatusMatch[1]);
+            const goalMatch = path.match(/^\/v1\/web\/goals\/([0-9a-fA-F-]+)$/);
+            if (goalMatch) {
+                if (request.method === "GET") return handleWebGoalsDetail(request, env, goalMatch[1]);
+                if (request.method === "PUT") return handleWebGoalsUpdate(request, env, goalMatch[1]);
+                if (request.method === "DELETE") return handleWebGoalsDelete(request, env, goalMatch[1]);
+            }
+            if (path === "/v1/web/goal-contributions" && request.method === "POST") return handleWebContributionsCreate(request, env);
+            const contribMatch = path.match(/^\/v1\/web\/goal-contributions\/([0-9a-fA-F-]+)$/);
+            if (contribMatch) {
+                if (request.method === "PUT") return handleWebContributionsUpdate(request, env, contribMatch[1]);
+                if (request.method === "DELETE") return handleWebContributionsDelete(request, env, contribMatch[1]);
             }
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
@@ -282,7 +309,8 @@ async function handleWebIncomesList(request: Request, env: Env, url: URL): Promi
     const to = url.searchParams.get("to") ?? undefined;
     const accountId = url.searchParams.get("account_id") ?? undefined;
     const categoryId = url.searchParams.get("category_id") ?? undefined;
-    const rows = await listIncomes(env, { limit, from, to, accountId, categoryId });
+    const goalId = url.searchParams.get("goal_id") ?? undefined;
+    const rows = await listIncomes(env, { limit, from, to, accountId, categoryId, goalId });
     return json({ incomes: rows }, 200, request, env);
 }
 
@@ -318,6 +346,91 @@ async function handleWebIncomesDelete(request: Request, env: Env, id: string): P
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
     const r = await deleteIncome(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
+}
+
+// ── Web Admin · goals ─────────────────────────────────────────────────────
+async function handleWebGoalsList(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const statusRaw = url.searchParams.get("status") ?? "active";
+    const ALLOWED = ["active", "achieved", "archived", "all"] as const;
+    if (!ALLOWED.includes(statusRaw as any)) {
+        return json({ error: "invalid status" }, 400, request, env);
+    }
+    const goals = await listGoals(env, { status: statusRaw as any });
+    return json({ goals }, 200, request, env);
+}
+
+async function handleWebGoalsDetail(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const data = await getGoalDetail(env, id);
+    if (!data.goal) return json({ error: "not found" }, 404, request, env);
+    return json(data, 200, request, env);
+}
+
+async function handleWebGoalsCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createGoal(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
+}
+
+async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await updateGoal(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body.status !== "string") return json({ error: "status required" }, 400, request, env);
+    const r = await setGoalStatus(env, id, body.status);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebGoalsDelete(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteGoal(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
+}
+
+async function handleWebContributionsCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createContribution(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
+}
+
+async function handleWebContributionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await updateContribution(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebContributionsDelete(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteContribution(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 

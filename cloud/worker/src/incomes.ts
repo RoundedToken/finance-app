@@ -9,6 +9,7 @@
  */
 
 import type { Env } from "./types";
+import { validateGoalRef } from "./goals";
 
 export interface IncomePayload {
     id?: string;
@@ -18,6 +19,7 @@ export interface IncomePayload {
     category_id: string;
     source?: string | null;
     note?: string | null;
+    goal_id?: string | null;            // Stage 7: optional FK на цели
 }
 
 export interface IncomeCategory {
@@ -30,17 +32,18 @@ export interface IncomeCategory {
 
 export async function listIncomes(
     env: Env,
-    opts: { limit?: number; from?: string; to?: string; accountId?: string; categoryId?: string },
+    opts: { limit?: number; from?: string; to?: string; accountId?: string; categoryId?: string; goalId?: string },
 ): Promise<any[]> {
     const limit = Math.min(opts.limit ?? 1000, 20000);
     let sql =
-        "SELECT id, date, account_id, amount, currency_code, category_id, source, note, created_at, updated_at " +
+        "SELECT id, date, account_id, amount, currency_code, category_id, source, note, goal_id, created_at, updated_at " +
         "FROM incomes WHERE deleted_at IS NULL";
     const params: any[] = [];
     if (opts.from) { sql += " AND date >= ?"; params.push(opts.from); }
     if (opts.to)   { sql += " AND date <= ?"; params.push(opts.to); }
     if (opts.accountId)  { sql += " AND account_id = ?";  params.push(opts.accountId); }
     if (opts.categoryId) { sql += " AND category_id = ?"; params.push(opts.categoryId); }
+    if (opts.goalId)     { sql += " AND goal_id = ?";     params.push(opts.goalId); }
     sql += " ORDER BY date DESC, created_at DESC LIMIT ?";
     params.push(limit);
     const r = await env.DB.prepare(sql).bind(...params).all();
@@ -78,12 +81,14 @@ export async function createIncome(env: Env, payload: IncomePayload): Promise<Cr
     const currency = await lookupAccountCurrency(env, payload.account_id);
     if (!currency) return { ok: false, error: "unknown account_id" };
     if (!(await categoryExists(env, payload.category_id))) return { ok: false, error: "unknown category_id" };
+    const goalCheck = await validateGoalRef(env, payload.goal_id);
+    if (!goalCheck.ok) return goalCheck;
 
     const id = payload.id ?? crypto.randomUUID();
     const r = await env.DB.prepare(
         `INSERT OR IGNORE INTO incomes
-           (id, date, account_id, amount, currency_code, category_id, source, note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+           (id, date, account_id, amount, currency_code, category_id, source, note, goal_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
     ).bind(
         id,
         payload.date,
@@ -93,6 +98,7 @@ export async function createIncome(env: Env, payload: IncomePayload): Promise<Cr
         payload.category_id,
         payload.source ?? null,
         payload.note ?? null,
+        payload.goal_id ?? null,
     ).run();
     return { ok: true, id, inserted: (r.meta.changes ?? 0) > 0 };
 }
@@ -111,9 +117,14 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
     if (patch.category_id !== undefined) {
         if (!(await categoryExists(env, patch.category_id))) return { ok: false, error: "unknown category_id" };
     }
+    if (patch.goal_id !== undefined && patch.goal_id !== null) {
+        const goalCheck = await validateGoalRef(env, patch.goal_id);
+        if (!goalCheck.ok) return goalCheck;
+    }
 
     const hasSource = Object.prototype.hasOwnProperty.call(patch, "source");
     const hasNote   = Object.prototype.hasOwnProperty.call(patch, "note");
+    const hasGoal   = Object.prototype.hasOwnProperty.call(patch, "goal_id");
 
     // currency_code привязан к account_id: при смене аккаунта обновляется,
     // иначе сохраняется. Используем COALESCE с newCurrency.
@@ -126,6 +137,7 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
                category_id   = COALESCE(?, category_id),
                source        = ${hasSource ? "?" : "source"},
                note          = ${hasNote   ? "?" : "note"},
+               goal_id       = ${hasGoal   ? "?" : "goal_id"},
                updated_at    = datetime('now')
          WHERE id = ? AND deleted_at IS NULL`,
     ).bind(
@@ -136,6 +148,7 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
         patch.category_id ?? null,
         ...(hasSource ? [patch.source ?? null] : []),
         ...(hasNote   ? [patch.note   ?? null] : []),
+        ...(hasGoal   ? [patch.goal_id ?? null] : []),
         id,
     ).run();
     return { ok: true, updated: (r.meta.changes ?? 0) > 0 };

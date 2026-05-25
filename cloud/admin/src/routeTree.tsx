@@ -8,6 +8,8 @@ import { ExpensesPage } from "@/routes/ExpensesPage";
 import { AccountsPage } from "@/routes/AccountsPage";
 import { SnapshotsPage } from "@/routes/SnapshotsPage";
 import { IncomesPage } from "@/routes/IncomesPage";
+import { GoalsPage } from "@/routes/GoalsPage";
+import { GoalDetailPage } from "@/routes/GoalDetailPage";
 
 interface RouterContext { queryClient: QueryClient }
 
@@ -63,7 +65,19 @@ const incomesRoute = createRoute({
     component: IncomesPage,
 });
 
+const goalsRoute = createRoute({
+    getParentRoute: () => authedRoute,
+    path: "/goals",
+    component: GoalsPage,
+});
+
+const goalDetailRoute = createRoute({
+    getParentRoute: () => authedRoute,
+    path: "/goals/$goalId",
+    component: GoalDetailPage,
+});
+
 export const routeTree = rootRoute.addChildren([
     loginRoute,
-    authedRoute.addChildren([indexRoute, accountsRoute, snapshotsRoute, expensesRoute, incomesRoute]),
+    authedRoute.addChildren([indexRoute, accountsRoute, snapshotsRoute, expensesRoute, incomesRoute, goalsRoute, goalDetailRoute]),
 ]);

@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles } from "lucide-react";
+import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target } from "lucide-react";
 import { useMe } from "@/api/queries";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
     { to: "/snapshots", icon: PieChart, label: "Снапшоты" },
     { to: "/expenses", icon: ListChecks, label: "Расходы" },
     { to: "/incomes", icon: TrendingUp, label: "Доходы" },
+    { to: "/goals", icon: Target, label: "Цели" },
     { to: "/transactions", icon: ArrowRightLeft, label: "Обмены", disabled: true },
 ];
 
@@ -26,6 +27,8 @@ export function AppLayout() {
     // useRouter().state — снапшот, не реактивный. Подписываемся через
     // useRouterState, иначе active pill «застревает» на стартовом маршруте.
     const path = useRouterState({ select: s => s.location.pathname });
+    // Активность пункта: точное совпадение либо подмаршрут (для /goals/:id).
+    const isActive = (to: string) => path === to || (to !== "/" && path.startsWith(to + "/"));
 
     const logout = () => {
         clearToken();
@@ -47,7 +50,7 @@ export function AppLayout() {
                 <nav className="flex-1 p-3 space-y-1">
                     {NAV.map(item => {
                         const Icon = item.icon;
-                        const active = path === item.to;
+                        const active = isActive(item.to);
                         if (item.disabled) {
                             return (
                                 <div key={item.to} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground/60 cursor-not-allowed">
