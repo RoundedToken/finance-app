@@ -384,7 +384,9 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
         setAccountId(latestInCat.account_id);
         setAmount(String(latestInCat.amount));
         setSource(latestInCat.source ?? "");
-        // note — не копируем, дата = сегодня (уже стоит).
+        setNote(latestInCat.note ?? "");
+        setGoalId(latestInCat.goal_id ?? "");
+        // Дата всё ещё = сегодня (мы не клонируем прошлую дату).
     };
 
     const numAmount = parseFloat(amount);
