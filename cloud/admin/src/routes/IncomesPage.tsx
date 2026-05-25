@@ -62,8 +62,8 @@ export function IncomesPage() {
     const sums = useMemo(() => {
         const acc = { month: 0, year: 0, all: 0, monthCnt: 0, yearCnt: 0, allCnt: 0, missingRates: 0 };
         for (const inc of incomes) {
-            const eur = toEur(inc.amount, inc.currency_code);
-            const hasRate = inc.currency_code === "EUR" || !!rates[inc.currency_code];
+            const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
+            const hasRate = inc.amount_eur != null;
             if (!hasRate) acc.missingRates += 1;
             acc.all += eur; acc.allCnt += 1;
             if (inc.date >= start365) { acc.year += eur; acc.yearCnt += 1; }
@@ -85,7 +85,7 @@ export function IncomesPage() {
         const totals = new Map<string, number>();
         for (const inc of incomes) {
             if (!inRange(inc.date)) continue;
-            const eur = toEur(inc.amount, inc.currency_code);
+            const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
             totals.set(inc.category_id, (totals.get(inc.category_id) ?? 0) + eur);
         }
         const total = Array.from(totals.values()).reduce((s, v) => s + v, 0);
@@ -220,7 +220,7 @@ export function IncomesPage() {
                             {filtered.map(inc => {
                                 const cat = catById.get(inc.category_id);
                                 const acc = accById.get(inc.account_id);
-                                const eur = toEur(inc.amount, inc.currency_code);
+                                const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
                                 return (
                                     <tr key={inc.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
                                         <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(inc.date)}</td>
