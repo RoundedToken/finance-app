@@ -256,7 +256,26 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
 
     return (
         <Modal open={open} onClose={onClose} title={title} size="md">
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-5">
+                {/* Live preview карточки — пользователь сразу видит как будет выглядеть */}
+                <div
+                    className="flex items-center gap-3 rounded-xl border bg-background/40 p-3"
+                    style={{ borderColor: color + "55" }}
+                >
+                    <div
+                        className="h-12 w-12 rounded-xl grid place-items-center text-2xl shrink-0"
+                        style={{ background: color + "22", color }}
+                    >
+                        {emoji || "🎯"}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="font-medium truncate">{name.trim() || "Без названия"}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                            {note.trim() || "превью карточки"}
+                        </div>
+                    </div>
+                </div>
+
                 <Field label="Название">
                     <input
                         type="text"
@@ -269,25 +288,25 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                     />
                 </Field>
 
-                <div className="grid grid-cols-[1fr_2fr] gap-3">
-                    <Field label="Эмодзи">
+                <Field label="Эмодзи и цвет">
+                    <div className="flex items-center gap-2">
                         <input
                             type="text"
                             value={emoji}
                             onChange={e => setEmoji(e.target.value)}
                             maxLength={4}
-                            className="w-full px-3 py-2 rounded-lg border bg-background text-center text-2xl focus:outline-none focus:ring-2 focus:ring-ring"
+                            aria-label="Эмодзи"
+                            className="w-14 h-10 px-2 rounded-lg border bg-background text-center text-xl focus:outline-none focus:ring-2 focus:ring-ring shrink-0"
                         />
-                    </Field>
-                    <Field label="Подсказка">
-                        <div className="flex flex-wrap gap-1.5 py-2">
+                        <div className="flex flex-wrap gap-1 flex-1">
                             {EMOJI_SUGGESTIONS.map(em => (
                                 <button
                                     key={em}
                                     type="button"
                                     onClick={() => setEmoji(em)}
+                                    aria-label={`Выбрать ${em}`}
                                     className={cn(
-                                        "h-9 w-9 rounded-lg text-xl transition-colors",
+                                        "h-8 w-8 rounded-md text-lg transition-colors",
                                         emoji === em ? "bg-primary/20" : "hover:bg-accent",
                                     )}
                                 >
@@ -295,11 +314,8 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                                 </button>
                             ))}
                         </div>
-                    </Field>
-                </div>
-
-                <Field label="Цвет">
-                    <div className="flex flex-wrap gap-2 py-1">
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-2">
                         {COLOR_PALETTE.map(c => (
                             <button
                                 key={c}
@@ -307,8 +323,10 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                                 aria-label={`Цвет ${c}`}
                                 onClick={() => setColor(c)}
                                 className={cn(
-                                    "h-8 w-8 rounded-lg border-2 transition-all",
-                                    color === c ? "border-foreground scale-110" : "border-transparent",
+                                    "h-7 w-7 rounded-md transition-all",
+                                    color === c
+                                        ? "ring-2 ring-offset-2 ring-offset-card ring-foreground/70 scale-105"
+                                        : "hover:scale-105",
                                 )}
                                 style={{ background: c }}
                             />
@@ -316,34 +334,39 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
                     </div>
                 </Field>
 
-                <div className="grid grid-cols-[1fr_auto] gap-3">
+                <div className="grid grid-cols-2 gap-3">
                     <Field label="Целевая сумма (опц.)">
+                        <div className="flex gap-2">
+                            <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={targetAmount}
+                                onChange={e => setTargetAmount(e.target.value)}
+                                placeholder="не задано"
+                                className="w-full min-w-0 px-3 py-2 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            />
+                            <Select
+                                value={targetCurrency}
+                                onChange={e => setTargetCurrency(e.target.value)}
+                                disabled={!hasTarget}
+                                className="!min-w-0 w-[6.5rem]"
+                                aria-label="Валюта цели"
+                            >
+                                {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code}</option>)}
+                            </Select>
+                        </div>
+                    </Field>
+                    <Field label="Дедлайн (опц.)">
                         <input
-                            type="number"
-                            inputMode="decimal"
-                            step="any"
-                            min="0"
-                            value={targetAmount}
-                            onChange={e => setTargetAmount(e.target.value)}
-                            placeholder="не задано"
-                            className="w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                            type="date"
+                            value={deadline}
+                            onChange={e => setDeadline(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                     </Field>
-                    <Field label="Валюта">
-                        <Select value={targetCurrency} onChange={e => setTargetCurrency(e.target.value)} disabled={!hasTarget}>
-                            {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code}</option>)}
-                        </Select>
-                    </Field>
                 </div>
-
-                <Field label="Дедлайн (опц.)">
-                    <input
-                        type="date"
-                        value={deadline}
-                        onChange={e => setDeadline(e.target.value)}
-                        className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
-                </Field>
 
                 <Field label="Заметка (опц.)">
                     <textarea

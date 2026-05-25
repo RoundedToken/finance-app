@@ -226,7 +226,7 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
                                 value={amount}
                                 onChange={e => setAmount(e.target.value)}
                                 placeholder="0"
-                                className="w-full px-3 py-2 pr-20 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="w-full px-3 py-2 pr-20 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2">
                                 <Currency code={selectedAcc?.currency} />
