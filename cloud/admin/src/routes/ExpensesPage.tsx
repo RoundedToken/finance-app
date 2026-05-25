@@ -12,6 +12,7 @@ import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useExpenses, useReferences } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
+import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Expense } from "@/api/types";
 
@@ -32,7 +33,8 @@ export function ExpensesPage() {
     const [globalFilter, setGlobalFilter] = useState("");
     const [currencyFilter, setCurrencyFilter] = useState<string>("");
     const [categoryFilter, setCategoryFilter] = useState<string>("");
-    const [periodFilter, setPeriodFilter] = useState<"all" | "30d" | "90d" | "ytd" | "month">("all");
+    const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
+    const range = useMemo(() => computeRange(period), [period]);
 
     const enriched = useMemo<Row[]>(() => {
         if (!expensesData?.expenses || !refs) return [];
@@ -57,11 +59,12 @@ export function ExpensesPage() {
 
     const filtered = useMemo(() => {
         let rows = enriched;
+        if (range.from) rows = rows.filter(r => r.date >= range.from);
+        if (range.to)   rows = rows.filter(r => r.date <= range.to);
         if (currencyFilter) rows = rows.filter(r => r.currency === currencyFilter);
         if (categoryFilter) rows = rows.filter(r => r.category_id === categoryFilter);
-        if (periodFilter !== "all") rows = filterByPeriod(rows, periodFilter);
         return rows;
-    }, [enriched, currencyFilter, categoryFilter, periodFilter]);
+    }, [enriched, currencyFilter, categoryFilter, range.from, range.to]);
 
     const columns = useMemo(() => [
         columnHelper.accessor("date", {
@@ -158,7 +161,11 @@ export function ExpensesPage() {
                 <p className="text-muted-foreground mt-1">Read-only. Редактирование — пока через Mini App в Telegram.</p>
             </div>
 
-            <div className="card p-4 grid grid-cols-1 lg:grid-cols-[1fr_auto_auto_auto] gap-3">
+            <div className="card p-4">
+                <PeriodPicker value={period} onChange={setPeriod} />
+            </div>
+
+            <div className="card p-4 grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-3">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
@@ -169,13 +176,6 @@ export function ExpensesPage() {
                         className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <Select value={periodFilter} onChange={e => setPeriodFilter(e.target.value as any)} aria-label="Период">
-                    <option value="all">За всё время</option>
-                    <option value="month">Этот месяц</option>
-                    <option value="30d">Последние 30 дней</option>
-                    <option value="90d">Последние 90 дней</option>
-                    <option value="ytd">С начала года</option>
-                </Select>
                 <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} aria-label="Категория">
                     <option value="">Все категории</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.emoji ?? ""} {c.name}</option>)}
@@ -255,18 +255,6 @@ export function ExpensesPage() {
             </div>
         </div>
     );
-}
-
-function filterByPeriod<T extends { date: string }>(rows: T[], period: "30d" | "90d" | "ytd" | "month"): T[] {
-    const now = new Date();
-    const dayMs = 86_400_000;
-    let from: Date;
-    if (period === "30d") from = new Date(now.getTime() - 30 * dayMs);
-    else if (period === "90d") from = new Date(now.getTime() - 90 * dayMs);
-    else if (period === "ytd") from = new Date(now.getFullYear(), 0, 1);
-    else from = new Date(now.getFullYear(), now.getMonth(), 1);
-    const fromISO = from.toISOString().slice(0, 10);
-    return rows.filter(r => r.date >= fromISO);
 }
 
 interface StatProps { label: string; value: React.ReactNode }

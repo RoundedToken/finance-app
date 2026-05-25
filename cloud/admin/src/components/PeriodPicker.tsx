@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  *  - default = месяц, offset=0 (текущий)
  */
 
-export type PeriodType = "month" | "30d" | "year" | "all" | "custom";
+export type PeriodType = "week" | "month" | "30d" | "year" | "all" | "custom";
 
 export interface PeriodValue {
     type: PeriodType;
@@ -34,15 +34,38 @@ const MONTHS = [
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 ];
+const MONTHS_GEN = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
 
 function pad(n: number): string { return String(n).padStart(2, "0"); }
 function isoDate(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function addMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function startOfWeek(d: Date): Date {
+    // Понедельник как первый день недели (RU/EU convention).
+    const day = d.getDay() || 7; // Sunday → 7
+    const r = new Date(d);
+    r.setDate(d.getDate() - day + 1);
+    r.setHours(0, 0, 0, 0);
+    return r;
+}
 
 export function computeRange(value: PeriodValue): PeriodRange {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const t = value.type;
+
+    if (t === "week") {
+        const start = addDays(startOfWeek(today), value.offset * 7);
+        const end = addDays(start, 6);
+        const sameMonth = start.getMonth() === end.getMonth();
+        const sameYear = start.getFullYear() === end.getFullYear();
+        const label = sameMonth
+            ? `${start.getDate()}–${end.getDate()} ${MONTHS_GEN[start.getMonth()]}${sameYear && start.getFullYear() === today.getFullYear() ? "" : ` ${end.getFullYear()}`}`
+            : `${start.getDate()} ${MONTHS_GEN[start.getMonth()]} – ${end.getDate()} ${MONTHS_GEN[end.getMonth()]}${sameYear && start.getFullYear() === today.getFullYear() ? "" : ` ${end.getFullYear()}`}`;
+        return { type: t, from: isoDate(start), to: isoDate(end), label };
+    }
 
     if (t === "month") {
         const ref = addMonths(today, value.offset);
@@ -86,6 +109,7 @@ interface PeriodPickerProps {
 }
 
 const TABS: { type: PeriodType; label: string }[] = [
+    { type: "week",   label: "Нед" },
     { type: "month",  label: "Мес" },
     { type: "30d",    label: "30 дней" },
     { type: "year",   label: "Год" },
@@ -95,7 +119,7 @@ const TABS: { type: PeriodType; label: string }[] = [
 
 export function PeriodPicker({ value, onChange, className }: PeriodPickerProps) {
     const range = computeRange(value);
-    const canShiftPrev = value.type === "month" || value.type === "year";
+    const canShiftPrev = value.type === "week" || value.type === "month" || value.type === "year";
     const canShiftNext = canShiftPrev && value.offset < 0;
 
     const setType = (type: PeriodType) => {
@@ -146,7 +170,7 @@ export function PeriodPicker({ value, onChange, className }: PeriodPickerProps) 
                 </button>
             </div>
 
-            <div className="grid grid-cols-5 gap-1 p-1 bg-secondary/60 rounded-xl">
+            <div className="grid grid-cols-6 gap-1 p-1 bg-secondary/60 rounded-xl">
                 {TABS.map(tab => {
                     const active = tab.type === value.type;
                     return (
