@@ -180,6 +180,55 @@ LLM-агент с доступом ко всем финансовым данны
 **Требует завершения этапов 5-7** (нужны snapshots + transactions + incomes для богатого контекста). Можно начать прототип сразу после Stage 5 если хватит данных только по расходам.
 
 ### Технический долг
+
+#### Из retrospective audits (`specs/audits/SPEC-00*-{qa,arch}.md`)
+
+Найдено senior-qa + solution-architect agents после написания retro spec'ов. Must-fix применены отдельными commit'ами; ниже — nice-to-have. Каждый пункт можно вытащить в отдельный mini-spec когда дойдём.
+
+**Worker / Backend:**
+- [ ] Серверная валидация payload'ов в `POST/PUT /v1/expenses` и `/v1/web/snapshots` — сейчас минимум, missing required → 500 с leak'ом стек-трейса в response. Внедрить тонкий zod-слой (или ручной guard) → 400 с осмысленным сообщением. (QA-001, QA-005, ARCH-005-NTH3)
+- [ ] `500 → String(err)` утечка — `index.ts:113`. Заменить на generic message + structured log. (ARCH-001, ARCH-005)
+- [ ] `auth_date` freshness не проверяется в initData — токен валиден вечно до ротации bot token. OK для single-user, must-fix для multi-user. (QA-001)
+- [ ] `bot.ts` `parseExpense` принимает любой 3-5 буквенный токен как currency без проверки против `currencies` таблицы. (ARCH-001)
+- [ ] Telegram webhook без `secret_token` header — полагаемся на URL obscurity + whitelist. (ARCH-001)
+- [ ] `listExpenses` не фильтрует по `user_id` — fine для single-user, data-leak risk для multi-user. (QA-001)
+- [ ] `limit` парсится без валидации — `?limit=abc` → `LIMIT NaN`. (QA-001)
+- [ ] `/healthz` принимает любой HTTP method. (QA-001)
+- [ ] `latestSnapshotPerAccount` query использует `MAX(date || '|' || created_at)` — не использует индекс. Переделать на `ROW_NUMBER() OVER PARTITION` когда дойдём до Stage 5b. (ARCH-005)
+- [ ] `/v1/admin/bulk-rates` без cap на размер массива и per-item validation. (ARCH-003)
+- [ ] Миграция 0005 содержит stale "open-er-api" комментарии; index `DESC` qualifier mismatch с `schema.sql`. (ARCH-003)
+- [ ] `getRateAt` и `GET /v1/rates` существуют, но нет caller'а в Stage 3 — задокументировать назначение или удалить. (ARCH-003)
+- [ ] `tie-breaker` snapshots по `created_at` имеет точность секунды — при двух POST в одну секунду результат недетерминирован. (QA-005)
+
+**Mini App:**
+- [ ] **Donut tap unreliable** — Playwright кликает в bbox center и попадает в null fill. Реальный палец на stroke работает. Сделать arc `<path fill="..."/>` или добавить transparent overlay. (QA-003 M1)
+- [ ] A11y: добавить `aria-label` на `.back-btn`, `#open-date`, `#open-note`, `data-key="back"/"dot"`, `.iconbtn`. Toast → `role="status" aria-live="polite"`. (QA-002, QA-003)
+- [ ] CSP отсутствует в Mini App. Telegram WebView, но всё равно ослабляет defense-in-depth. (QA-002)
+- [ ] `escapeHtml` не экранирует `'` — текущая разметка safe, fragile к будущим изменениям. (ARCH-002)
+- [ ] Магические числа в `app.js`: swipe threshold 0.18, REVEAL/OPEN_AT 64/28, max amount 12, setTimeout 50/300/320/340. Вытащить в const с комментариями. (ARCH-002)
+- [ ] Эмодзи полей категорий/валют (`c.emoji`, `cat.emoji`) не экранируются в 8 местах — D1-admin-injection vector если SYNC_TOKEN утечёт. (QA-002)
+- [ ] Можно перейти с `confirm()` на `tg.showConfirm()` для нативного iOS look. (ARCH-002)
+- [ ] Low contrast: `today` trend bar (`#c4b5fd` vs `#a78bfa`), "Прочее" donut (`#5a5378` vs track `#36315a`). (QA-003)
+- [ ] Telegram WebApp warnings в Playwright логах загрязняют 0-errors gate — добавить `version: "7.10"` в mock. (QA-003)
+
+**Web Admin:**
+- [ ] `SnapshotsPage.tsx` — `useMemo` использован для side-effects (ре-инициализация модала). Переделать на `key`-pattern или `useEffect`. (ARCH-005 NTH-1)
+- [ ] Plain-text 4xx OAuth-ошибки (`forbidden`, `bad state`, `invalid return_to`). UX-error page — отложен в Stage 8. (QA-004)
+- [ ] Нет toast / ErrorBoundary. (QA-004)
+- [ ] Sidebar `disabled` элементы — `<div>` вместо `aria-disabled` button. (QA-004)
+- [ ] `BucketCard` hover-only иконка ArrowUpRight без visible affordance для keyboard users. (QA-004)
+- [ ] `jwt.ts:38` — `!==` для HMAC compare. Constant-time compare для defense-in-depth. (ARCH-004)
+- [ ] `jwt.ts` не валидирует header `alg`/`typ` явно — структурно блокируется HMAC-verify, но defence-in-depth. (ARCH-004)
+
+**Test tooling:**
+- [ ] `test_ui.py` — добавить `socketserver.TCPServer.allow_reuse_address = True` (port leak при re-run). (QA-002, QA-003)
+- [ ] `test_ui.py` mock-clock pinning + selector by data-attribute (вместо nth-child). (QA-003)
+- [ ] `test_ui.py` mock Telegram WebApp `version: "7.10"`. (QA-003)
+
+---
+
+#### Прочее
+
 - [ ] **#20**: переименовать корень с `excel/` → `finance/` (или `ledger/`).
 - [ ] Удалить мёртвый код в `tools/excel/` если Legacy полностью мигрирован в snapshots.
 - [ ] `init_db.py` + `migrate_to_d1.py` — переместить в `legacy/scripts/` или удалить.
