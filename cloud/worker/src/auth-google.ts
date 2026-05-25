@@ -85,7 +85,9 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
     const claims = decodeIdToken(tokenData.id_token);
     if (!claims) return text("bad id_token", 502);
     if (claims.aud !== env.GOOGLE_CLIENT_ID) return text("aud mismatch", 401);
-    if (claims.email_verified === false) return text("email not verified", 403);
+    // Fail-closed: принимаем только явный true. Если поле отсутствует — отклоняем.
+    // Google в текущей версии всегда возвращает email_verified, но не полагаемся на это.
+    if (claims.email_verified !== true) return text("email not verified", 403);
     if (!claims.email) return text("no email in id_token", 403);
 
     const email = String(claims.email).toLowerCase();
