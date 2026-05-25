@@ -241,7 +241,7 @@
 
 **Auth:** Google OAuth 2.0, allowlist email через `ADMIN_ALLOWED_EMAILS` wrangler var (CSV-список).
 - Worker: `/v1/auth/google/start` → редирект на Google, `/v1/auth/google/callback` → exchange code → проверка email → выдача JWT HS256.
-- JWT возвращается через URL fragment (`#token=<jwt>`), SPA сохраняет в `localStorage`, шлёт как `Authorization: Bearer <jwt>` на все `/v1/admin/*`.
+- JWT возвращается через URL fragment (`#token=<jwt>`), SPA сохраняет в `localStorage`, шлёт как `Authorization: Bearer <jwt>` на все `/v1/web/*`.
 - Срок JWT — 30 дней, rotate on use.
 - Cross-origin cookies НЕ используются (Pages.dev и Worker — разные origins, без custom-домена не работает SameSite).
 
@@ -252,7 +252,7 @@
 
 **Что меняется в Worker:**
 - Новые endpoints `/v1/auth/google/*`.
-- Middleware `requireAdmin` на путях `/v1/admin/*` валидирует JWT.
+- Middleware `requireAdminSession` на путях `/v1/web/*` валидирует JWT. Пути `/v1/admin/*` остаются под Bearer SYNC_TOKEN для системных миграций.
 - Существующие Mini App endpoints (`/v1/expenses`, `/v1/bootstrap`) остаются с Telegram `initData` авторизацией.
 - Две независимые auth-схемы на одном Worker.
 
