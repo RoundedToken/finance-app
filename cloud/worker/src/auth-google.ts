@@ -12,6 +12,7 @@
 
 import type { Env } from "./types";
 import { randomState, signJwt, verifyJwt } from "./jwt";
+import { jsonResponse } from "./cors";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;          // 30 дней
 const STATE_TTL_SECONDS = 600;                          // 10 минут на сам OAuth flow
@@ -109,7 +110,7 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
 export async function handleAdminMe(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    return jsonResponse({ ok: true, email: session.email });
+    return jsonResponse({ ok: true, email: session.email }, 200, request, env);
 }
 
 /** Middleware-style helper. Возвращает либо успех с email, либо готовый 401-Response. */
@@ -118,15 +119,15 @@ export async function requireAdminSession(
     env: Env,
 ): Promise<{ ok: true; email: string } | { ok: false; response: Response }> {
     if (!env.ADMIN_JWT_SECRET) {
-        return { ok: false, response: jsonResponse({ error: "server misconfigured" }, 500) };
+        return { ok: false, response: jsonResponse({ error: "server misconfigured" }, 500, request, env) };
     }
     const auth = request.headers.get("Authorization") ?? "";
-    if (!auth.startsWith("Bearer ")) return { ok: false, response: jsonResponse({ error: "unauthorized" }, 401) };
+    if (!auth.startsWith("Bearer ")) return { ok: false, response: jsonResponse({ error: "unauthorized" }, 401, request, env) };
     const token = auth.slice(7);
     const v = await verifyJwt(token, env.ADMIN_JWT_SECRET);
-    if (!v.ok || !v.payload) return { ok: false, response: jsonResponse({ error: "unauthorized", reason: v.reason }, 401) };
+    if (!v.ok || !v.payload) return { ok: false, response: jsonResponse({ error: "unauthorized", reason: v.reason }, 401, request, env) };
     const email = v.payload.sub.toLowerCase();
-    if (!isAllowedEmail(email, env)) return { ok: false, response: jsonResponse({ error: "forbidden" }, 403) };
+    if (!isAllowedEmail(email, env)) return { ok: false, response: jsonResponse({ error: "forbidden" }, 403, request, env) };
     return { ok: true, email };
 }
 
@@ -185,15 +186,4 @@ function parseCookies(header: string): Record<string, string> {
 
 function text(s: string, status = 200): Response {
     return new Response(s, { status, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-}
-
-function jsonResponse(payload: unknown, status = 200): Response {
-    return new Response(JSON.stringify(payload), {
-        status,
-        headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
-        },
-    });
 }

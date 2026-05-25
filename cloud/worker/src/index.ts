@@ -37,6 +37,7 @@ import {
 import { handleTelegramUpdate } from "./bot";
 import { fetchLatestRatesEUR, saveRates, getLatestRates } from "./rates";
 import { handleGoogleStart, handleGoogleCallback, handleAdminMe, requireAdminSession } from "./auth-google";
+import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
     listSnapshots,
     latestSnapshotPerAccount,
@@ -304,37 +305,6 @@ async function authenticateMiniApp(
     return { ok: true, userId: a.user_id };
 }
 
-// ── CORS ───────────────────────────────────────────────────────────────────
-function corsHeaders(request: Request, env: Env): HeadersInit {
-    const origin = request.headers.get("Origin") ?? "";
-    const allow = pickAllowedOrigin(origin, env);
-    return {
-        "Access-Control-Allow-Origin": allow,
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data",
-        "Access-Control-Max-Age": "86400",
-        "Vary": "Origin",
-    };
-}
-
-function pickAllowedOrigin(origin: string, env: Env): string {
-    if (!origin) return "*";
-    const raw = env.ADMIN_ALLOWED_ORIGINS ?? "";
-    const list = raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-    // Mini App live на pages.dev и в Telegram WebView — для них оставляем "*"
-    // (initData валидируется HMAC, CORS на запись не критичен).
-    // Для admin-origin из allowlist возвращаем точное значение.
-    const lower = origin.toLowerCase();
-    if (list.includes(lower)) return origin;
-    return "*";
-}
-
-function json(payload: unknown, status: number, request: Request, env: Env): Response {
-    return new Response(JSON.stringify(payload), {
-        status,
-        headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders(request, env),
-        },
-    });
-}
+// CORS + jsonResponse централизованы в ./cors.ts чтобы избежать расхождений
+// между путями /v1/auth/* и остальными endpoints.
+const json = jsonRes;
