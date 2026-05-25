@@ -22,14 +22,17 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent))
 from _common import ENV_PATH, GSHEETS_KEY_PATH, load_env  # noqa: E402
 
-# Загружаем .env до чтения значений (OWNER_EMAIL, HISTORY_START, SHEET_TITLE).
-load_env()
+# load_env() возвращает dict, но НЕ наполняет os.environ. Сливаем сами,
+# чтобы и .env, и реальные env-vars (например, из launchd) видны через os.environ.
+_dotenv = load_env()
+for _k, _v in _dotenv.items():
+    os.environ.setdefault(_k, _v)
 
 SHEET_TITLE = os.environ.get("RATES_SHEET_TITLE", "Finance Rates")
 OWNER_EMAIL = os.environ.get("RATES_SHEET_OWNER_EMAIL")
 if not OWNER_EMAIL:
     raise SystemExit(
-        "RATES_SHEET_OWNER_EMAIL не задан в .env — это email, на который "
+        f"RATES_SHEET_OWNER_EMAIL не задан в {ENV_PATH} — это email, на который "
         "Google Sheet будет расшарен как writer.",
     )
 HISTORY_START = os.environ.get("RATES_HISTORY_START", "2024-01-10")
