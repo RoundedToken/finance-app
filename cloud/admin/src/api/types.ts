@@ -293,3 +293,64 @@ export interface TransactionUpdatePayload {
     note?: string | null;
 }
 
+// ── Dashboard (SPEC-013) ─────────────────────────────────────────────────────
+
+export interface DashboardKpi {
+    net_worth_eur: number;
+    free_net_worth_eur: number;
+    targeted_eur: number;
+    monthly_burn_eur: number;
+    monthly_income_eur: number;
+    savings_rate: number | null;          // null если доход = 0
+    runway_months: number | null;         // по свободным; null если burn = 0
+    runway_months_total: number | null;   // по полному net worth
+    burn_window_months: number;
+    buckets_without_baseline: number;
+    missing_rates: number;
+}
+
+export interface NetWorthPoint {
+    month: string;                         // "YYYY-MM"
+    total_eur: number;
+    by_bucket: Record<string, number>;     // account_id → EUR
+    by_form: Record<string, number>;       // cash/digital/crypto → EUR
+    by_currency: Record<string, number>;   // EUR/RSD/... → EUR
+}
+
+export interface CashflowPoint {
+    month: string;
+    income_eur: number;
+    expense_eur: number;
+}
+
+export interface ExpenseCategorySlice {
+    category_id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    total_eur: number;
+    share: number;                         // 0..1
+}
+
+export interface DashboardBucket {
+    id: string;
+    name: string;
+    form: string;
+    type: string;
+    currency: string;
+    color: string | null;
+    sort_order: number;
+}
+
+export interface DashboardResponse {
+    as_of: string;
+    base: "EUR";
+    rates_date: string | null;
+    window: { from: string; to: string; months: number };
+    kpi: DashboardKpi;
+    net_worth_series: NetWorthPoint[];
+    cashflow_series: CashflowPoint[];
+    expenses_by_category: ExpenseCategorySlice[];
+    buckets: DashboardBucket[];
+}
+
