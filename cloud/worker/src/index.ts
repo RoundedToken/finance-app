@@ -18,6 +18,7 @@
  *   *      /v1/web/snapshots[/:id]    — CRUD snapshots (Bearer JWT)
  *   GET    /v1/web/income-categories  — список категорий доходов (Bearer JWT)
  *   *      /v1/web/incomes[/:id]      — CRUD incomes (Bearer JWT)
+ *   GET    /v1/web/dashboard          — агрегированный дашборд (Bearer JWT)
  *
  *   POST   /v1/admin/references       — push refs (system bearer)
  *   POST   /v1/admin/migrate-expenses — bulk insert (system bearer)
@@ -75,6 +76,7 @@ import {
     updateTransaction,
     deleteTransaction,
 } from "./transactions";
+import { getDashboard } from "./dashboard";
 
 export default {
     /** Cron Trigger — ежедневно тянет курсы. */
@@ -161,6 +163,7 @@ export default {
                 if (request.method === "PUT")    return handleWebTransactionsUpdate(request, env, txMatch[1]);
                 if (request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
             }
+            if (path === "/v1/web/dashboard" && request.method === "GET") return handleWebDashboard(request, env, url);
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
             if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
@@ -496,6 +499,23 @@ async function handleWebTransactionsDelete(request: Request, env: Env, id: strin
     if (!session.ok) return session.response;
     const r = await deleteTransaction(env, id);
     return json({ ok: true, ...r }, 200, request, env);
+}
+
+// ── Web Admin · dashboard (SPEC-013) ──────────────────────────────────────
+async function handleWebDashboard(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    try {
+        const data = await getDashboard(env, {
+            from: url.searchParams.get("from") ?? undefined,
+            to: url.searchParams.get("to") ?? undefined,
+        });
+        return json(data, 200, request, env);
+    } catch (err) {
+        // generic 5xx без stack-trace в body (SPEC-013 §8); детали — только в лог.
+        console.error("dashboard error", err);
+        return json({ error: "internal" }, 500, request, env);
+    }
 }
 
 // SPEC-012: chain endpoints удалены. transactions работают как

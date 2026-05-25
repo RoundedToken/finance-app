@@ -22,6 +22,7 @@ import type {
     TransactionCreatePayload,
     TransactionUpdatePayload,
     TransactionsResponse,
+    DashboardResponse,
 } from "./types";
 
 export function useMe() {
@@ -333,6 +334,20 @@ export function useDeleteTransaction() {
         mutationFn: (id: string) =>
             apiFetch<{ ok: true; deleted: boolean; deleted_snapshots: number }>(`/v1/web/transactions/${id}`, { method: "DELETE" }),
         onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+// ── Dashboard (SPEC-013) ────────────────────────────────────────────────────
+
+export function useDashboard(params?: { from?: string; to?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set("from", params.from);
+    if (params?.to) qs.set("to", params.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return useQuery({
+        queryKey: ["dashboard", params?.from ?? null, params?.to ?? null],
+        queryFn: () => apiFetch<DashboardResponse>(`/v1/web/dashboard${suffix}`),
+        staleTime: 30_000,
     });
 }
 
