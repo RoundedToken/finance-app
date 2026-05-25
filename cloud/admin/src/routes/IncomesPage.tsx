@@ -12,12 +12,11 @@ import {
 import { Modal } from "@/components/Modal";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
+import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Account, Income, IncomeCategory } from "@/api/types";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
-
-type PeriodKey = "month" | "year" | "all";
 
 function firstOfMonth(): string {
     const d = new Date();
@@ -72,11 +71,19 @@ export function IncomesPage() {
         return acc;
     }, [incomes, rates, startOfMonth, start365]);
 
-    // Breakdown by category (последние 12 мес)
+    // Период (PeriodPicker) управляет фильтрами таблицы и breakdown.
+    // KPI остаются independent (этот месяц / 12 мес / всё) — они задают
+    // постоянный контекст. Default = месяц (текущий).
+    const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
+    const range = useMemo(() => computeRange(period), [period]);
+
+    const inRange = (date: string) => (!range.from || date >= range.from) && (!range.to || date <= range.to);
+
+    // Breakdown by category для выбранного периода
     const breakdown = useMemo(() => {
         const totals = new Map<string, number>();
         for (const inc of incomes) {
-            if (inc.date < start365) continue;
+            if (!inRange(inc.date)) continue;
             const eur = toEur(inc.amount, inc.currency_code);
             totals.set(inc.category_id, (totals.get(inc.category_id) ?? 0) + eur);
         }
@@ -86,18 +93,15 @@ export function IncomesPage() {
             .filter(x => x.eur > 0)
             .sort((a, b) => b.eur - a.eur)
             .map(x => ({ ...x, pct: total > 0 ? (x.eur / total) * 100 : 0 }));
-    }, [incomes, categories, rates, start365]);
+    }, [incomes, categories, rates, range.from, range.to]);
 
-    // Фильтры / поиск
+    // Поиск + фильтр категории
     const [search, setSearch] = useState("");
     const [filterCategory, setFilterCategory] = useState<string>("");
-    const [period, setPeriod] = useState<PeriodKey>("all");
 
     const filtered = useMemo(() => {
-        let rows: Income[] = incomes;
-        if (period === "month") rows = rows.filter(i => i.date >= startOfMonth);
-        if (period === "year")  rows = rows.filter(i => i.date >= start365);
-        if (filterCategory)     rows = rows.filter(i => i.category_id === filterCategory);
+        let rows: Income[] = incomes.filter(i => inRange(i.date));
+        if (filterCategory) rows = rows.filter(i => i.category_id === filterCategory);
         if (search.trim()) {
             const q = search.toLowerCase();
             rows = rows.filter(i =>
@@ -109,7 +113,7 @@ export function IncomesPage() {
             );
         }
         return rows;
-    }, [incomes, search, filterCategory, period, accById, catById, startOfMonth, start365]);
+    }, [incomes, search, filterCategory, range.from, range.to, accById, catById]);
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Income | null>(null);
@@ -144,11 +148,15 @@ export function IncomesPage() {
                 <KpiCard label="Всего"                value={<><span>{formatAmount(sums.all, "EUR")}</span> <Currency code="EUR" /></>}   sub={`${sums.allCnt} ${pluralize(sums.allCnt)}${sums.missingRates ? ` · ${sums.missingRates} без курса` : ""}`} />
             </div>
 
+            <div className="card p-4 space-y-4">
+                <PeriodPicker value={period} onChange={setPeriod} />
+            </div>
+
             {breakdown.length > 0 && (
                 <div className="card p-5 space-y-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <TrendingUp className="h-4 w-4" />
-                        Разбивка по категориям (последние 12 месяцев)
+                        Разбивка по категориям · {range.label}
                     </div>
                     <div className="space-y-2">
                         {breakdown.map(({ cat, eur, pct }) => (
@@ -158,7 +166,7 @@ export function IncomesPage() {
                 </div>
             )}
 
-            <div className="card p-4 grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3">
+            <div className="card p-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
@@ -177,15 +185,6 @@ export function IncomesPage() {
                 >
                     <option value="">Все категории</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-                </Select>
-                <Select
-                    value={period}
-                    onChange={e => setPeriod(e.target.value as PeriodKey)}
-                    aria-label="Фильтр по периоду"
-                >
-                    <option value="all">Всё время</option>
-                    <option value="year">12 месяцев</option>
-                    <option value="month">Этот месяц</option>
                 </Select>
             </div>
 

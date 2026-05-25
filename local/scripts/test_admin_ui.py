@@ -232,6 +232,40 @@ async def scenario_modal_open(page, base: str) -> None:
     await page.wait_for_timeout(200)
 
 
+async def scenario_period_all(page, base: str) -> None:
+    """Period picker: переключиться на «Всё» — должно показать все 6 записей."""
+    await page.goto(f"{base}/incomes", wait_until="networkidle")
+    await page.wait_for_selector("text=Доходы", timeout=5000)
+    # Кнопка «Всё» в toggle group
+    await page.get_by_role("button", name="Всё", exact=True).click()
+    await page.wait_for_timeout(200)
+    out = OUT_DIR / "admin-incomes-period-all.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
+async def scenario_period_prev_month(page, base: str) -> None:
+    """Prev nav: переключиться на Апрель 2026."""
+    await page.goto(f"{base}/incomes", wait_until="networkidle")
+    await page.wait_for_selector("text=Доходы", timeout=5000)
+    await page.get_by_role("button", name="Предыдущий период").click()
+    await page.wait_for_timeout(200)
+    out = OUT_DIR / "admin-incomes-period-prev.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
+async def scenario_period_custom(page, base: str) -> None:
+    """Custom range: открыть «Период» — должны появиться date inputs."""
+    await page.goto(f"{base}/incomes", wait_until="networkidle")
+    await page.wait_for_selector("text=Доходы", timeout=5000)
+    await page.get_by_role("button", name="Период", exact=True).click()
+    await page.wait_for_timeout(200)
+    out = OUT_DIR / "admin-incomes-period-custom.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
 async def scenario_full_page(page, base: str, route: str, fname: str, label: str) -> None:
     """Открыть route и сделать full-page скриншот."""
     await page.goto(f"{base}{route}", wait_until="networkidle")
@@ -279,6 +313,9 @@ async def run(headed: bool) -> int:
 
             print("running scenarios:")
             await scenario_incomes_initial(page, base)
+            await scenario_period_all(page, base)
+            await scenario_period_prev_month(page, base)
+            await scenario_period_custom(page, base)
             await scenario_modal_open(page, base)
             await scenario_full_page(page, base, "/accounts", "admin-accounts.png", "Счета")
             await scenario_full_page(page, base, "/snapshots", "admin-snapshots.png", "Снапшоты")
