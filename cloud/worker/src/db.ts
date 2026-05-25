@@ -38,29 +38,29 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
 }
 
 export async function updateExpense(env: Env, id: string, userId: string, patch: any): Promise<{ updated: boolean }> {
-    // Берём только поля которые имеет смысл обновлять.
-    const r = await env.DB.prepare(
+    // PATCH-семантика: отсутствие ключа → оставить старое; явный null → стереть.
+    // Для note различаем "не передан" и "стереть" через hasOwnProperty.
+    const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
+    const sql =
         `UPDATE expenses
          SET date         = COALESCE(?, date),
              amount       = COALESCE(?, amount),
              currency     = COALESCE(?, currency),
              category_id  = COALESCE(?, category_id),
              account_id   = COALESCE(?, account_id),
-             note         = ?,
+             note         = ${hasNote ? "?" : "note"},
              updated_at   = datetime('now')
-         WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
-    )
-        .bind(
-            patch.date ?? null,
-            patch.amount ?? null,
-            patch.currency ?? null,
-            patch.category_id ?? null,
-            patch.account_id ?? null,
-            patch.note ?? null,
-            id,
-            userId,
-        )
-        .run();
+         WHERE id = ? AND user_id = ? AND deleted_at IS NULL`;
+    const params: any[] = [
+        patch.date ?? null,
+        patch.amount ?? null,
+        patch.currency ?? null,
+        patch.category_id ?? null,
+        patch.account_id ?? null,
+    ];
+    if (hasNote) params.push(patch.note ?? null);
+    params.push(id, userId);
+    const r = await env.DB.prepare(sql).bind(...params).run();
     return { updated: (r.meta.changes ?? 0) > 0 };
 }
 
