@@ -124,10 +124,50 @@
 #### 5d (Legacy) — отложено
 - [ ] Импорт snapshots из `data/legacy/Finances.xlsx` (33 снимка в EUR-eq) с обратной конверсией по историческим курсам. Решено начать с нуля.
 
-### Этап 7.5 — Транзакции / обмены / цепочки (Web Admin)
-- [ ] D1 schema: `transactions` (type: exchange/transfer/income/interest, from/to amounts, rate, fee, chain_id).
-- [ ] Web Admin: builder цепочки (RUB→USDT→EUR одной операцией, фиксация курса, total PnL).
-- [ ] Аналитика по обменам: эффективный курс, потери на спреде, PnL по периодам.
+### Этап 7.5.1 — Симметрия auto-snapshot для incomes / expenses
+
+(Идея от пользователя 2026-05-25, см. SPEC-008 §11 OQ3.)
+
+Если auto-snapshot работает для transactions, логично распространить
+на incomes и expenses: каждая денежная операция меняет balance ведра,
+и system всегда держит computed net worth актуальным. Quarterly /
+manual snapshot тогда становится **сверкой** против фактической
+банк-выписки — расхождение указывает на скрытую комиссию / процент /
+ошибку учёта.
+
+Что предстоит:
+- [ ] Helper `applyDelta(env, account_id, date, delta, source_ref)` —
+  единая точка генерации auto-snapshot. Используется
+  transactions / incomes / expenses.
+- [ ] Migrate incomes CRUD на auto-snapshot (insert/update/delete →
+  batch со snapshot mutation).
+- [ ] Migrate expenses CRUD аналогично (1822 существующих записей —
+  backfill миграцией: один snapshot за каждую expense ИЛИ
+  aggregated-by-day для compactness).
+- [ ] FK `snapshots.income_id` и `snapshots.expense_id` (nullable, для
+  cascading soft-delete как у transactions).
+- [ ] Retroactive операции: protocol пересчёта computed balance для
+  снапшотов «после» — либо invalidate, либо recompute.
+- [ ] UI: на bucket card показывать drift между computed и last manual
+  snapshot («-12 EUR расхождение — внести фактический baланс?»).
+
+### Этап 7.5 — Транзакции / обмены / цепочки — ✅ Закрыто
+- [x] D1 миграция 0009: `transactions` (exchange/transfer + chain_id + chain_sequence + fee + nullable goal_id) + `snapshots.transaction_id` (cascade FK).
+- [x] Worker: 6 endpoints CRUD (transactions + chains) + atomic batch (tx + 2 auto-snapshots в одном batch; для chain — все 3N statements в одном batch с virtual-delta map для корректного prev_balance).
+- [x] Web Admin: `/transactions` с PeriodPicker + 3 модала (exchange / transfer / chain builder с N звеньями), `/chains/:id` detail с initial/final/effective_rate. Auto-snapshots видны на /snapshots с бэйджем «auto», edit/delete блокированы (cascade-инвариант).
+- [x] Sidebar активирован для «Обмены» (`ArrowRightLeft`).
+- [x] Helper `formatExchangeRate()` — естественное направление display («1 USDT = 82.50 RUB», не «1 RUB = 82.5 USDT»).
+- [x] Phase 3 audit. QA PASS_WITH_SHOULDS (1 M, 5 S, ~5 N), Arch APPROVED_WITH_SHOULDS (0 M, 6 S, 4 N). Применены: chain atomicity (M1), transfer amount validation, loadAccount is_active check, snapshot OR IGNORE, listSnapshots transaction_id, SnapshotsPage auto-badge + read-only.
+
+### Этап 7.5.0 — отложенные пункты SPEC-008 audit
+- [ ] **Chain idempotency uniqueness** — `UNIQUE(chain_id, chain_sequence)` constraint в миграции 0009.1, чтобы повторный POST с тем же `chain_id` гарантированно не дублировал звенья.
+- [ ] **AC19 — «N обменов в этом месяце»** на bucket card в `/accounts` (требует подписки `useTransactions` в AccountsPage).
+- [ ] **AC9 UI warning** — на BucketCard показывать «баланс начат с обмена — проверь корректность» если первый snapshot is `auto_transaction` и prev_balance=0.
+- [ ] **data-model.md update** — описать `transactions`, `goal_contributions`, `goals`, обновить раздел snapshots.
+- [ ] **Currency conversion: date-aware rate** (см. ответ пользователю про rates) — `loadRatesForDate(date)` вместо `loadRates()` для historical accuracy в goal balance / KPI. Performance impact: N+1 lookup → cache по batch'у.
+
+### Этап 8 — Главный дашборд + историческая аналитика обменов
+(см. Stage 8 ниже — аналитика по обменам перенесена туда.)
 
 ### Этап 8 — Главный дашборд (Web Admin)
 - [ ] KPI карточки: net worth, monthly burn, runway, monthly income, savings rate.
@@ -268,4 +308,4 @@ Stage 7 audit verdict — PASS_WITH_SHOULDS / APPROVED_WITH_SHOULDS. 9 should-fi
 
 ## Текущий этап
 
-**Stage 7 (Цели / целевые фонды) — ✅ закрыт 2026-05-25.** Следующий — Stage 7.5 (Транзакции/обмены/цепочки): builder цепочек RUB→USDT→EUR одной операцией, фиксация курса, total PnL, withdraw из goal через transaction с goal_id. Mini App в режиме «полировка по запросу».
+**Stage 7.5 (Транзакции/обмены/цепочки) — ✅ закрыт 2026-05-25.** Реализовано: exchange + transfer + chain builder, auto-snapshot обоих ведер (atomic batch), cascade soft-delete. Следующий — Stage 7.5.1 (симметрия auto-snapshot для incomes/expenses, идея пользователя) или Stage 8 (Dashboard).
