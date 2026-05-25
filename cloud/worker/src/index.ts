@@ -74,6 +74,7 @@ import {
     createTransaction,
     createChain,
     chainFromTransaction,
+    updateTransaction,
     deleteTransaction,
     deleteChain,
 } from "./transactions";
@@ -161,7 +162,10 @@ export default {
             const txChainFromMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)\/chain-from$/);
             if (txChainFromMatch && request.method === "POST") return handleWebChainFrom(request, env, txChainFromMatch[1]);
             const txMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)$/);
-            if (txMatch && request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
+            if (txMatch) {
+                if (request.method === "PUT")    return handleWebTransactionsUpdate(request, env, txMatch[1]);
+                if (request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
+            }
             if (path === "/v1/web/chains" && request.method === "POST") return handleWebChainsCreate(request, env);
             const chainMatch = path.match(/^\/v1\/web\/chains\/([0-9a-fA-F-]+)$/);
             if (chainMatch) {
@@ -479,6 +483,16 @@ async function handleWebTransactionsCreate(request: Request, env: Env): Promise<
     const r = await createTransaction(env, body);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, id: r.id, inserted: r.inserted, snapshot_ids: r.snapshot_ids }, 200, request, env);
+}
+
+async function handleWebTransactionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await updateTransaction(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated, new_snapshot_ids: r.new_snapshot_ids }, 200, request, env);
 }
 
 async function handleWebTransactionsDelete(request: Request, env: Env, id: string): Promise<Response> {

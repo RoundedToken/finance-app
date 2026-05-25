@@ -310,6 +310,18 @@ export interface ChainCreatePayload {
     steps: ChainStepPayload[];
 }
 
+export interface TransactionUpdatePayload {
+    date?: string;
+    from_account_id?: string;
+    to_account_id?: string;
+    from_amount?: number;
+    to_amount?: number;
+    fee_amount?: number | null;
+    fee_currency?: string | null;
+    note?: string | null;
+    goal_id?: string | null;
+}
+
 export interface ChainFromPayload {
     next_step: {
         type: TransactionType;

@@ -23,6 +23,7 @@ import type {
     SnapshotUpdatePayload,
     SnapshotsResponse,
     TransactionCreatePayload,
+    TransactionUpdatePayload,
     TransactionsResponse,
 } from "./types";
 
@@ -335,6 +336,18 @@ export function useCreateChain() {
                 body: JSON.stringify(payload),
             }),
         onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+export function useUpdateTransaction() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: TransactionUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean; new_snapshot_ids?: string[] }>(`/v1/web/transactions/${id}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => { invalidateOnTxMutation(qc); qc.invalidateQueries({ queryKey: ["goals"] }); qc.invalidateQueries({ queryKey: ["goal"] }); },
     });
 }
 

@@ -387,6 +387,162 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
 
 // ── Delete ──────────────────────────────────────────────────────────────────
 
+// ── Edit transaction (SPEC-010) ────────────────────────────────────────────
+
+const STRUCTURAL_FIELDS = ["date", "from_account_id", "to_account_id", "from_amount", "to_amount"] as const;
+
+export async function updateTransaction(
+    env: Env,
+    id: string,
+    patch: Partial<TransactionPayload>,
+): Promise<Result<{ updated: boolean; new_snapshot_ids?: string[] }>> {
+    const existing = await env.DB.prepare(
+        `SELECT id, type, date, from_account_id, to_account_id,
+                from_amount, from_currency, to_amount, to_currency,
+                fee_amount, fee_currency, note, chain_id, chain_sequence, goal_id
+         FROM transactions WHERE id = ? AND deleted_at IS NULL`,
+    ).bind(id).first<any>();
+    if (!existing) return { ok: false, error: "transaction not found" };
+
+    const inChain = existing.chain_id != null;
+    const wantsStructural = STRUCTURAL_FIELDS.some(f => Object.prototype.hasOwnProperty.call(patch, f));
+    if (inChain && wantsStructural) {
+        return { ok: false, error: "edit of chain transaction is limited to note/fee/goal_id — delete chain to restructure" };
+    }
+
+    // Validate goal_id if provided (allows clearing via null).
+    if (Object.prototype.hasOwnProperty.call(patch, "goal_id") && patch.goal_id != null) {
+        const goalCheck = await validateGoalRef(env, patch.goal_id);
+        if (!goalCheck.ok) return goalCheck;
+    }
+
+    // Build merged values (используем existing где не overridden).
+    const merged: TransactionPayload = {
+        type: existing.type,
+        date: (patch.date ?? existing.date) as string,
+        from_account_id: (patch.from_account_id ?? existing.from_account_id) as string,
+        to_account_id:   (patch.to_account_id   ?? existing.to_account_id)   as string,
+        from_amount: (patch.from_amount ?? existing.from_amount) as number,
+        to_amount:   (patch.to_amount   ?? existing.to_amount)   as number,
+        fee_amount: Object.prototype.hasOwnProperty.call(patch, "fee_amount")     ? (patch.fee_amount ?? null)     : existing.fee_amount,
+        fee_currency: Object.prototype.hasOwnProperty.call(patch, "fee_currency") ? (patch.fee_currency ?? null)   : existing.fee_currency,
+        note: Object.prototype.hasOwnProperty.call(patch, "note")                 ? (patch.note ?? null)           : existing.note,
+        goal_id: Object.prototype.hasOwnProperty.call(patch, "goal_id")           ? (patch.goal_id ?? null)        : existing.goal_id,
+    };
+
+    // FK validation если accounts менялись.
+    let from: AccountInfo, to: AccountInfo;
+    if (wantsStructural) {
+        const v = await validateStep(env, merged);
+        if (!v.ok) return v;
+        from = v.from; to = v.to;
+    } else {
+        from = { id: existing.from_account_id, currency: existing.from_currency };
+        to   = { id: existing.to_account_id,   currency: existing.to_currency };
+    }
+
+    const hasFeeAmt = Object.prototype.hasOwnProperty.call(patch, "fee_amount");
+    const hasFeeCcy = Object.prototype.hasOwnProperty.call(patch, "fee_currency");
+    const hasNote   = Object.prototype.hasOwnProperty.call(patch, "note");
+    const hasGoal   = Object.prototype.hasOwnProperty.call(patch, "goal_id");
+
+    const updateStmt = env.DB.prepare(
+        `UPDATE transactions SET
+            date             = COALESCE(?, date),
+            from_account_id  = COALESCE(?, from_account_id),
+            to_account_id    = COALESCE(?, to_account_id),
+            from_amount      = COALESCE(?, from_amount),
+            from_currency    = COALESCE(?, from_currency),
+            to_amount        = COALESCE(?, to_amount),
+            to_currency      = COALESCE(?, to_currency),
+            fee_amount       = ${hasFeeAmt ? "?" : "fee_amount"},
+            fee_currency     = ${hasFeeCcy ? "?" : "fee_currency"},
+            note             = ${hasNote   ? "?" : "note"},
+            goal_id          = ${hasGoal   ? "?" : "goal_id"},
+            updated_at       = datetime('now')
+         WHERE id = ? AND deleted_at IS NULL`,
+    ).bind(
+        patch.date ?? null,
+        patch.from_account_id ?? null,
+        patch.to_account_id ?? null,
+        patch.from_amount ?? null,
+        wantsStructural ? from.currency : null,
+        patch.to_amount ?? null,
+        wantsStructural ? to.currency : null,
+        ...(hasFeeAmt ? [patch.fee_amount ?? null] : []),
+        ...(hasFeeCcy ? [patch.fee_currency ?? null] : []),
+        ...(hasNote   ? [patch.note ?? null] : []),
+        ...(hasGoal   ? [patch.goal_id ?? null] : []),
+        id,
+    );
+
+    if (!wantsStructural) {
+        const r = await updateStmt.run();
+        return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
+    }
+
+    // Structural change → recompute auto-snapshots:
+    //   1. UPDATE tx
+    //   2. soft-delete старые auto-snapshots (DELETE через deleted_at)
+    //   3. INSERT новые auto-snapshots с пересчитанным prev_balance.
+    //
+    // Latest snapshot для merged account_ids считается ДО batch'а через
+    // прямой read. Это OK потому что atomic batch overwrites именно эти
+    // snapshots (link by transaction_id).
+    const newFromSnap = crypto.randomUUID();
+    const newToSnap   = crypto.randomUUID();
+    const prevFrom = await latestSnapshotAmount(env, from.id, merged.date);
+    const prevTo   = await latestSnapshotAmount(env, to.id,   merged.date);
+    // ВАЖНО: prev_balance может включать старые auto-snapshots от этой
+    // же tx (если account_id не менялся). Нужно их вычесть из prev.
+    // Это автоматически решается если мы сначала «отменим» старую tx:
+    // prev_with_old = latestSnapshotAmount; чтобы получить prev_clean
+    // (без эффекта старой tx) — добавим обратно old.from_amount к from_prev
+    // (потому что старая tx это снимала) и вычтем old.to_amount из to_prev.
+    let cleanPrevFrom = prevFrom;
+    let cleanPrevTo   = prevTo;
+    if (existing.from_account_id === from.id) cleanPrevFrom = prevFrom + existing.from_amount;
+    if (existing.to_account_id   === to.id)   cleanPrevTo   = prevTo   - existing.to_amount;
+    // Если accounts менялись — старая tx влияла на ДРУГИЕ buckets.
+    // Эти влияния остаются (они «зависшие»). Soft-delete старых snapshots
+    // через transaction_id=id (см. ниже) их уберёт, и balance тех вёдер
+    // вернётся к исходному.
+    const newFromBalance = cleanPrevFrom - merged.from_amount;
+    const newToBalance   = cleanPrevTo   + merged.to_amount;
+
+    const stmts = [
+        updateStmt,
+        env.DB.prepare(
+            `UPDATE snapshots SET deleted_at = datetime('now'), updated_at = datetime('now')
+             WHERE transaction_id = ? AND source = 'auto_transaction' AND deleted_at IS NULL`,
+        ).bind(id),
+        env.DB.prepare(
+            `INSERT OR IGNORE INTO snapshots
+               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
+        ).bind(
+            newFromSnap, merged.date, from.id, newFromBalance,
+            `auto: ${merged.type} −${merged.from_amount} ${from.currency} (edited)`,
+            id,
+        ),
+        env.DB.prepare(
+            `INSERT OR IGNORE INTO snapshots
+               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
+        ).bind(
+            newToSnap, merged.date, to.id, newToBalance,
+            `auto: ${merged.type} +${merged.to_amount} ${to.currency} (edited)`,
+            id,
+        ),
+    ];
+    const results = await env.DB.batch(stmts);
+    return {
+        ok: true,
+        updated: (results[0].meta.changes ?? 0) > 0,
+        new_snapshot_ids: [newFromSnap, newToSnap],
+    };
+}
+
 // ── Chain-from existing transaction (SPEC-009) ─────────────────────────────
 
 export interface ChainFromPayload {
