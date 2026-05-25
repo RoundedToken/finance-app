@@ -29,22 +29,117 @@ export async function listSnapshots(env: Env, opts: { limit?: number; from?: str
     return r.results as any[];
 }
 
-/** Возвращает: для каждого аккаунта (form != 'external') — последний снапшот. */
-export async function latestSnapshotPerAccount(env: Env): Promise<Record<string, { date: string; amount: number; id: string }>> {
+/**
+ * Возвращает последний MANUAL snapshot для каждого аккаунта (form != 'external').
+ * После SPEC-011: auto-snapshots не используются для balance, только manual.
+ */
+export async function latestManualSnapshotPerAccount(env: Env): Promise<Record<string, { date: string; amount: number; id: string }>> {
     const r = await env.DB.prepare(
         `SELECT s.account_id, s.id, s.date, s.amount
          FROM snapshots s
          JOIN (
             SELECT account_id, MAX(date || '|' || created_at) AS mx
             FROM snapshots
-            WHERE deleted_at IS NULL
+            WHERE deleted_at IS NULL AND source = 'manual'
             GROUP BY account_id
          ) m ON m.account_id = s.account_id AND m.mx = s.date || '|' || s.created_at
-         WHERE s.deleted_at IS NULL`,
+         WHERE s.deleted_at IS NULL AND s.source = 'manual'`,
     ).all<{ account_id: string; id: string; date: string; amount: number }>();
     const out: Record<string, { date: string; amount: number; id: string }> = {};
     for (const row of r.results) {
         out[row.account_id] = { id: row.id, date: row.date, amount: row.amount };
+    }
+    return out;
+}
+
+/**
+ * Backward-compatible alias — legacy callers всё ещё ищут это имя.
+ * @deprecated используй `latestManualSnapshotPerAccount`.
+ */
+export const latestSnapshotPerAccount = latestManualSnapshotPerAccount;
+
+/**
+ * Effective balance ведра в native currency, computed on-demand:
+ *
+ *   effective = manual_baseline + Σ events after baseline.date
+ *
+ * baseline = последний manual snapshot для bucket'а с date ≤ asOfDate.
+ * Если baseline нет — берётся 0 и события суммируются с самого начала.
+ *
+ * Events: incomes (+amount), expenses (−amount), transactions
+ * (−from_amount если bucket=from, +to_amount если bucket=to),
+ * goal_contributions (+amount если account_id=bucket).
+ *
+ * Все суммы в native валюте ведра — никаких конверсий.
+ */
+export async function getEffectiveBalance(env: Env, accountId: string, asOfDate?: string): Promise<{
+    balance: number;
+    manual_baseline: { id: string; date: string; amount: number } | null;
+    events_count: number;
+}> {
+    const upTo = asOfDate ?? "9999-12-31";
+
+    const baselineRow = await env.DB.prepare(
+        `SELECT id, date, amount FROM snapshots
+         WHERE account_id = ? AND source = 'manual' AND deleted_at IS NULL AND date <= ?
+         ORDER BY date DESC, created_at DESC LIMIT 1`,
+    ).bind(accountId, upTo).first<{ id: string; date: string; amount: number }>();
+
+    const baseline = baselineRow ?? null;
+    const fromDate = baseline ? baseline.date : "0000-01-01";
+    let balance = baseline?.amount ?? 0;
+    let events = 0;
+
+    // Incomes (+amount)
+    const inc = await env.DB.prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM incomes
+         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
+    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+    balance += inc?.s ?? 0;
+    events  += inc?.c ?? 0;
+
+    // Expenses (−amount)
+    const exp = await env.DB.prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM expenses
+         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
+    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+    balance -= exp?.s ?? 0;
+    events  += exp?.c ?? 0;
+
+    // Transactions out (−from_amount)
+    const txOut = await env.DB.prepare(
+        `SELECT COALESCE(SUM(from_amount), 0) AS s, COUNT(*) AS c FROM transactions
+         WHERE from_account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
+    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+    balance -= txOut?.s ?? 0;
+    events  += txOut?.c ?? 0;
+
+    // Transactions in (+to_amount)
+    const txIn = await env.DB.prepare(
+        `SELECT COALESCE(SUM(to_amount), 0) AS s, COUNT(*) AS c FROM transactions
+         WHERE to_account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
+    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+    balance += txIn?.s ?? 0;
+    events  += txIn?.c ?? 0;
+
+    // Goal contributions (+amount если account_id=bucket)
+    const gc = await env.DB.prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM goal_contributions
+         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
+    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+    balance += gc?.s ?? 0;
+    events  += gc?.c ?? 0;
+
+    return { balance, manual_baseline: baseline, events_count: events };
+}
+
+/** Effective balance для всех active buckets. */
+export async function effectiveBalancePerAccount(env: Env): Promise<Record<string, { balance: number; manual_baseline: { id: string; date: string; amount: number } | null; events_count: number }>> {
+    const buckets = await listBuckets(env);
+    const out: Record<string, { balance: number; manual_baseline: any; events_count: number }> = {};
+    // N+1 queries но buckets всего 7 — приемлемо.
+    for (const b of buckets) {
+        out[b.id] = await getEffectiveBalance(env, b.id);
     }
     return out;
 }

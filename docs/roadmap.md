@@ -151,6 +151,15 @@ manual snapshot тогда становится **сверкой** против 
 - [ ] UI: на bucket card показывать drift между computed и last manual
   snapshot («-12 EUR расхождение — внести фактический baланс?»).
 
+### Этап 7.5.4 — Math consistency (manual + events) — ✅ Закрыто
+- [x] Auto-snapshots полностью убраны из системы (миграция 0010 hard-DELETE для существующих, генерация снята в transactions.ts).
+- [x] `getEffectiveBalance(account, asOfDate?)` = manual baseline + Σ events (incomes, expenses, transactions, goal_contributions) после baseline.
+- [x] `/v1/web/accounts` возвращает `effective_balance` + `manual_snapshot` + `events_count`.
+- [x] Overdraft validation: создание tx / chain / edit с уменьшением bucket'а ниже 0 — 400 с конкретными цифрами «доступно X, нужно Y».
+- [x] AccountsPage: bucket card показывает effective balance + manual baseline + drift indicator («+X от событий») + warning «нет baseline» если manual snapshot отсутствует. Топ-баннер если есть отрицательные вёдра.
+- [x] SnapshotsPage: создание/редактирование manual snapshot — он становится новым baseline для всех будущих расчётов.
+- См. `specs/SPEC-011-math-consistency.md`.
+
 ### Этап 7.5.3 — Edit transaction — ✅ Закрыто
 - [x] PUT `/v1/web/transactions/:id` partial update. Standalone tx — все поля; chain-tx — только note/fee/goal_id (структурные изменения требуют delete+recreate).
 - [x] Auto-snapshots пересчитываются в atomic batch при structural change (UPDATE tx + soft-delete старых snapshots + INSERT новых с правильным prev_balance).

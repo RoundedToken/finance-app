@@ -35,6 +35,11 @@ export interface Account {
     color: string | null;
     form?: "cash" | "digital" | "external";
     sort_order?: number;
+    // SPEC-011: computed effective balance + manual baseline.
+    manual_snapshot?: { id: string; date: string; amount: number } | null;
+    effective_balance?: number;
+    events_count?: number;
+    /** @deprecated SPEC-011: backend больше не возвращает latest_snapshot. */
     latest_snapshot?: { id: string; date: string; amount: number } | null;
 }
 

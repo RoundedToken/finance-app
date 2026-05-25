@@ -44,7 +44,8 @@ import { handleGoogleStart, handleGoogleCallback, handleAdminMe, requireAdminSes
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
     listSnapshots,
-    latestSnapshotPerAccount,
+    latestManualSnapshotPerAccount,
+    effectiveBalancePerAccount,
     createSnapshot,
     updateSnapshot,
     deleteSnapshot,
@@ -272,10 +273,18 @@ async function handleWebReferences(request: Request, env: Env): Promise<Response
 async function handleWebAccounts(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const [buckets, latest] = await Promise.all([listBuckets(env), latestSnapshotPerAccount(env)]);
+    // SPEC-011: balance computed on-demand. Manual snapshot — отдельное
+    // поле (для drift indication и onboarding hint).
+    const [buckets, manual, effective] = await Promise.all([
+        listBuckets(env),
+        latestManualSnapshotPerAccount(env),
+        effectiveBalancePerAccount(env),
+    ]);
     const enriched = buckets.map((b: any) => ({
         ...b,
-        latest_snapshot: latest[b.id] ?? null,
+        manual_snapshot: manual[b.id] ?? null,
+        effective_balance: effective[b.id]?.balance ?? 0,
+        events_count: effective[b.id]?.events_count ?? 0,
     }));
     return json({ accounts: enriched }, 200, request, env);
 }
@@ -482,7 +491,7 @@ async function handleWebTransactionsCreate(request: Request, env: Env): Promise<
     if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
     const r = await createTransaction(env, body);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, id: r.id, inserted: r.inserted, snapshot_ids: r.snapshot_ids }, 200, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
 
 async function handleWebTransactionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
