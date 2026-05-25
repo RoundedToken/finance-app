@@ -210,7 +210,7 @@ export function GoalDetailPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {contributions.map(c => <ContribRow key={`${c.source}-${c.id ?? c.transaction_id}`} contrib={c} targetCcy={ccy} />)}
+                            {contributions.map(c => <ContribRow key={`${c.source}-${c.id}`} contrib={c} targetCcy={ccy} />)}
                         </tbody>
                     </table>
                 )}
@@ -225,41 +225,23 @@ export function GoalDetailPage() {
 function ContribRow({ contrib, targetCcy }: { contrib: GoalContribution; targetCcy: string | null }) {
     const remove = useDeleteContribution();
     const isManual = contrib.source === "manual";
-    const isIncome = contrib.source === "income";
-    const isTx = contrib.source === "exchange" || contrib.source === "transfer";
 
     const handleDelete = async () => {
-        const label = isManual ? `${formatAmount(contrib.amount ?? 0, contrib.currency_code ?? "")} ${contrib.currency_code ?? ""}` : "";
+        const label = `${formatAmount(contrib.amount, contrib.currency_code)} ${contrib.currency_code}`;
         if (!confirm(`Удалить пополнение?\n${label} · ${formatDate(contrib.date)}`)) return;
         await remove.mutateAsync(contrib.id);
     };
 
-    let sourceBadge: React.ReactNode;
-    if (isIncome) sourceBadge = <Link to="/incomes" className="inline-flex items-center gap-1 hover:underline"><span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">income</span></Link>;
-    else if (isManual) sourceBadge = <span className="text-xs px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">ручное</span>;
-    else if (contrib.source === "exchange") sourceBadge = <Link to="/transactions" className="inline-flex items-center gap-1 hover:underline"><span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300">💱 обмен</span></Link>;
-    else sourceBadge = <Link to="/transactions" className="inline-flex items-center gap-1 hover:underline"><span className="text-xs px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">↔ перевод</span></Link>;
+    const sourceBadge = isManual
+        ? <span className="text-xs px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">ручное</span>
+        : <Link to="/incomes" className="inline-flex items-center gap-1 hover:underline"><span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">income</span></Link>;
 
     return (
         <tr className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
             <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(contrib.date)}</td>
-            <td className="px-4 py-2.5">
-                <div className="flex flex-col gap-0.5">
-                    {sourceBadge}
-                    {contrib.chain_id && (
-                        <span className="text-[10px] text-muted-foreground">🔗 {contrib.chain_id.slice(0, 8)} · {contrib.chain_sequence}</span>
-                    )}
-                </div>
-            </td>
+            <td className="px-4 py-2.5">{sourceBadge}</td>
             <td className="px-4 py-2.5 text-right num font-medium tabular-nums whitespace-nowrap">
-                {isTx ? (
-                    <div className="text-xs">
-                        <div className="text-destructive/90">−{formatAmount(contrib.from_amount ?? 0, contrib.from_currency ?? "")} <Currency code={contrib.from_currency} size="xs" /></div>
-                        <div className="text-positive">+{formatAmount(contrib.to_amount ?? 0, contrib.to_currency ?? "")} <Currency code={contrib.to_currency} size="xs" /></div>
-                    </div>
-                ) : (
-                    <span>{formatAmount(contrib.amount ?? 0, contrib.currency_code ?? "")} <Currency code={contrib.currency_code} /></span>
-                )}
+                <span>{formatAmount(contrib.amount, contrib.currency_code)} <Currency code={contrib.currency_code} /></span>
             </td>
             <td className="px-4 py-2.5 text-right num tabular-nums whitespace-nowrap">
                 {contrib.delta_in_target != null && targetCcy ? (

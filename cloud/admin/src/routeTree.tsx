@@ -11,7 +11,6 @@ import { IncomesPage } from "@/routes/IncomesPage";
 import { GoalsPage } from "@/routes/GoalsPage";
 import { GoalDetailPage } from "@/routes/GoalDetailPage";
 import { TransactionsPage } from "@/routes/TransactionsPage";
-import { ChainDetailPage } from "@/routes/ChainDetailPage";
 
 interface RouterContext { queryClient: QueryClient }
 
@@ -85,17 +84,11 @@ const transactionsRoute = createRoute({
     component: TransactionsPage,
 });
 
-const chainDetailRoute = createRoute({
-    getParentRoute: () => authedRoute,
-    path: "/chains/$chainId",
-    component: ChainDetailPage,
-});
-
 export const routeTree = rootRoute.addChildren([
     loginRoute,
     authedRoute.addChildren([
         indexRoute, accountsRoute, snapshotsRoute, expensesRoute,
         incomesRoute, goalsRoute, goalDetailRoute,
-        transactionsRoute, chainDetailRoute,
+        transactionsRoute,
     ]),
 ]);

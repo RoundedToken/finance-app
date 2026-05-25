@@ -180,20 +180,12 @@ export interface Goal {
 
 export interface GoalContribution {
     id: string;
-    source: "income" | "manual" | "exchange" | "transfer";
+    source: "income" | "manual";           // SPEC-012: exchange/transfer убраны.
     income_id?: string;
-    transaction_id?: string;
     date: string;
-    amount?: number;                       // только для income / manual
-    currency_code?: string;
-    // Tx fields (exchange / transfer):
-    from_amount?: number;
-    from_currency?: string;
-    to_amount?: number;
-    to_currency?: string;
-    chain_id?: string | null;
-    chain_sequence?: number | null;
-    delta_in_target?: number | null;       // spread loss / income contribution в target_currency
+    amount: number;
+    currency_code: string;
+    delta_in_target?: number | null;       // вклад в target_currency
     account_id: string | null;
     note: string | null;
     created_at: string;
@@ -263,24 +255,16 @@ export interface Transaction {
     fee_amount: number | null;
     fee_currency: string | null;
     note: string | null;
-    chain_id: string | null;
-    chain_sequence: number | null;
-    goal_id: string | null;
+    /** @deprecated SPEC-012: chain_id/sequence/goal_id больше не записываются. Поля в БД сохранены как «спящие». */
+    chain_id?: string | null;
+    chain_sequence?: number | null;
+    goal_id?: string | null;
     created_at: string;
     updated_at: string;
 }
 
 export interface TransactionsResponse {
     transactions: Transaction[];
-}
-
-export interface ChainDetail {
-    chain_id: string;
-    transactions: Transaction[];
-    initial: { account_id: string; amount: number; currency: string } | null;
-    final: { account_id: string; amount: number; currency: string } | null;
-    effective_rate: number | null;
-    step_count: number;
 }
 
 export interface TransactionCreatePayload {
@@ -294,26 +278,9 @@ export interface TransactionCreatePayload {
     fee_amount?: number | null;
     fee_currency?: string | null;
     note?: string | null;
-    goal_id?: string | null;
 }
 
-export interface ChainStepPayload {
-    type: TransactionType;
-    from_account_id: string;
-    to_account_id: string;
-    from_amount: number;
-    to_amount: number;
-    fee_amount?: number | null;
-    fee_currency?: string | null;
-}
 
-export interface ChainCreatePayload {
-    chain_id?: string;
-    date: string;
-    note?: string | null;
-    goal_id?: string | null;
-    steps: ChainStepPayload[];
-}
 
 export interface TransactionUpdatePayload {
     date?: string;
@@ -324,17 +291,5 @@ export interface TransactionUpdatePayload {
     fee_amount?: number | null;
     fee_currency?: string | null;
     note?: string | null;
-    goal_id?: string | null;
 }
 
-export interface ChainFromPayload {
-    next_step: {
-        type: TransactionType;
-        to_account_id: string;
-        to_amount: number;
-        fee_amount?: number | null;
-        fee_currency?: string | null;
-    };
-    date?: string;
-    note?: string | null;
-}

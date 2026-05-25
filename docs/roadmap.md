@@ -151,6 +151,14 @@ manual snapshot тогда становится **сверкой** против 
 - [ ] UI: на bucket card показывать drift между computed и last manual
   snapshot («-12 EUR расхождение — внести фактический baланс?»).
 
+### Этап 7.5.5 — Remove chains + goal-tagged tx — ✅ Закрыто
+- [x] Чейны и привязка transactions к целям убраны (SPEC-008 частично + SPEC-009 полностью откатаны). После реальной попытки использования: spread loss в goal balance и multi-step builder оказались шумом без actionable insight'а.
+- [x] Worker: endpoints `/v1/web/chains*` и `/v1/web/transactions/:id/chain-from` удалены. `createChain`, `getChainDetail`, `deleteChain`, `chainFromTransaction` helpers ушли. `validateStep` больше не валидирует `goal_id`. `getGoalDetail` timeline и `listGoals` balance — только incomes + manual contributions.
+- [x] Admin: `ChainModal`, `ChainContinueModal`, `ChainDetailPage` файлы удалены. Кнопки `+ Цепочка` и `🔗 Продолжить` ушли с /transactions. Goal selector убран из Exchange/Transfer/Edit modals. Маршрут `/chains/$chainId` удалён.
+- [x] D1 data fix: `UPDATE transactions SET goal_id=NULL, chain_id=NULL, chain_sequence=NULL` (2 rows) — на чистый слой данных.
+- [x] Колонки в таблице сохранены как «спящие» — никаких миграций нет, на случай возврата фичи в будущем.
+- См. `specs/SPEC-012-remove-chains-and-goal-tagged-tx.md`.
+
 ### Этап 7.5.4 — Math consistency (manual + events) — ✅ Закрыто
 - [x] Auto-snapshots полностью убраны из системы (миграция 0010 hard-DELETE для существующих, генерация снята в transactions.ts).
 - [x] `getEffectiveBalance(account, asOfDate?)` = manual baseline + Σ events (incomes, expenses, transactions, goal_contributions) после baseline.

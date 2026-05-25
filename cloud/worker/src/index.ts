@@ -71,13 +71,9 @@ import {
 } from "./goals";
 import {
     listTransactions,
-    getChainDetail,
     createTransaction,
-    createChain,
-    chainFromTransaction,
     updateTransaction,
     deleteTransaction,
-    deleteChain,
 } from "./transactions";
 
 export default {
@@ -160,18 +156,10 @@ export default {
             }
             if (path === "/v1/web/transactions" && request.method === "GET") return handleWebTransactionsList(request, env, url);
             if (path === "/v1/web/transactions" && request.method === "POST") return handleWebTransactionsCreate(request, env);
-            const txChainFromMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)\/chain-from$/);
-            if (txChainFromMatch && request.method === "POST") return handleWebChainFrom(request, env, txChainFromMatch[1]);
             const txMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)$/);
             if (txMatch) {
                 if (request.method === "PUT")    return handleWebTransactionsUpdate(request, env, txMatch[1]);
                 if (request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
-            }
-            if (path === "/v1/web/chains" && request.method === "POST") return handleWebChainsCreate(request, env);
-            const chainMatch = path.match(/^\/v1\/web\/chains\/([0-9a-fA-F-]+)$/);
-            if (chainMatch) {
-                if (request.method === "GET") return handleWebChainsDetail(request, env, chainMatch[1]);
-                if (request.method === "DELETE") return handleWebChainsDelete(request, env, chainMatch[1]);
             }
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
@@ -479,7 +467,6 @@ async function handleWebTransactionsList(request: Request, env: Env, url: URL): 
         to: url.searchParams.get("to") ?? undefined,
         type: (url.searchParams.get("type") as any) ?? undefined,
         accountId: url.searchParams.get("account_id") ?? undefined,
-        chainId: url.searchParams.get("chain_id") ?? undefined,
     });
     return json({ transactions: rows }, 200, request, env);
 }
@@ -501,7 +488,7 @@ async function handleWebTransactionsUpdate(request: Request, env: Env, id: strin
     if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
     const r = await updateTransaction(env, id, body);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated, new_snapshot_ids: r.new_snapshot_ids }, 200, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
 }
 
 async function handleWebTransactionsDelete(request: Request, env: Env, id: string): Promise<Response> {
@@ -511,40 +498,10 @@ async function handleWebTransactionsDelete(request: Request, env: Env, id: strin
     return json({ ok: true, ...r }, 200, request, env);
 }
 
-async function handleWebChainsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createChain(env, body);
-    if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, chain_id: r.chain_id, transaction_ids: r.transaction_ids, snapshot_ids: r.snapshot_ids }, 200, request, env);
-}
-
-async function handleWebChainsDetail(request: Request, env: Env, chainId: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
-    const detail = await getChainDetail(env, chainId);
-    if (!detail) return json({ error: "not found" }, 404, request, env);
-    return json(detail, 200, request, env);
-}
-
-async function handleWebChainsDelete(request: Request, env: Env, chainId: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
-    const r = await deleteChain(env, chainId);
-    return json({ ok: true, ...r }, 200, request, env);
-}
-
-async function handleWebChainFrom(request: Request, env: Env, sourceId: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object" || !body.next_step) return json({ error: "bad json — next_step required" }, 400, request, env);
-    const r = await chainFromTransaction(env, sourceId, body);
-    if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, chain_id: r.chain_id, new_tx_id: r.new_tx_id, snapshot_ids: r.snapshot_ids }, 200, request, env);
-}
+// SPEC-012: chain endpoints удалены. transactions работают как
+// одиночные операции (exchange/transfer). Goal-tagging на tx тоже
+// удалено — incomes остаются единственным способом привязать деньги
+// к цели.
 
 // ── System admin (bearer) ──────────────────────────────────────────────────
 async function handlePushReferences(request: Request, env: Env): Promise<Response> {

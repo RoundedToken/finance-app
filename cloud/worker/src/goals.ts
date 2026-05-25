@@ -180,24 +180,7 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
     aggregate(incomeRows.results);
     aggregate(contribRows.results);
 
-    // Stage 7.5.2: transactions с goal_id вносят delta = +to − from
-    // (in target_currency). Для exchange — обычно spread loss (-).
-    // Для transfer same-currency — 0.
-    const txRows = await env.DB.prepare(
-        `SELECT goal_id, from_amount, from_currency, to_amount, to_currency
-         FROM transactions WHERE deleted_at IS NULL AND goal_id IN (${placeholders})`,
-    ).bind(...ids).all<{ goal_id: string; from_amount: number; from_currency: string; to_amount: number; to_currency: string }>();
-    for (const tx of txRows.results) {
-        const goal = goals.find(g => g.id === tx.goal_id);
-        if (!goal) continue;
-        const acc = balances.get(tx.goal_id)!;
-        acc.count += 1;
-        const target = goal.target_currency ?? "EUR";
-        const fromConv = convertVia(tx.from_amount, tx.from_currency, target, rates);
-        const toConv   = convertVia(tx.to_amount,   tx.to_currency,   target, rates);
-        if (fromConv == null || toConv == null) { acc.missing += 1; continue; }
-        acc.sum += toConv - fromConv;
-    }
+    // SPEC-012: transactions больше не входят в goal balance.
 
     return goals.map(g => {
         const b = balances.get(g.id)!;
@@ -227,15 +210,7 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
          ORDER BY date DESC, created_at DESC`,
     ).bind(id).all<{ id: string; date: string; amount: number; currency_code: string; account_id: string | null; note: string | null; created_at: string }>();
 
-    // Stage 7.5.2: transactions с goal_id входят в timeline + balance
-    const txs = await env.DB.prepare(
-        `SELECT id, type, date, from_account_id, to_account_id,
-                from_amount, from_currency, to_amount, to_currency,
-                note, chain_id, chain_sequence, created_at
-         FROM transactions WHERE deleted_at IS NULL AND goal_id = ?
-         ORDER BY date DESC, chain_sequence ASC, created_at DESC`,
-    ).bind(id).all<any>();
-
+    // SPEC-012: timeline только income + manual.
     let sum = 0, missing = 0;
     const allRows: any[] = [];
     for (const r of incomes.results) {
@@ -250,34 +225,13 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
         if (conv == null) missing += 1; else sum += conv;
         allRows.push({ source: "manual", ...r, delta_in_target: conv });
     }
-    for (const tx of txs.results) {
-        const target = goalRow.target_currency ?? tx.to_currency;
-        const fromConv = convertVia(tx.from_amount, tx.from_currency, target, rates);
-        const toConv   = convertVia(tx.to_amount,   tx.to_currency,   target, rates);
-        let delta: number | null = null;
-        if (fromConv == null || toConv == null) { missing += 1; }
-        else { delta = toConv - fromConv; sum += delta; }
-        allRows.push({
-            source: tx.type,                  // 'exchange' or 'transfer'
-            transaction_id: tx.id,
-            date: tx.date,
-            from_amount: tx.from_amount, from_currency: tx.from_currency,
-            to_amount: tx.to_amount,     to_currency: tx.to_currency,
-            account_id: null,                 // composite from/to, неприменимо
-            note: tx.note,
-            chain_id: tx.chain_id, chain_sequence: tx.chain_sequence,
-            delta_in_target: delta,
-            created_at: tx.created_at,
-        });
-    }
-    // Sort merged
     allRows.sort((a, b) =>
         a.date < b.date ? 1 : a.date > b.date ? -1 :
         a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0,
     );
 
     return {
-        goal: { ...goalRow, balance: sum, balance_missing_rates: missing, contribution_count: incomes.results.length + manual.results.length + txs.results.length },
+        goal: { ...goalRow, balance: sum, balance_missing_rates: missing, contribution_count: incomes.results.length + manual.results.length },
         contributions: allRows,
     };
 }
