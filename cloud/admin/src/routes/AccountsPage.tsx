@@ -1,11 +1,16 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
-import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle } from "lucide-react";
+import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle, Info } from "lucide-react";
 import { useAccounts, useGoals, useReferences } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
 
+/**
+ * SPEC-011: balance = effective_balance (manual baseline + events).
+ * Auto-snapshots больше не используются. Drift indicator показывает разницу
+ * между manual baseline и computed (но только если manual есть).
+ */
 export function AccountsPage() {
     const { data, isLoading } = useAccounts();
     const { data: refs } = useReferences();
@@ -22,7 +27,7 @@ export function AccountsPage() {
 
     const accounts = data?.accounts ?? [];
     const totalEur = useMemo(
-        () => accounts.reduce((s, a) => s + (a.latest_snapshot ? toEur(a.latest_snapshot.amount, a.currency) : 0), 0),
+        () => accounts.reduce((s, a) => s + toEur(a.effective_balance ?? 0, a.currency), 0),
         [accounts, rates],
     );
 
@@ -31,35 +36,52 @@ export function AccountsPage() {
         () => goals.reduce((s, g) => s + (g.target_currency ? toEur(g.balance, g.target_currency) : g.balance), 0),
         [goals, rates],
     );
-    const freeEur = Math.max(0, totalEur - targetedEur);
+    const freeEur = totalEur - targetedEur;     // может быть отрицательный — это сигнал
     const goalCount = goals.length;
 
-    const filledCount = accounts.filter(a => !!a.latest_snapshot).length;
-    const hasGaps = accounts.some(a => !a.latest_snapshot);
+    const withBaseline = accounts.filter(a => !!a.manual_snapshot).length;
+    const negativeBuckets = accounts.filter(a => (a.effective_balance ?? 0) < 0);
 
     return (
         <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-semibold tracking-tight">Счета</h1>
-                    <p className="text-muted-foreground mt-1">Семь вёдер по парам валюта × форма. Баланс = последний снапшот.</p>
+                    <p className="text-muted-foreground mt-1">
+                        Семь вёдер по парам валюта × форма. Баланс = последний manual snapshot + события (доходы, расходы, обмены).
+                    </p>
                 </div>
                 <Link to="/snapshots" className="btn-primary px-4 py-2 self-start">
                     <Plus className="h-4 w-4" /> Снапшоты
                 </Link>
             </div>
 
+            {negativeBuckets.length > 0 && (
+                <div className="card p-4 border-amber-500/50 bg-amber-500/10 flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                        <div className="font-medium text-amber-700 dark:text-amber-300">
+                            {negativeBuckets.length === 1 ? "Одно ведро в минусе" : `${negativeBuckets.length} вёдер в минусе`}
+                        </div>
+                        <div className="text-amber-700/80 dark:text-amber-200/80 mt-1">
+                            Это значит — нет начального manual snapshot, а события уже сняли деньги.
+                            Открой /snapshots и внеси baseline по выписке из банка: {negativeBuckets.map(b => b.name).join(", ")}.
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="card p-5">
                     <div className="text-sm text-muted-foreground">Net worth (EUR-эквив.)</div>
-                    <div className="mt-2 text-xl font-semibold num tabular-nums">
+                    <div className={cn("mt-2 text-xl font-semibold num tabular-nums", totalEur < 0 && "text-destructive")}>
                         {formatAmount(totalEur, "EUR")} <Currency code="EUR" />
                     </div>
                     {goalCount > 0 && (
                         <div className="mt-3 space-y-1 text-xs">
                             <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground">Свободно</span>
-                                <span className="num tabular-nums">
+                                <span className={cn("num tabular-nums", freeEur < 0 && "text-destructive")}>
                                     {formatAmount(freeEur, "EUR")} <Currency code="EUR" size="xs" />
                                 </span>
                             </div>
@@ -76,9 +98,9 @@ export function AccountsPage() {
                     )}
                 </div>
                 <SummaryCard
-                    label="Заполнено вёдер"
-                    value={<span>{filledCount}<span className="text-muted-foreground"> / {accounts.length}</span></span>}
-                    sub={hasGaps ? "есть пустые — снапшот не вносился" : "все имеют последний снапшот"}
+                    label="Manual baseline"
+                    value={<span>{withBaseline}<span className="text-muted-foreground"> / {accounts.length}</span></span>}
+                    sub={withBaseline < accounts.length ? "у каких вёдер нет «нулевой точки»" : "у всех вёдер есть baseline"}
                 />
                 <SummaryCard label="Курсы от даты" value={ratesDate ?? "—"} sub="Источник: GOOGLEFINANCE" />
             </div>
@@ -92,7 +114,7 @@ export function AccountsPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {accounts.map(acc => (
-                        <BucketCard key={acc.id} acc={acc} eurEquiv={acc.latest_snapshot ? toEur(acc.latest_snapshot.amount, acc.currency) : 0} />
+                        <BucketCard key={acc.id} acc={acc} eurEquiv={toEur(acc.effective_balance ?? 0, acc.currency)} />
                     ))}
                 </div>
             )}
@@ -105,7 +127,11 @@ interface BucketCardProps { acc: Account; eurEquiv: number }
 function BucketCard({ acc, eurEquiv }: BucketCardProps) {
     const isCash = acc.form === "cash";
     const Icon = isCash ? Banknote : Coins;
-    const empty = !acc.latest_snapshot;
+    const balance = acc.effective_balance ?? 0;
+    const hasManual = !!acc.manual_snapshot;
+    const isNegative = balance < 0;
+    const drift = hasManual ? balance - (acc.manual_snapshot!.amount) : null;
+    const eventsCount = acc.events_count ?? 0;
 
     return (
         <Link
@@ -113,7 +139,8 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
             search={{ account_id: acc.id } as any}
             className={cn(
                 "card p-5 block transition-all hover:bg-card/80 hover:border-primary/40 group relative",
-                empty && "border-dashed",
+                !hasManual && "border-dashed",
+                isNegative && "border-destructive/40",
             )}
         >
             <div className="flex items-start justify-between">
@@ -135,23 +162,40 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
             </div>
 
             <div className="mt-5">
-                {acc.latest_snapshot ? (
-                    <>
-                        <div className="text-2xl font-semibold num tabular-nums">
-                            {formatAmount(acc.latest_snapshot.amount, acc.currency)} <Currency code={acc.currency} size="base" />
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3">
-                            <span className="inline-flex items-center gap-1">{formatAmount(eurEquiv, "EUR")} <Currency code="EUR" size="xs" /></span>
+                <div className={cn("text-2xl font-semibold num tabular-nums", isNegative && "text-destructive")}>
+                    {formatAmount(balance, acc.currency)} <Currency code={acc.currency} size="base" />
+                </div>
+                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
+                    <span className="inline-flex items-center gap-1">≈ {formatAmount(eurEquiv, "EUR")} <Currency code="EUR" size="xs" /></span>
+                    {hasManual ? (
+                        <>
                             <span>·</span>
-                            <span>от {formatDate(acc.latest_snapshot.date)}</span>
-                        </div>
-                    </>
-                ) : (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                        <AlertCircle className="h-4 w-4" />
-                        <span className="text-sm">Снапшотов нет</span>
-                    </div>
-                )}
+                            <span title="последний manual snapshot">baseline {formatAmount(acc.manual_snapshot!.amount, acc.currency)} от {formatDate(acc.manual_snapshot!.date)}</span>
+                            {drift !== null && Math.abs(drift) > 0.01 && (
+                                <>
+                                    <span>·</span>
+                                    <span className={cn(drift > 0 ? "text-positive" : "text-destructive")} title="drift = computed − baseline">
+                                        {drift > 0 ? "+" : ""}{formatAmount(drift, acc.currency)} от событий
+                                    </span>
+                                </>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                <Info className="h-3 w-3" />
+                                нет baseline
+                            </span>
+                        </>
+                    )}
+                    {eventsCount > 0 && (
+                        <>
+                            <span>·</span>
+                            <span>{eventsCount} {pluralizeEvents(eventsCount)}</span>
+                        </>
+                    )}
+                </div>
             </div>
         </Link>
     );
@@ -163,6 +207,14 @@ function pluralizeGoals(n: number): string {
     if (mod10 === 1 && mod100 !== 11) return "активная цель";
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "активные цели";
     return "активных целей";
+}
+
+function pluralizeEvents(n: number): string {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return "событие";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "события";
+    return "событий";
 }
 
 interface SummaryCardProps { label: string; value: React.ReactNode; sub?: string }

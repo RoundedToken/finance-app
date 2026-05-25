@@ -8,6 +8,7 @@
 
 import type { Env } from "./types";
 import { validateGoalRef } from "./goals";
+import { getEffectiveBalance } from "./snapshots";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,15 +53,41 @@ async function loadAccount(env: Env, id: string): Promise<AccountInfo | null> {
     return r ?? null;
 }
 
-async function latestSnapshotAmount(env: Env, accountId: string, beforeDate: string): Promise<number> {
-    // Берём последний snapshot for the account на дату <= beforeDate (inclusive).
-    // Используется для prev_balance при auto-snapshot generation.
-    const r = await env.DB.prepare(
-        `SELECT amount FROM snapshots
-         WHERE account_id = ? AND deleted_at IS NULL AND date <= ?
-         ORDER BY date DESC, created_at DESC LIMIT 1`,
-    ).bind(accountId, beforeDate).first<{ amount: number }>();
-    return r?.amount ?? 0;
+/**
+ * SPEC-011: проверка overdraft.
+ * Если событие уменьшает bucket (transaction.from), считаем computed
+ * effective balance и блокируем создание если станет < 0.
+ *
+ * `excludeTxId` — игнорировать конкретную tx в подсчёте (используется
+ * при edit, когда мы должны посчитать «balance без старой версии этой
+ * же tx»). Реализовано через subtract её эффекта вручную.
+ */
+async function checkOverdraft(
+    env: Env,
+    bucketId: string,
+    deductAmount: number,
+    asOfDate: string,
+    excludeTxId?: string,
+): Promise<{ ok: true } | { ok: false; error: string; available: number; needed: number }> {
+    const eff = await getEffectiveBalance(env, bucketId, asOfDate);
+    let available = eff.balance;
+    // Если редактируем существующую tx — её старый эффект УЖЕ внутри
+    // balance. Чтобы посчитать «балланс без неё» — возвращаем эффект
+    // обратно. Caller передаёт excludeTxId.
+    if (excludeTxId) {
+        const old = await env.DB.prepare(
+            `SELECT from_account_id, to_account_id, from_amount, to_amount
+             FROM transactions WHERE id = ? AND deleted_at IS NULL`,
+        ).bind(excludeTxId).first<{ from_account_id: string; to_account_id: string; from_amount: number; to_amount: number }>();
+        if (old) {
+            if (old.from_account_id === bucketId) available += old.from_amount;
+            if (old.to_account_id === bucketId)   available -= old.to_amount;
+        }
+    }
+    if (available - deductAmount < 0) {
+        return { ok: false, error: `недостаточно средств в ведре (доступно: ${available.toFixed(2)}, нужно: ${deductAmount.toFixed(2)})`, available, needed: deductAmount };
+    }
+    return { ok: true };
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -184,79 +211,48 @@ export async function getChainDetail(env: Env, chainId: string): Promise<{
 
 // ── Single transaction create ──────────────────────────────────────────────
 
-export async function createTransaction(env: Env, payload: TransactionPayload): Promise<Result<{ id: string; inserted: boolean; snapshot_ids: string[] }>> {
+export async function createTransaction(env: Env, payload: TransactionPayload): Promise<Result<{ id: string; inserted: boolean }>> {
     const v = await validateStep(env, payload);
     if (!v.ok) return v;
-    const { id, from_snap_id, to_snap_id, stmts } = await prepareTransactionStmts(env, payload, v.from, v.to, null, null);
-    const results = await env.DB.batch(stmts);
-    return { ok: true, id, inserted: (results[0].meta.changes ?? 0) > 0, snapshot_ids: [from_snap_id, to_snap_id] };
+    // SPEC-011 overdraft check на from_account.
+    const od = await checkOverdraft(env, payload.from_account_id, payload.from_amount, payload.date);
+    if (!od.ok) return od;
+    const { id, stmt } = buildTransactionInsert(env, payload, v.from, v.to, null, null);
+    const r = await stmt.run();
+    return { ok: true, id, inserted: (r.meta.changes ?? 0) > 0 };
 }
 
 /**
- * Подготавливает 3 prepared-statements для одной transaction (tx + 2 snapshots).
- * Возвращает statements + сгенерированные ID — caller'у remains только
- * скормить их в env.DB.batch вместе с другими transactions (для chain).
- *
- * Inserted-флаг определяется ПОСЛЕ batch'а через index в results.
+ * Подготавливает INSERT statement для одной transaction. SPEC-011: auto-snapshots
+ * больше не пишутся — balance computed on-demand через getEffectiveBalance.
  */
-async function prepareTransactionStmts(
+function buildTransactionInsert(
     env: Env,
     payload: TransactionPayload,
     from: AccountInfo,
     to: AccountInfo,
     chainId: string | null,
     chainSequence: number | null,
-): Promise<{ id: string; from_snap_id: string; to_snap_id: string; stmts: any[] }> {
+): { id: string; stmt: any } {
     const id = payload.id ?? crypto.randomUUID();
-    const fromSnapId = crypto.randomUUID();
-    const toSnapId   = crypto.randomUUID();
-
-    const prevFrom = await latestSnapshotAmount(env, from.id, payload.date);
-    const prevTo   = await latestSnapshotAmount(env, to.id,   payload.date);
-
-    const newFromBalance = prevFrom - payload.from_amount;
-    const newToBalance   = prevTo   + payload.to_amount;
-
-    const stmts = [
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO transactions
-               (id, type, date, from_account_id, to_account_id,
-                from_amount, from_currency, to_amount, to_currency,
-                fee_amount, fee_currency, note, chain_id, chain_sequence,
-                goal_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            id, payload.type, payload.date,
-            payload.from_account_id, payload.to_account_id,
-            payload.from_amount, from.currency,
-            payload.to_amount, to.currency,
-            payload.fee_amount ?? null, payload.fee_currency ?? null,
-            payload.note ?? null,
-            chainId, chainSequence,
-            payload.goal_id ?? null,
-        ),
-        // OR IGNORE на snapshots — защита от retry'я при той же UUID
-        // (например, повторный POST с тем же payload.id).
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            fromSnapId, payload.date, from.id, newFromBalance,
-            `auto: ${payload.type} −${payload.from_amount} ${from.currency}`,
-            id,
-        ),
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            toSnapId, payload.date, to.id, newToBalance,
-            `auto: ${payload.type} +${payload.to_amount} ${to.currency}`,
-            id,
-        ),
-    ];
-    return { id, from_snap_id: fromSnapId, to_snap_id: toSnapId, stmts };
+    const stmt = env.DB.prepare(
+        `INSERT OR IGNORE INTO transactions
+           (id, type, date, from_account_id, to_account_id,
+            from_amount, from_currency, to_amount, to_currency,
+            fee_amount, fee_currency, note, chain_id, chain_sequence,
+            goal_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    ).bind(
+        id, payload.type, payload.date,
+        payload.from_account_id, payload.to_account_id,
+        payload.from_amount, from.currency,
+        payload.to_amount, to.currency,
+        payload.fee_amount ?? null, payload.fee_currency ?? null,
+        payload.note ?? null,
+        chainId, chainSequence,
+        payload.goal_id ?? null,
+    );
+    return { id, stmt };
 }
 
 // ── Chain create ────────────────────────────────────────────────────────────
@@ -305,84 +301,35 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
         }
     }
 
+    // SPEC-011 overdraft check для всей цепочки. Считаем «накопленную»
+    // потребность из каждого ведра — если первое звено берёт 100k RUB
+    // а второе ещё 50k RUB, мы должны блокировать если balance < 150k.
+    const cumulativeOut = new Map<string, number>();
+    for (const { payload: step } of validated) {
+        cumulativeOut.set(step.from_account_id, (cumulativeOut.get(step.from_account_id) ?? 0) + step.from_amount);
+        // Учтём приход — снижает кумулятивный outflow для этого ведра.
+        cumulativeOut.set(step.to_account_id, (cumulativeOut.get(step.to_account_id) ?? 0) - step.to_amount);
+    }
+    for (const [bucket, deduct] of cumulativeOut) {
+        if (deduct <= 0) continue;
+        const od = await checkOverdraft(env, bucket, deduct, payload.date);
+        if (!od.ok) return od;
+    }
+
     const chainId = payload.chain_id ?? crypto.randomUUID();
     const transactionIds: string[] = [];
-    const snapshotIds: string[] = [];
     const allStmts: any[] = [];
-
-    // Готовим все 3N statements (N звеньев × 3 INSERT) ЗАРАНЕЕ, потом
-    // одним env.DB.batch — гарантия атомарности всей цепочки. Если SQL
-    // упадёт на M-м звене, D1 rollback'ит предыдущие insert'ы. Это
-    // M1 fix из SPEC-008 audit.
-    //
-    // Однако: latestSnapshotAmount читает прошлые snapshots для
-    // prev_balance. Если в цепочке звено N меняет ведро X, то звено N+1
-    // которое тоже трогает X должно использовать «новое» значение
-    // (после звена N), а не «то что было до chain'а». Поэтому мы строим
-    // virtual delta-map во время prepareStmts по ходу loop'а.
-    const virtualDeltas = new Map<string, number>();   // account_id → накопленная delta
 
     for (let i = 0; i < validated.length; i++) {
         const { payload: stepPayload, from, to } = validated[i];
         const withNote = { ...stepPayload, note: stepPayload.note ?? payload.note ?? null };
-
-        // Compose prev_balance с учётом предыдущих звеньев в этой же цепочке.
-        const id = withNote.id ?? crypto.randomUUID();
-        const fromSnapId = crypto.randomUUID();
-        const toSnapId   = crypto.randomUUID();
-        const baseFrom = await latestSnapshotAmount(env, from.id, withNote.date);
-        const baseTo   = await latestSnapshotAmount(env, to.id,   withNote.date);
-        const prevFrom = baseFrom + (virtualDeltas.get(from.id) ?? 0);
-        const prevTo   = baseTo   + (virtualDeltas.get(to.id)   ?? 0);
-        const newFromBalance = prevFrom - withNote.from_amount;
-        const newToBalance   = prevTo   + withNote.to_amount;
-        virtualDeltas.set(from.id, (virtualDeltas.get(from.id) ?? 0) - withNote.from_amount);
-        virtualDeltas.set(to.id,   (virtualDeltas.get(to.id)   ?? 0) + withNote.to_amount);
-
-        allStmts.push(
-            env.DB.prepare(
-                `INSERT OR IGNORE INTO transactions
-                   (id, type, date, from_account_id, to_account_id,
-                    from_amount, from_currency, to_amount, to_currency,
-                    fee_amount, fee_currency, note, chain_id, chain_sequence,
-                    goal_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-            ).bind(
-                id, withNote.type, withNote.date,
-                withNote.from_account_id, withNote.to_account_id,
-                withNote.from_amount, from.currency,
-                withNote.to_amount, to.currency,
-                withNote.fee_amount ?? null, withNote.fee_currency ?? null,
-                withNote.note ?? null,
-                chainId, i + 1,
-                withNote.goal_id ?? null,
-            ),
-            env.DB.prepare(
-                `INSERT OR IGNORE INTO snapshots
-                   (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-            ).bind(
-                fromSnapId, withNote.date, from.id, newFromBalance,
-                `auto: chain step ${i + 1} −${withNote.from_amount} ${from.currency}`,
-                id,
-            ),
-            env.DB.prepare(
-                `INSERT OR IGNORE INTO snapshots
-                   (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-            ).bind(
-                toSnapId, withNote.date, to.id, newToBalance,
-                `auto: chain step ${i + 1} +${withNote.to_amount} ${to.currency}`,
-                id,
-            ),
-        );
-
+        const { id, stmt } = buildTransactionInsert(env, withNote, from, to, chainId, i + 1);
+        allStmts.push(stmt);
         transactionIds.push(id);
-        snapshotIds.push(fromSnapId, toSnapId);
     }
 
     await env.DB.batch(allStmts);
-    return { ok: true, chain_id: chainId, transaction_ids: transactionIds, snapshot_ids: snapshotIds };
+    return { ok: true, chain_id: chainId, transaction_ids: transactionIds, snapshot_ids: [] };
 }
 
 // ── Delete ──────────────────────────────────────────────────────────────────
@@ -476,71 +423,15 @@ export async function updateTransaction(
         id,
     );
 
-    if (!wantsStructural) {
-        const r = await updateStmt.run();
-        return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
+    // SPEC-011: больше нет auto-snapshots — UPDATE достаточно.
+    // Но если structural change уменьшает from-bucket — проверим overdraft
+    // (исключая старую версию этой же tx, см. checkOverdraft excludeTxId).
+    if (wantsStructural) {
+        const od = await checkOverdraft(env, merged.from_account_id, merged.from_amount, merged.date, id);
+        if (!od.ok) return od;
     }
-
-    // Structural change → recompute auto-snapshots:
-    //   1. UPDATE tx
-    //   2. soft-delete старые auto-snapshots (DELETE через deleted_at)
-    //   3. INSERT новые auto-snapshots с пересчитанным prev_balance.
-    //
-    // Latest snapshot для merged account_ids считается ДО batch'а через
-    // прямой read. Это OK потому что atomic batch overwrites именно эти
-    // snapshots (link by transaction_id).
-    const newFromSnap = crypto.randomUUID();
-    const newToSnap   = crypto.randomUUID();
-    const prevFrom = await latestSnapshotAmount(env, from.id, merged.date);
-    const prevTo   = await latestSnapshotAmount(env, to.id,   merged.date);
-    // ВАЖНО: prev_balance может включать старые auto-snapshots от этой
-    // же tx (если account_id не менялся). Нужно их вычесть из prev.
-    // Это автоматически решается если мы сначала «отменим» старую tx:
-    // prev_with_old = latestSnapshotAmount; чтобы получить prev_clean
-    // (без эффекта старой tx) — добавим обратно old.from_amount к from_prev
-    // (потому что старая tx это снимала) и вычтем old.to_amount из to_prev.
-    let cleanPrevFrom = prevFrom;
-    let cleanPrevTo   = prevTo;
-    if (existing.from_account_id === from.id) cleanPrevFrom = prevFrom + existing.from_amount;
-    if (existing.to_account_id   === to.id)   cleanPrevTo   = prevTo   - existing.to_amount;
-    // Если accounts менялись — старая tx влияла на ДРУГИЕ buckets.
-    // Эти влияния остаются (они «зависшие»). Soft-delete старых snapshots
-    // через transaction_id=id (см. ниже) их уберёт, и balance тех вёдер
-    // вернётся к исходному.
-    const newFromBalance = cleanPrevFrom - merged.from_amount;
-    const newToBalance   = cleanPrevTo   + merged.to_amount;
-
-    const stmts = [
-        updateStmt,
-        env.DB.prepare(
-            `UPDATE snapshots SET deleted_at = datetime('now'), updated_at = datetime('now')
-             WHERE transaction_id = ? AND source = 'auto_transaction' AND deleted_at IS NULL`,
-        ).bind(id),
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            newFromSnap, merged.date, from.id, newFromBalance,
-            `auto: ${merged.type} −${merged.from_amount} ${from.currency} (edited)`,
-            id,
-        ),
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            newToSnap, merged.date, to.id, newToBalance,
-            `auto: ${merged.type} +${merged.to_amount} ${to.currency} (edited)`,
-            id,
-        ),
-    ];
-    const results = await env.DB.batch(stmts);
-    return {
-        ok: true,
-        updated: (results[0].meta.changes ?? 0) > 0,
-        new_snapshot_ids: [newFromSnap, newToSnap],
-    };
+    const r = await updateStmt.run();
+    return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
 }
 
 // ── Chain-from existing transaction (SPEC-009) ─────────────────────────────
@@ -613,55 +504,15 @@ export async function chainFromTransaction(
         if (nextSeq > 10) return { ok: false, error: "chain limited to 10 steps" };
     }
 
-    // Compose new step stmts (mirror createChain inner loop logic, single step).
-    const newId = crypto.randomUUID();
-    const fromSnapId = crypto.randomUUID();
-    const toSnapId = crypto.randomUUID();
-    const prevFrom = await latestSnapshotAmount(env, v.from.id, date);
-    const prevTo   = await latestSnapshotAmount(env, v.to.id,   date);
-    const newFromBalance = prevFrom - step.from_amount;
-    const newToBalance   = prevTo   + step.to_amount;
+    // SPEC-011 overdraft check для нового звена.
+    const od = await checkOverdraft(env, step.from_account_id, step.from_amount, date);
+    if (!od.ok) return od;
 
-    stmts.push(
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO transactions
-               (id, type, date, from_account_id, to_account_id,
-                from_amount, from_currency, to_amount, to_currency,
-                fee_amount, fee_currency, note, chain_id, chain_sequence,
-                goal_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            newId, step.type, date,
-            step.from_account_id, step.to_account_id,
-            step.from_amount, v.from.currency,
-            step.to_amount, v.to.currency,
-            step.fee_amount ?? null, step.fee_currency ?? null,
-            step.note ?? null,
-            chainId, nextSeq,
-            step.goal_id ?? null,
-        ),
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            fromSnapId, date, v.from.id, newFromBalance,
-            `auto: chain step ${nextSeq} −${step.from_amount} ${v.from.currency}`,
-            newId,
-        ),
-        env.DB.prepare(
-            `INSERT OR IGNORE INTO snapshots
-               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
-        ).bind(
-            toSnapId, date, v.to.id, newToBalance,
-            `auto: chain step ${nextSeq} +${step.to_amount} ${v.to.currency}`,
-            newId,
-        ),
-    );
+    const { id: newId, stmt: insertStmt } = buildTransactionInsert(env, step, v.from, v.to, chainId, nextSeq);
+    stmts.push(insertStmt);
 
     await env.DB.batch(stmts);
-    return { ok: true, chain_id: chainId, new_tx_id: newId, snapshot_ids: [fromSnapId, toSnapId] };
+    return { ok: true, chain_id: chainId, new_tx_id: newId, snapshot_ids: [] };
 }
 
 export async function deleteTransaction(env: Env, id: string): Promise<{ deleted: boolean; deleted_snapshots: number }> {

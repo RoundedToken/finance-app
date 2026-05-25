@@ -198,7 +198,7 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
     }, [key]);
 
     const selectedAcc = accounts.find(a => a.id === accountId);
-    const lastForAcc = selectedAcc?.latest_snapshot;
+    const lastForAcc = selectedAcc?.manual_snapshot ?? selectedAcc?.latest_snapshot;
     const valid = !!date && !!accountId && parseFloat(amount) >= 0;
 
     const submit = async (e: React.FormEvent) => {
