@@ -16,7 +16,7 @@ const NAV: NavItem[] = [
     { to: "/accounts", icon: Wallet, label: "Счета" },
     { to: "/snapshots", icon: PieChart, label: "Снапшоты" },
     { to: "/expenses", icon: ListChecks, label: "Расходы" },
-    { to: "/incomes", icon: TrendingUp, label: "Доходы", disabled: true },
+    { to: "/incomes", icon: TrendingUp, label: "Доходы" },
     { to: "/transactions", icon: ArrowRightLeft, label: "Обмены", disabled: true },
 ];
 

@@ -100,3 +100,51 @@ export interface SnapshotUpdatePayload {
     amount?: number;
     note?: string | null;
 }
+
+export interface Income {
+    id: string;
+    date: string;                  // YYYY-MM-DD
+    account_id: string;
+    amount: number;
+    currency_code: string;
+    category_id: string;
+    source: string | null;
+    note: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface IncomeCategory {
+    id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    sort_order: number;
+}
+
+export interface IncomesResponse {
+    incomes: Income[];
+}
+
+export interface IncomeCategoriesResponse {
+    categories: IncomeCategory[];
+}
+
+export interface IncomeCreatePayload {
+    id?: string;
+    date: string;
+    account_id: string;
+    amount: number;
+    category_id: string;
+    source?: string | null;
+    note?: string | null;
+}
+
+export interface IncomeUpdatePayload {
+    date?: string;
+    account_id?: string;
+    amount?: number;
+    category_id?: string;
+    source?: string | null;
+    note?: string | null;
+}
