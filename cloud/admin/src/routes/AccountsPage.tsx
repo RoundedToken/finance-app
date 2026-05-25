@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle } from "lucide-react";
-import { useAccounts, useReferences } from "@/api/queries";
+import { useAccounts, useGoals, useReferences } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
@@ -9,6 +9,7 @@ import type { Account } from "@/api/types";
 export function AccountsPage() {
     const { data, isLoading } = useAccounts();
     const { data: refs } = useReferences();
+    const { data: goalsData } = useGoals("active");
 
     const rates = refs?.rates?.quotes ?? {};
     const ratesDate = refs?.rates?.date;
@@ -24,6 +25,14 @@ export function AccountsPage() {
         () => accounts.reduce((s, a) => s + (a.latest_snapshot ? toEur(a.latest_snapshot.amount, a.currency) : 0), 0),
         [accounts, rates],
     );
+
+    const goals = goalsData?.goals ?? [];
+    const targetedEur = useMemo(
+        () => goals.reduce((s, g) => s + (g.target_currency ? toEur(g.balance, g.target_currency) : g.balance), 0),
+        [goals, rates],
+    );
+    const freeEur = Math.max(0, totalEur - targetedEur);
+    const goalCount = goals.length;
 
     const filledCount = accounts.filter(a => !!a.latest_snapshot).length;
     const hasGaps = accounts.some(a => !a.latest_snapshot);
@@ -41,7 +50,31 @@ export function AccountsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <SummaryCard label="Net worth (EUR-эквив.)" value={<><span>{formatAmount(totalEur, "EUR")}</span> <Currency code="EUR" /></>} />
+                <div className="card p-5">
+                    <div className="text-sm text-muted-foreground">Net worth (EUR-эквив.)</div>
+                    <div className="mt-2 text-xl font-semibold num tabular-nums">
+                        {formatAmount(totalEur, "EUR")} <Currency code="EUR" />
+                    </div>
+                    {goalCount > 0 && (
+                        <div className="mt-3 space-y-1 text-xs">
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Свободно</span>
+                                <span className="num tabular-nums">
+                                    {formatAmount(freeEur, "EUR")} <Currency code="EUR" size="xs" />
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Целевые фонды</span>
+                                <span className="num tabular-nums">
+                                    {formatAmount(targetedEur, "EUR")} <Currency code="EUR" size="xs" />
+                                </span>
+                            </div>
+                            <div className="text-muted-foreground/70 pt-0.5">
+                                {goalCount} {pluralizeGoals(goalCount)}
+                            </div>
+                        </div>
+                    )}
+                </div>
                 <SummaryCard
                     label="Заполнено вёдер"
                     value={<span>{filledCount}<span className="text-muted-foreground"> / {accounts.length}</span></span>}
@@ -122,6 +155,14 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
             </div>
         </Link>
     );
+}
+
+function pluralizeGoals(n: number): string {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return "активная цель";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "активные цели";
+    return "активных целей";
 }
 
 interface SummaryCardProps { label: string; value: React.ReactNode; sub?: string }

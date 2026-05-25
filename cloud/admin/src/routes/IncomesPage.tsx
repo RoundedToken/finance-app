@@ -4,6 +4,7 @@ import {
     useAccounts,
     useCreateIncome,
     useDeleteIncome,
+    useGoals,
     useIncomeCategories,
     useIncomes,
     useReferences,
@@ -283,6 +284,26 @@ export function IncomesPage() {
     );
 }
 
+// Goal selector — отдельный компонент, чтобы данные goals подгружались
+// только когда модал открыт, а не при каждом рендере таблицы.
+//
+// Грузим `all`, чтобы при редактировании income, привязанного к
+// achieved/archived goal'у, выбранная опция не «исчезла».
+function GoalSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const { data } = useGoals("all");
+    const goals = data?.goals ?? [];
+    return (
+        <Select fullWidth value={value} onChange={e => onChange(e.target.value)}>
+            <option value="">— не привязано —</option>
+            {goals.map(g => (
+                <option key={g.id} value={g.id}>
+                    {g.emoji ?? "🎯"} {g.name}{g.status !== "active" ? ` · ${g.status === "achieved" ? "достигнута" : "архив"}` : ""}
+                </option>
+            ))}
+        </Select>
+    );
+}
+
 function pluralize(n: number): string {
     const mod10 = n % 10;
     const mod100 = n % 100;
@@ -337,7 +358,7 @@ interface IncomeModalProps {
     incomes: Income[];
     onClose: () => void;
     onSubmit: (
-        payload: { date: string; account_id: string; amount: number; category_id: string; source: string | null; note: string | null },
+        payload: { date: string; account_id: string; amount: number; category_id: string; source: string | null; note: string | null; goal_id: string | null },
         id?: string,
     ) => Promise<void>;
 }
@@ -349,6 +370,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
     const [amount, setAmount] = useState<string>(editing ? String(editing.amount) : "");
     const [source, setSource] = useState(editing?.source ?? "");
     const [note, setNote] = useState(editing?.note ?? "");
+    const [goalId, setGoalId] = useState(editing?.goal_id ?? "");
     const [submitting, setSubmitting] = useState(false);
 
     // Pre-fill при открытии (useEffect — не side-effects через useMemo).
@@ -360,6 +382,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
         setAmount(editing ? String(editing.amount) : "");
         setSource(editing?.source ?? "");
         setNote(editing?.note ?? "");
+        setGoalId(editing?.goal_id ?? "");
         setSubmitting(false);
     }, [open, editing?.id]);
 
@@ -397,6 +420,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                     amount: numAmount,
                     source: source.trim() || null,
                     note: note.trim() || null,
+                    goal_id: goalId || null,
                 },
                 editing?.id,
             );
@@ -432,6 +456,10 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                             <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
                         ))}
                     </Select>
+                </Field>
+
+                <Field label="Цель (опц.)">
+                    <GoalSelector value={goalId} onChange={setGoalId} />
                 </Field>
 
                 {latestInCat && (

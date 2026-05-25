@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type {
     AccountsResponse,
+    ContributionCreatePayload,
+    ContributionUpdatePayload,
     ExpensesResponse,
+    GoalCreatePayload,
+    GoalDetail,
+    GoalStatus,
+    GoalUpdatePayload,
+    GoalsResponse,
     IncomeCategoriesResponse,
     IncomeCreatePayload,
     IncomeUpdatePayload,
@@ -121,8 +128,13 @@ export function useCreateIncome() {
                 method: "POST",
                 body: JSON.stringify(payload),
             }),
-        onSuccess: () => {
+        onSuccess: (_d, payload) => {
             qc.invalidateQueries({ queryKey: ["incomes"] });
+            // Если income привязан к цели — обновляем goal balance.
+            if (payload.goal_id) {
+                qc.invalidateQueries({ queryKey: ["goals"] });
+                qc.invalidateQueries({ queryKey: ["goal", payload.goal_id] });
+            }
         },
     });
 }
@@ -135,8 +147,12 @@ export function useUpdateIncome() {
                 method: "PUT",
                 body: JSON.stringify(patch),
             }),
-        onSuccess: () => {
+        onSuccess: (_d, { patch }) => {
             qc.invalidateQueries({ queryKey: ["incomes"] });
+            // Goal attachment изменился или amount/account/date — пересчитать
+            // balance во всех goals; конкретный goal-detail тоже.
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            if (patch.goal_id) qc.invalidateQueries({ queryKey: ["goal", patch.goal_id] });
         },
     });
 }
@@ -148,6 +164,122 @@ export function useDeleteIncome() {
             apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/incomes/${id}`, { method: "DELETE" }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["incomes"] });
+            qc.invalidateQueries({ queryKey: ["goals"] });
+        },
+    });
+}
+
+// ── Goals ──────────────────────────────────────────────────────────────────
+
+export function useGoals(status: GoalStatus | "all" = "active") {
+    return useQuery({
+        queryKey: ["goals", status],
+        queryFn: () => apiFetch<GoalsResponse>(`/v1/web/goals?status=${status}`),
+        staleTime: 30_000,
+    });
+}
+
+export function useGoalDetail(id: string | undefined) {
+    return useQuery({
+        queryKey: ["goal", id],
+        queryFn: () => apiFetch<GoalDetail>(`/v1/web/goals/${id}`),
+        enabled: !!id,
+        staleTime: 30_000,
+    });
+}
+
+export function useCreateGoal() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: GoalCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean }>("/v1/web/goals", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ["goals"] }); },
+    });
+}
+
+export function useUpdateGoal() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: GoalUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/goals/${id}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: (_d, { id }) => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal", id] });
+        },
+    });
+}
+
+export function useSetGoalStatus() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, status }: { id: string; status: GoalStatus }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/goals/${id}/status`, {
+                method: "POST",
+                body: JSON.stringify({ status }),
+            }),
+        onSuccess: (_d, { id }) => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal", id] });
+        },
+    });
+}
+
+export function useDeleteGoal() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/goals/${id}`, { method: "DELETE" }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["incomes"] });
+        },
+    });
+}
+
+export function useCreateContribution() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: ContributionCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean }>("/v1/web/goal-contributions", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: (_d, payload) => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal", payload.goal_id] });
+        },
+    });
+}
+
+export function useUpdateContribution() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: ContributionUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/goal-contributions/${id}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal"] });
+        },
+    });
+}
+
+export function useDeleteContribution() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/goal-contributions/${id}`, { method: "DELETE" }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal"] });
         },
     });
 }

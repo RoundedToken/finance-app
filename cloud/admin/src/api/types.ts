@@ -110,6 +110,7 @@ export interface Income {
     category_id: string;
     source: string | null;
     note: string | null;
+    goal_id: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -138,6 +139,7 @@ export interface IncomeCreatePayload {
     category_id: string;
     source?: string | null;
     note?: string | null;
+    goal_id?: string | null;
 }
 
 export interface IncomeUpdatePayload {
@@ -146,5 +148,87 @@ export interface IncomeUpdatePayload {
     amount?: number;
     category_id?: string;
     source?: string | null;
+    note?: string | null;
+    goal_id?: string | null;
+}
+
+export type GoalStatus = "active" | "achieved" | "archived";
+
+export interface Goal {
+    id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    target_amount: number | null;
+    target_currency: string | null;
+    deadline: string | null;
+    note: string | null;
+    status: GoalStatus;
+    sort_order: number;
+    balance: number;
+    balance_missing_rates: number;
+    contribution_count: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface GoalContribution {
+    id: string;
+    source: "income" | "manual";
+    income_id?: string;
+    date: string;
+    amount: number;
+    currency_code: string;
+    account_id: string | null;
+    note: string | null;
+    created_at: string;
+}
+
+export interface GoalDetail {
+    goal: Goal;
+    contributions: GoalContribution[];
+}
+
+export interface GoalsResponse {
+    goals: Goal[];
+}
+
+export interface GoalCreatePayload {
+    id?: string;
+    name: string;
+    emoji?: string | null;
+    color?: string | null;
+    target_amount?: number | null;
+    target_currency?: string | null;
+    deadline?: string | null;
+    note?: string | null;
+}
+
+export interface GoalUpdatePayload {
+    name?: string;
+    emoji?: string | null;
+    color?: string | null;
+    target_amount?: number | null;
+    target_currency?: string | null;
+    deadline?: string | null;
+    note?: string | null;
+}
+
+export interface ContributionCreatePayload {
+    id?: string;
+    goal_id: string;
+    date: string;
+    amount: number;
+    currency_code: string;
+    account_id?: string | null;
+    note?: string | null;
+}
+
+export interface ContributionUpdatePayload {
+    goal_id?: string;
+    date?: string;
+    amount?: number;
+    currency_code?: string;
+    account_id?: string | null;
     note?: string | null;
 }

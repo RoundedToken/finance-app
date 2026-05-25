@@ -97,6 +97,38 @@ EXPENSES = [
     {"id": "e8", "user_id": "u", "date": "2026-04-15", "account_id": "acc_money_ok_rsd", "amount": 600,  "currency": "RSD",  "category_id": "transport","note": "Такси",     "source": "mini_app", "created_at": "2026-04-15 22:00:00", "updated_at": "2026-04-15 22:00:00"},
 ]
 
+GOALS = [
+    {"id": "g1", "name": "Стартовый депозит на квартиру", "emoji": "🏠", "color": "#a78bfa",
+     "target_amount": 5_000_000, "target_currency": "RUB", "deadline": "2027-06-01",
+     "note": "Однушка в Белграде", "status": "active", "sort_order": 10,
+     "balance": 2_100_000, "balance_missing_rates": 0, "contribution_count": 3,
+     "created_at": "2026-01-15 10:00:00", "updated_at": "2026-05-15 14:00:00"},
+    {"id": "g2", "name": "Отпуск 2026", "emoji": "✈️", "color": "#34d399",
+     "target_amount": 5000, "target_currency": "EUR", "deadline": "2026-09-15",
+     "note": None, "status": "active", "sort_order": 20,
+     "balance": 1250, "balance_missing_rates": 0, "contribution_count": 2,
+     "created_at": "2026-03-01 09:00:00", "updated_at": "2026-04-12 12:00:00"},
+    {"id": "g3", "name": "Финансовая подушка", "emoji": "🛡️", "color": "#fbbf24",
+     "target_amount": 12500, "target_currency": "EUR", "deadline": None,
+     "note": "6 месячных расходов · не трогать", "status": "active", "sort_order": 30,
+     "balance": 11500, "balance_missing_rates": 0, "contribution_count": 8,
+     "created_at": "2025-09-01 10:00:00", "updated_at": "2026-05-20 11:00:00"},
+]
+
+GOAL_DETAIL = {
+    "g1": {
+        "goal": GOALS[0],
+        "contributions": [
+            {"id": "c1", "source": "manual", "date": "2025-12-25", "amount": 2_000_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "От родителей на новый год",
+             "created_at": "2025-12-25 18:00:00"},
+            {"id": "i1", "source": "income", "income_id": "i1", "date": "2026-05-15",
+             "amount": 100_000, "currency_code": "RUB", "account_id": "rub-bank",
+             "note": "За первую половину мая", "created_at": "2026-05-15 10:11:12"},
+        ],
+    },
+}
+
 CATEGORIES = [
     {"id": "food",          "name": "Еда",          "type": "expense", "parent_id": None, "emoji": "🍔", "color": "#FFB199", "sort_order": 10, "is_active": 1},
     {"id": "groceries",     "name": "Продукты",     "type": "expense", "parent_id": None, "emoji": "🛒", "color": "#B5E3C5", "sort_order": 20, "is_active": 1},
@@ -192,6 +224,32 @@ async def setup_mocks(page, base: str) -> None:
         if "/v1/web/expenses" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"expenses": EXPENSES}))
+        # Goals detail
+        import re as _re
+        m_goal_detail = _re.search(r"/v1/web/goals/([^/?]+)(?:\?|$)", url)
+        if m_goal_detail and method == "GET":
+            gid = m_goal_detail.group(1)
+            detail = GOAL_DETAIL.get(gid)
+            if not detail:
+                # Стандартный заглушка для других id
+                goal_stub = next((g for g in GOALS if g["id"] == gid), None)
+                if goal_stub:
+                    detail = {"goal": goal_stub, "contributions": []}
+            if detail:
+                return await route.fulfill(status=200, content_type="application/json",
+                                           body=json.dumps(detail))
+            return await route.fulfill(status=404, content_type="application/json",
+                                       body=json.dumps({"error": "not found"}))
+        if "/v1/web/goals" in url and method == "GET":
+            # Фильтр status из query
+            status = "active"
+            if "?" in url:
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(url).query)
+                status = q.get("status", ["active"])[0]
+            filtered = [g for g in GOALS if status == "all" or g["status"] == status]
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps({"goals": filtered}))
         if "/v1/web/references" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({
@@ -290,6 +348,24 @@ async def scenario_period_custom(page, base: str) -> None:
     print(f"  ✓ {out.name}")
 
 
+async def scenario_goals_list(page, base: str) -> None:
+    await page.goto(f"{base}/goals", wait_until="networkidle")
+    await page.wait_for_selector("text=Цели", timeout=5000)
+    await page.wait_for_timeout(300)
+    out = OUT_DIR / "admin-goals-list.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
+async def scenario_goal_detail(page, base: str) -> None:
+    await page.goto(f"{base}/goals/g1", wait_until="networkidle")
+    await page.wait_for_selector("text=Стартовый депозит", timeout=5000)
+    await page.wait_for_timeout(400)
+    out = OUT_DIR / "admin-goal-detail.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+
+
 async def scenario_full_page(page, base: str, route: str, fname: str, label: str) -> None:
     """Открыть route и сделать full-page скриншот."""
     await page.goto(f"{base}{route}", wait_until="networkidle")
@@ -346,6 +422,8 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/expenses", "admin-expenses.png", "Расходы")
             await scenario_expenses_week(page, base)
             await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
+            await scenario_goals_list(page, base)
+            await scenario_goal_detail(page, base)
             await scenario_sidebar_navigation(page, base)
 
             await browser.close()
