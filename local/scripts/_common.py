@@ -16,6 +16,10 @@ BACKUPS_DIR = LOCAL_DIR / "backups"
 LOGS_DIR = LOCAL_DIR / "logs"
 ENV_PATH = ROOT / ".env"
 
+# GCP service account для Google Sheets-прокси к курсам (см. docs/setup.md §7).
+# Канонический путь — менять одновременно с инструкцией.
+GSHEETS_KEY_PATH = Path.home() / ".config" / "finances-gsheets" / "key.json"
+
 
 def load_env() -> dict[str, str]:
     """Простой загрузчик .env (без сторонних библиотек на bootstrap-стадии)."""

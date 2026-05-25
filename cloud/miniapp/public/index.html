@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=overlays-content">
     <title>Finances</title>
-    <link rel="stylesheet" href="styles.css?v=8">
+    <link rel="stylesheet" href="styles.css?v=9">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -54,6 +54,52 @@
             <div class="recent-days" id="recent-days"></div>
         </section>
 
+        <!-- ───────────── Stats ───────────── -->
+        <section class="screen" id="screen-stats" hidden>
+            <header class="topbar">
+                <button class="iconbtn back-btn" data-back>←</button>
+                <h1>Статистика</h1>
+                <span class="iconbtn-placeholder"></span>
+            </header>
+
+            <div class="stats-period">
+                <button class="iconbtn period-nav" id="stats-prev" aria-label="назад">‹</button>
+                <span class="period-label" id="stats-period-label">…</span>
+                <button class="iconbtn period-nav" id="stats-next" aria-label="вперёд">›</button>
+            </div>
+            <div class="stats-tabs" id="stats-tabs">
+                <button data-period="week">Нед</button>
+                <button data-period="month" class="active">Мес</button>
+                <button data-period="year">Год</button>
+                <button data-period="all">Всё</button>
+            </div>
+
+            <div class="stats-kpi" id="stats-kpi"></div>
+
+            <div class="stats-donut" id="stats-donut"></div>
+
+            <div class="stats-cats" id="stats-cats"></div>
+
+            <div class="stats-trend">
+                <div class="stats-trend-head">
+                    <span id="stats-trend-title">Тренд</span>
+                    <span id="stats-trend-meta" class="stats-trend-meta"></span>
+                </div>
+                <div class="stats-trend-chart" id="stats-trend-chart"></div>
+                <div class="stats-trend-axis" id="stats-trend-axis"></div>
+            </div>
+        </section>
+
+        <!-- ───────────── Stats: drilldown ───────────── -->
+        <section class="modal" id="modal-stats-detail" hidden>
+            <div class="modal-backdrop" data-close></div>
+            <div class="modal-card">
+                <h2 id="stats-detail-title">Категория</h2>
+                <div class="info-strip" id="stats-detail-meta"></div>
+                <ul class="day-rows" id="stats-detail-list"></ul>
+            </div>
+        </section>
+
         <!-- ───────────── History ───────────── -->
         <section class="screen" id="screen-history" hidden>
             <header class="topbar">
@@ -72,7 +118,7 @@
             <div class="modal-card">
                 <h2>Меню</h2>
                 <button class="row" data-go="history">📜 История</button>
-                <button class="row row-disabled" disabled>📊 Статистика <small>скоро</small></button>
+                <button class="row" data-go="stats">📊 Статистика</button>
                 <button class="row" id="open-settings">⚙️ Настройки</button>
             </div>
         </section>
@@ -166,6 +212,6 @@
         <div class="toast" id="toast" hidden></div>
     </div>
 
-    <script type="module" src="app.js?v=8"></script>
+    <script type="module" src="app.js?v=9"></script>
 </body>
 </html>
