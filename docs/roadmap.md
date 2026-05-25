@@ -74,7 +74,14 @@
 
 ## 🔄 В работе
 
-(Stage 7 — следующий: Транзакции/обмены)
+(Stage 7.5 — следующий: Транзакции/обмены)
+
+### Stage 7 — Цели / целевые фонды — ✅ Закрыто
+- [x] D1 миграция 0008: `goals` (name, emoji, color, target_amount?, target_currency?, deadline?, status: active/achieved/archived, soft-delete) + `goal_contributions` (manual ledger, amount>0) + ALTER `incomes` ADD `goal_id`.
+- [x] Worker: 9 endpoints под `/v1/web/goals*` и `/v1/web/goal-contributions*` + интеграция `goal_id` в incomes CRUD. Cascade delete goal через atomic D1 batch (soft-delete goal + NULL incomes.goal_id + soft-delete contributions).
+- [x] Web Admin: `/goals` — карточки целей с emoji/color/прогрессбаром/дедлайном; tabs Активные/Достигнутые/Архив; модал create+edit (через shared `GoalFormModal`). `/goals/:id` — header с edit+menu, прогресс-блок, таблица contributions (mixed source: income + manual badge). IncomeModal — селект «Цель» (загружает all goals чтобы не терять achieved). AccountsPage Net worth раскладывается на «Свободно / Целевые фонды».
+- [x] Phase 3 audit fallback не понадобился — оба subagent'а прошли с verdict PASS_WITH_SHOULDS / APPROVED_WITH_SHOULDS. 9 follow-up фиксов применены тем же спринтом.
+- [x] Sidebar активирован для «Цели» (иконка `Target`); active-state работает для `/goals/:id` через startsWith match.
 
 ### Stage 6 — Доходы (Web Admin) — ✅ Закрыто
 - [x] D1 миграция 0007: `income_categories` (6 базовых: salary, interest, gifts, cashback, freelance, other) + `incomes` (UUID, date, account_id, amount, currency_code, category_id, source, note, soft-delete, CHECK amount>0).
@@ -117,7 +124,7 @@
 #### 5d (Legacy) — отложено
 - [ ] Импорт snapshots из `data/legacy/Finances.xlsx` (33 снимка в EUR-eq) с обратной конверсией по историческим курсам. Решено начать с нуля.
 
-### Этап 7 — Транзакции / обмены / цепочки (Web Admin)
+### Этап 7.5 — Транзакции / обмены / цепочки (Web Admin)
 - [ ] D1 schema: `transactions` (type: exchange/transfer/income/interest, from/to amounts, rate, fee, chain_id).
 - [ ] Web Admin: builder цепочки (RUB→USDT→EUR одной операцией, фиксация курса, total PnL).
 - [ ] Аналитика по обменам: эффективный курс, потери на спреде, PnL по периодам.
@@ -235,6 +242,19 @@ LLM-агент с доступом ко всем финансовым данны
 **Process / Audit independence:**
 - [ ] **SPEC-006 audit redo**: 2026-05-25 senior-qa + solution-architect agents пять раз падали с `529 Overloaded` от Anthropic API. Self-audit был fallback (`Auditor: claude-opus-4-7 (self)`). Пересмотреть SPEC-006 независимыми agent'ами когда API стабилизируется. Полные reports: `specs/audits/SPEC-006-{qa,arch}.md`.
 
+**Из retrospective audits SPEC-007 (`specs/audits/SPEC-007-{qa,arch}.md`)**
+
+Stage 7 audit verdict — PASS_WITH_SHOULDS / APPROVED_WITH_SHOULDS. 9 should-fix
+применены тем же спринтом; остальные перенесены сюда.
+
+- [ ] **Edit Contribution UI** (QA S2) — в `GoalDetailPage.tsx` ContribRow рендерит только Trash, нет `Pencil` для редактирования manual contribution. `useUpdateContribution` hook есть, не используется.
+- [ ] **isError state на pages** (QA S8) — `GoalsPage`/`GoalDetailPage` показывают пустоту при 5xx; нужен баннер «Не удалось загрузить, попробуй обновить».
+- [ ] **Net worth split currency-mismatch goals** (QA S9 / Arch OQ3) — goal без `target_currency` суммируется в Net worth как EUR без конверсии. Решить: либо enforce target_currency required на backend (R3 в spec), либо считать balance по списку валют без агрегации.
+- [ ] **data-model.md** (Arch S5) — не описывает таблицы goals/goal_contributions; нужно добавить раздел Stage 7.
+- [ ] **listGoals + getGoalDetail балансы — 2-3 query** (Arch NTH) — приемлемо для personal scale, но при росте имеет смысл вынести в materialized aggregates когда дойдём до Stage 8 Dashboard.
+- [ ] **OQ1 SPEC-007** — currency drift при многовалютных contributions. Сейчас показываем `balance_missing_rates` counter. Решить policy при появлении prod-данных.
+- [ ] **OQ2 SPEC-007** — UI warning при создании goal с deadline в прошлом (backend разрешает retroactive).
+
 ---
 
 #### Прочее
@@ -248,4 +268,4 @@ LLM-агент с доступом ко всем финансовым данны
 
 ## Текущий этап
 
-**Stage 6 (Доходы) — ✅ закрыт 2026-05-25.** Следующий — Stage 7 (Транзакции/обмены/цепочки): объединит снапшоты + доходы в полный учёт изменения остатков, добавит builder цепочек обменов (RUB→USDT→EUR одной операцией). Mini App в режиме «полировка по запросу».
+**Stage 7 (Цели / целевые фонды) — ✅ закрыт 2026-05-25.** Следующий — Stage 7.5 (Транзакции/обмены/цепочки): builder цепочек RUB→USDT→EUR одной операцией, фиксация курса, total PnL, withdraw из goal через transaction с goal_id. Mini App в режиме «полировка по запросу».
