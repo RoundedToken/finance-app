@@ -151,6 +151,14 @@ manual snapshot тогда становится **сверкой** против 
 - [ ] UI: на bucket card показывать drift между computed и last manual
   snapshot («-12 EUR расхождение — внести фактический baланс?»).
 
+### Этап 7.5.2 — Goal-tagged transactions + saga workflow — ✅ Закрыто
+- [x] `transactions.goal_id` теперь populated в UI (Exchange / Transfer / Chain modals), валидируется в Worker, пробрасывается на все steps цепочки (mixed-goal chains rejected).
+- [x] `listGoals` / `getGoalDetail` пересчитывают balance с учётом `+to − from` (in target_currency) — spread loss явно отображается на goal-detail timeline отдельной колонкой «Δ цели».
+- [x] Shared `<GoalSelector>` в `src/components/` (refactor: IncomesPage больше не имеет inline definition).
+- [x] Endpoint `POST /v1/web/transactions/:id/chain-from` — workflow «Продолжить цепочку»: если source tx не в chain — создаёт chain и обновляет source's chain_id=new + sequence=1, новое звено получает sequence=2; если уже в chain — добавляет sequence=max+1. Inherits source.goal_id.
+- [x] Admin SPA: TxRow имеет кнопку 🔗 «Продолжить цепочку», открывает `ChainContinueModal` с заполненным `from = source.to_*`. Goal наследуется автоматически.
+- [x] GoalDetailPage timeline отображает tx-rows c source `exchange`|`transfer`, ссылка на /transactions, badge chain.
+
 ### Этап 7.5 — Транзакции / обмены / цепочки — ✅ Закрыто
 - [x] D1 миграция 0009: `transactions` (exchange/transfer + chain_id + chain_sequence + fee + nullable goal_id) + `snapshots.transaction_id` (cascade FK).
 - [x] Worker: 6 endpoints CRUD (transactions + chains) + atomic batch (tx + 2 auto-snapshots в одном batch; для chain — все 3N statements в одном batch с virtual-delta map для корректного prev_balance).

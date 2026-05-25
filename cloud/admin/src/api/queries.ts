@@ -4,6 +4,7 @@ import type {
     AccountsResponse,
     ChainCreatePayload,
     ChainDetail,
+    ChainFromPayload,
     ContributionCreatePayload,
     ContributionUpdatePayload,
     ExpensesResponse,
@@ -352,5 +353,17 @@ export function useDeleteChain() {
         mutationFn: (chainId: string) =>
             apiFetch<{ ok: true; deleted_transactions: number; deleted_snapshots: number }>(`/v1/web/chains/${chainId}`, { method: "DELETE" }),
         onSuccess: () => { invalidateOnTxMutation(qc); },
+    });
+}
+
+export function useChainFrom() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ sourceId, payload }: { sourceId: string; payload: ChainFromPayload }) =>
+            apiFetch<{ ok: true; chain_id: string; new_tx_id: string; snapshot_ids: string[] }>(
+                `/v1/web/transactions/${sourceId}/chain-from`,
+                { method: "POST", body: JSON.stringify(payload) },
+            ),
+        onSuccess: () => { invalidateOnTxMutation(qc); qc.invalidateQueries({ queryKey: ["goals"] }); qc.invalidateQueries({ queryKey: ["goal"] }); },
     });
 }

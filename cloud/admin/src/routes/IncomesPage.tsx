@@ -4,12 +4,12 @@ import {
     useAccounts,
     useCreateIncome,
     useDeleteIncome,
-    useGoals,
     useIncomeCategories,
     useIncomes,
     useReferences,
     useUpdateIncome,
 } from "@/api/queries";
+import { GoalSelector } from "@/components/GoalSelector";
 import { Modal } from "@/components/Modal";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
@@ -284,25 +284,8 @@ export function IncomesPage() {
     );
 }
 
-// Goal selector — отдельный компонент, чтобы данные goals подгружались
-// только когда модал открыт, а не при каждом рендере таблицы.
-//
-// Грузим `all`, чтобы при редактировании income, привязанного к
-// achieved/archived goal'у, выбранная опция не «исчезла».
-function GoalSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-    const { data } = useGoals("all");
-    const goals = data?.goals ?? [];
-    return (
-        <Select fullWidth value={value} onChange={e => onChange(e.target.value)}>
-            <option value="">— не привязано —</option>
-            {goals.map(g => (
-                <option key={g.id} value={g.id}>
-                    {g.emoji ?? "🎯"} {g.name}{g.status !== "active" ? ` · ${g.status === "achieved" ? "достигнута" : "архив"}` : ""}
-                </option>
-            ))}
-        </Select>
-    );
-}
+// GoalSelector вынесен в `@/components/GoalSelector` (shared между Income
+// и Transaction-модалями) после SPEC-009. См. этот файл.
 
 function pluralize(n: number): string {
     const mod10 = n % 10;

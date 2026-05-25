@@ -7,6 +7,7 @@
  */
 
 import type { Env } from "./types";
+import { validateGoalRef } from "./goals";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -25,12 +26,14 @@ export interface TransactionPayload {
     fee_amount?: number | null;
     fee_currency?: string | null;
     note?: string | null;
+    goal_id?: string | null;          // Stage 7.5.2 (SPEC-009)
 }
 
 export interface ChainPayload {
     chain_id?: string;
     date: string;
     note?: string | null;
+    goal_id?: string | null;          // Stage 7.5.2 — пробрасывается на все steps
     steps: TransactionPayload[];
 }
 
@@ -102,6 +105,10 @@ async function validateStep(env: Env, step: TransactionPayload): Promise<Result<
             return { ok: false, error: "fee_currency required when fee_amount is set" };
         }
     }
+    // Stage 7.5.2: goal_id может быть null (по умолчанию). Если задан —
+    // должна существовать active цель.
+    const goalCheck = await validateGoalRef(env, step.goal_id ?? null);
+    if (!goalCheck.ok) return goalCheck;
     return { ok: true, from, to };
 }
 
@@ -116,6 +123,7 @@ export async function listTransactions(
         type?: TransactionType;
         accountId?: string;
         chainId?: string;
+        goalId?: string;
     },
 ): Promise<any[]> {
     const limit = Math.min(opts.limit ?? 1000, 20000);
@@ -129,6 +137,7 @@ export async function listTransactions(
     if (opts.to)        { sql += " AND date <= ?";              params.push(opts.to); }
     if (opts.type)      { sql += " AND type = ?";               params.push(opts.type); }
     if (opts.chainId)   { sql += " AND chain_id = ?";           params.push(opts.chainId); }
+    if (opts.goalId)    { sql += " AND goal_id = ?";            params.push(opts.goalId); }
     if (opts.accountId) {
         sql += " AND (from_account_id = ? OR to_account_id = ?)";
         params.push(opts.accountId, opts.accountId);
@@ -214,8 +223,8 @@ async function prepareTransactionStmts(
                (id, type, date, from_account_id, to_account_id,
                 from_amount, from_currency, to_amount, to_currency,
                 fee_amount, fee_currency, note, chain_id, chain_sequence,
-                created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+                goal_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
         ).bind(
             id, payload.type, payload.date,
             payload.from_account_id, payload.to_account_id,
@@ -224,6 +233,7 @@ async function prepareTransactionStmts(
             payload.fee_amount ?? null, payload.fee_currency ?? null,
             payload.note ?? null,
             chainId, chainSequence,
+            payload.goal_id ?? null,
         ),
         // OR IGNORE на snapshots — защита от retry'я при той же UUID
         // (например, повторный POST с тем же payload.id).
@@ -262,10 +272,27 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
         return { ok: false, error: "date must be YYYY-MM-DD" };
     }
 
-    // Pre-validate всех звеньев и заполняем date если не задана.
+    // Mixed-goal chains запрещены — goal на chain-уровне пробрасывается
+    // на каждое звено. Если кто-то приходит с разнобоем в steps[i].goal_id,
+    // отклоняем (SPEC-009 NG3).
+    for (const step of payload.steps) {
+        if (step.goal_id != null && payload.goal_id != null && step.goal_id !== payload.goal_id) {
+            return { ok: false, error: "chain has mixed goal_id — only one goal per chain" };
+        }
+    }
+    if (payload.goal_id != null) {
+        const goalCheck = await validateGoalRef(env, payload.goal_id);
+        if (!goalCheck.ok) return goalCheck;
+    }
+
+    // Pre-validate всех звеньев и заполняем date + propagate goal_id если не задан.
     const validated: Array<{ payload: TransactionPayload; from: AccountInfo; to: AccountInfo }> = [];
     for (let i = 0; i < payload.steps.length; i++) {
-        const step = { ...payload.steps[i], date: payload.steps[i].date || payload.date };
+        const step = {
+            ...payload.steps[i],
+            date: payload.steps[i].date || payload.date,
+            goal_id: payload.steps[i].goal_id ?? payload.goal_id ?? null,
+        };
         const v = await validateStep(env, step);
         if (!v.ok) return { ok: false, error: `step ${i + 1}: ${v.error}` };
         validated.push({ payload: step, from: v.from, to: v.to });
@@ -318,8 +345,8 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
                    (id, type, date, from_account_id, to_account_id,
                     from_amount, from_currency, to_amount, to_currency,
                     fee_amount, fee_currency, note, chain_id, chain_sequence,
-                    created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+                    goal_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
             ).bind(
                 id, withNote.type, withNote.date,
                 withNote.from_account_id, withNote.to_account_id,
@@ -328,6 +355,7 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
                 withNote.fee_amount ?? null, withNote.fee_currency ?? null,
                 withNote.note ?? null,
                 chainId, i + 1,
+                withNote.goal_id ?? null,
             ),
             env.DB.prepare(
                 `INSERT OR IGNORE INTO snapshots
@@ -358,6 +386,127 @@ export async function createChain(env: Env, payload: ChainPayload): Promise<Resu
 }
 
 // ── Delete ──────────────────────────────────────────────────────────────────
+
+// ── Chain-from existing transaction (SPEC-009) ─────────────────────────────
+
+export interface ChainFromPayload {
+    next_step: {
+        type: TransactionType;
+        to_account_id: string;
+        to_amount: number;
+        fee_amount?: number | null;
+        fee_currency?: string | null;
+    };
+    date?: string;
+    note?: string | null;
+}
+
+export async function chainFromTransaction(
+    env: Env,
+    sourceId: string,
+    payload: ChainFromPayload,
+): Promise<Result<{ chain_id: string; new_tx_id: string; snapshot_ids: string[] }>> {
+    // Load source tx
+    const source = await env.DB.prepare(
+        `SELECT id, type, date, from_account_id, to_account_id,
+                from_amount, from_currency, to_amount, to_currency,
+                chain_id, chain_sequence, goal_id
+         FROM transactions WHERE id = ? AND deleted_at IS NULL`,
+    ).bind(sourceId).first<any>();
+    if (!source) return { ok: false, error: "source transaction not found" };
+
+    const date = payload.date ?? source.date;
+    if (!ISO_DATE.test(date)) return { ok: false, error: "date must be YYYY-MM-DD" };
+
+    // Build new step inheriting from source.to_*
+    const step: TransactionPayload = {
+        type: payload.next_step.type,
+        date,
+        from_account_id: source.to_account_id,
+        to_account_id: payload.next_step.to_account_id,
+        from_amount: source.to_amount,
+        to_amount: payload.next_step.to_amount,
+        fee_amount: payload.next_step.fee_amount ?? null,
+        fee_currency: payload.next_step.fee_currency ?? null,
+        note: payload.note ?? null,
+        goal_id: source.goal_id,
+    };
+    const v = await validateStep(env, step);
+    if (!v.ok) return v;
+
+    // Determine chain_id / next sequence.
+    let chainId = source.chain_id as string | null;
+    let nextSeq: number;
+    const stmts: any[] = [];
+
+    if (!chainId) {
+        chainId = crypto.randomUUID();
+        // Update source to join the new chain as sequence 1.
+        stmts.push(
+            env.DB.prepare(
+                `UPDATE transactions SET chain_id = ?, chain_sequence = 1, updated_at = datetime('now')
+                 WHERE id = ? AND deleted_at IS NULL`,
+            ).bind(chainId, sourceId),
+        );
+        nextSeq = 2;
+    } else {
+        const maxSeq = await env.DB.prepare(
+            `SELECT MAX(chain_sequence) AS mx FROM transactions WHERE chain_id = ? AND deleted_at IS NULL`,
+        ).bind(chainId).first<{ mx: number | null }>();
+        nextSeq = (maxSeq?.mx ?? 0) + 1;
+        if (nextSeq > 10) return { ok: false, error: "chain limited to 10 steps" };
+    }
+
+    // Compose new step stmts (mirror createChain inner loop logic, single step).
+    const newId = crypto.randomUUID();
+    const fromSnapId = crypto.randomUUID();
+    const toSnapId = crypto.randomUUID();
+    const prevFrom = await latestSnapshotAmount(env, v.from.id, date);
+    const prevTo   = await latestSnapshotAmount(env, v.to.id,   date);
+    const newFromBalance = prevFrom - step.from_amount;
+    const newToBalance   = prevTo   + step.to_amount;
+
+    stmts.push(
+        env.DB.prepare(
+            `INSERT OR IGNORE INTO transactions
+               (id, type, date, from_account_id, to_account_id,
+                from_amount, from_currency, to_amount, to_currency,
+                fee_amount, fee_currency, note, chain_id, chain_sequence,
+                goal_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        ).bind(
+            newId, step.type, date,
+            step.from_account_id, step.to_account_id,
+            step.from_amount, v.from.currency,
+            step.to_amount, v.to.currency,
+            step.fee_amount ?? null, step.fee_currency ?? null,
+            step.note ?? null,
+            chainId, nextSeq,
+            step.goal_id ?? null,
+        ),
+        env.DB.prepare(
+            `INSERT OR IGNORE INTO snapshots
+               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
+        ).bind(
+            fromSnapId, date, v.from.id, newFromBalance,
+            `auto: chain step ${nextSeq} −${step.from_amount} ${v.from.currency}`,
+            newId,
+        ),
+        env.DB.prepare(
+            `INSERT OR IGNORE INTO snapshots
+               (id, date, account_id, amount, note, source, transaction_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'auto_transaction', ?, datetime('now'), datetime('now'))`,
+        ).bind(
+            toSnapId, date, v.to.id, newToBalance,
+            `auto: chain step ${nextSeq} +${step.to_amount} ${v.to.currency}`,
+            newId,
+        ),
+    );
+
+    await env.DB.batch(stmts);
+    return { ok: true, chain_id: chainId, new_tx_id: newId, snapshot_ids: [fromSnapId, toSnapId] };
+}
 
 export async function deleteTransaction(env: Env, id: string): Promise<{ deleted: boolean; deleted_snapshots: number }> {
     const results = await env.DB.batch([

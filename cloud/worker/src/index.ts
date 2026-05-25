@@ -73,6 +73,7 @@ import {
     getChainDetail,
     createTransaction,
     createChain,
+    chainFromTransaction,
     deleteTransaction,
     deleteChain,
 } from "./transactions";
@@ -157,6 +158,8 @@ export default {
             }
             if (path === "/v1/web/transactions" && request.method === "GET") return handleWebTransactionsList(request, env, url);
             if (path === "/v1/web/transactions" && request.method === "POST") return handleWebTransactionsCreate(request, env);
+            const txChainFromMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)\/chain-from$/);
+            if (txChainFromMatch && request.method === "POST") return handleWebChainFrom(request, env, txChainFromMatch[1]);
             const txMatch = path.match(/^\/v1\/web\/transactions\/([0-9a-fA-F-]+)$/);
             if (txMatch && request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
             if (path === "/v1/web/chains" && request.method === "POST") return handleWebChainsCreate(request, env);
@@ -508,6 +511,16 @@ async function handleWebChainsDelete(request: Request, env: Env, chainId: string
     if (!session.ok) return session.response;
     const r = await deleteChain(env, chainId);
     return json({ ok: true, ...r }, 200, request, env);
+}
+
+async function handleWebChainFrom(request: Request, env: Env, sourceId: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object" || !body.next_step) return json({ error: "bad json — next_step required" }, 400, request, env);
+    const r = await chainFromTransaction(env, sourceId, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, chain_id: r.chain_id, new_tx_id: r.new_tx_id, snapshot_ids: r.snapshot_ids }, 200, request, env);
 }
 
 // ── System admin (bearer) ──────────────────────────────────────────────────
