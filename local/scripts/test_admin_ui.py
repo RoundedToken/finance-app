@@ -348,6 +348,35 @@ async def scenario_period_custom(page, base: str) -> None:
     print(f"  ✓ {out.name}")
 
 
+async def scenario_short_viewport_modal(page, base: str) -> None:
+    """Короткий экран (1280×420): модал должен скроллиться, не обрезаться.
+    Делаем два скрина — сверху (видны Header + первые поля) и снизу
+    (после скролла должны быть видны кнопки Отмена/Создать)."""
+    await page.set_viewport_size({"width": 1280, "height": 420})
+    await page.goto(f"{base}/goals", wait_until="networkidle")
+    await page.wait_for_selector("text=Цели", timeout=5000)
+    await page.get_by_role("button", name="Новая цель").click()
+    await page.wait_for_selector("text=Новая цель >> nth=1", timeout=3000)
+    await page.wait_for_timeout(200)
+
+    out = OUT_DIR / "admin-modal-short-top.png"
+    await page.screenshot(path=str(out))
+    print(f"  ✓ {out.name}")
+
+    # Прокручиваем overlay в самый низ — должны увидеть футер с кнопками.
+    await page.evaluate("""() => {
+        const overlay = document.querySelector('.fixed.inset-0.z-50.overflow-y-auto');
+        if (overlay) overlay.scrollTop = overlay.scrollHeight;
+    }""")
+    await page.wait_for_timeout(150)
+    out = OUT_DIR / "admin-modal-short-bottom.png"
+    await page.screenshot(path=str(out))
+    print(f"  ✓ {out.name}")
+
+    await page.keyboard.press("Escape")
+    await page.set_viewport_size({"width": 1920, "height": 1080})
+
+
 async def scenario_goals_list(page, base: str) -> None:
     await page.goto(f"{base}/goals", wait_until="networkidle")
     await page.wait_for_selector("text=Цели", timeout=5000)
@@ -424,6 +453,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
             await scenario_goals_list(page, base)
             await scenario_goal_detail(page, base)
+            await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 
             await browser.close()
