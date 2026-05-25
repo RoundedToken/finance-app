@@ -222,7 +222,7 @@ export function IncomesPage() {
                                 const eur = toEur(inc.amount, inc.currency_code);
                                 return (
                                     <tr key={inc.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
-                                        <td className="px-4 py-2.5 num text-muted-foreground">{formatDate(inc.date)}</td>
+                                        <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(inc.date)}</td>
                                         <td className="px-4 py-2.5">
                                             <span className="inline-flex items-center gap-2">
                                                 <span
@@ -424,7 +424,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                             className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         >
                             {accounts.map(a => (
-                                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+                                <option key={a.id} value={a.id}>{a.name}</option>
                             ))}
                         </select>
                     </Field>

@@ -18,9 +18,13 @@ export function formatAmount(amount: number, currency: string, opts?: { withSymb
     return opts?.withSymbol ? `${s} ${currency}` : s;
 }
 
+/**
+ * Компактная дата для таблиц: `dd.mm.yyyy`. ru-RU short ("24 мая 2026 г.")
+ * переносился в узких колонках — теперь всегда влезает без wrap.
+ */
 export function formatDate(iso: string): string {
     const d = new Date(iso);
-    return d.toLocaleDateString("ru-RU", { year: "numeric", month: "short", day: "2-digit" });
+    return d.toLocaleDateString("ru-RU", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 export function formatDateTime(iso: string): string {
