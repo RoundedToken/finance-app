@@ -3,15 +3,16 @@ import { Link } from "@tanstack/react-router";
 import { Plus, ArrowRightLeft, Repeat, Link2, Trash2, Search } from "lucide-react";
 import {
     useAccounts,
+    useChainFrom,
     useCreateChain,
     useCreateTransaction,
     useDeleteTransaction,
-    useReferences,
     useTransactions,
 } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
+import { GoalSelector } from "@/components/GoalSelector";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
 import { cn, formatAmount, formatDate, formatExchangeRate } from "@/lib/utils";
 import type { Account, ChainStepPayload, Transaction, TransactionCreatePayload, TransactionType } from "@/api/types";
@@ -55,6 +56,7 @@ export function TransactionsPage() {
     const [exchangeOpen, setExchangeOpen] = useState(false);
     const [transferOpen, setTransferOpen] = useState(false);
     const [chainOpen, setChainOpen] = useState(false);
+    const [continueFromTx, setContinueFromTx] = useState<Transaction | null>(null);
 
     return (
         <div className="space-y-6">
@@ -132,7 +134,7 @@ export function TransactionsPage() {
                                     Ничего не найдено по текущим фильтрам.
                                 </td></tr>
                             )}
-                            {filtered.map(tx => <TxRow key={tx.id} tx={tx} accounts={accounts} />)}
+                            {filtered.map(tx => <TxRow key={tx.id} tx={tx} accounts={accounts} onContinue={setContinueFromTx} />)}
                         </tbody>
                     </table>
                 </div>
@@ -141,11 +143,12 @@ export function TransactionsPage() {
             <ExchangeModal open={exchangeOpen} onClose={() => setExchangeOpen(false)} accounts={accounts} />
             <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} accounts={accounts} />
             <ChainModal open={chainOpen} onClose={() => setChainOpen(false)} accounts={accounts} />
+            <ChainContinueModal open={!!continueFromTx} onClose={() => setContinueFromTx(null)} source={continueFromTx} accounts={accounts} />
         </div>
     );
 }
 
-function TxRow({ tx, accounts }: { tx: Transaction; accounts: Account[] }) {
+function TxRow({ tx, accounts, onContinue }: { tx: Transaction; accounts: Account[]; onContinue: (tx: Transaction) => void }) {
     const remove = useDeleteTransaction();
     const accFrom = accounts.find(a => a.id === tx.from_account_id);
     const accTo = accounts.find(a => a.id === tx.to_account_id);
@@ -191,6 +194,9 @@ function TxRow({ tx, accounts }: { tx: Transaction; accounts: Account[] }) {
                 {tx.note ? <span>{tx.note}</span> : <span className="text-muted-foreground italic">—</span>}
             </td>
             <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                <button onClick={() => onContinue(tx)} className="btn-icon" aria-label="Продолжить цепочку" title="Продолжить цепочку">
+                    <Link2 className="h-4 w-4" />
+                </button>
                 <button onClick={handleDelete} className="btn-icon text-destructive" aria-label="Удалить">
                     <Trash2 className="h-4 w-4" />
                 </button>
@@ -211,12 +217,13 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
     const [fromAmt, setFromAmt] = useState("");
     const [toAmt, setToAmt] = useState("");
     const [note, setNote] = useState("");
+    const [goalId, setGoalId] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!open) return;
         setDate(todayISO()); setFromId(accounts[0]?.id ?? ""); setToId(accounts[1]?.id ?? "");
-        setFromAmt(""); setToAmt(""); setNote(""); setSubmitting(false);
+        setFromAmt(""); setToAmt(""); setNote(""); setGoalId(""); setSubmitting(false);
     }, [open]);
 
     const from = accounts.find(a => a.id === fromId);
@@ -247,6 +254,7 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
                 from_amount: numFrom,
                 to_amount: numTo,
                 note: note.trim() || null,
+                goal_id: goalId || null,
             };
             await create.mutateAsync(payload);
             onClose();
@@ -307,6 +315,10 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </Field>
 
+                <Field label="Цель (опц.)">
+                    <GoalSelector value={goalId} onChange={setGoalId} />
+                </Field>
+
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
                     <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[7rem]">
@@ -327,11 +339,12 @@ function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
     const [toId, setToId] = useState("");
     const [amount, setAmount] = useState("");
     const [note, setNote] = useState("");
+    const [goalId, setGoalId] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!open) return;
-        setDate(todayISO()); setFromId(""); setToId(""); setAmount(""); setNote(""); setSubmitting(false);
+        setDate(todayISO()); setFromId(""); setToId(""); setAmount(""); setNote(""); setGoalId(""); setSubmitting(false);
     }, [open]);
 
     const from = accounts.find(a => a.id === fromId);
@@ -355,6 +368,7 @@ function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
                 from_amount: numAmount,
                 to_amount: numAmount,
                 note: note.trim() || null,
+                goal_id: goalId || null,
             };
             await create.mutateAsync(payload);
             onClose();
@@ -397,6 +411,10 @@ function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </Field>
 
+                <Field label="Цель (опц.)">
+                    <GoalSelector value={goalId} onChange={setGoalId} />
+                </Field>
+
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
                     <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[7rem]">
@@ -419,12 +437,13 @@ function ChainModal({ open, onClose, accounts }: ModalCommonProps) {
     const create = useCreateChain();
     const [date, setDate] = useState(todayISO());
     const [note, setNote] = useState("");
+    const [goalId, setGoalId] = useState("");
     const [steps, setSteps] = useState<ChainStepState[]>([]);
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!open) return;
-        setDate(todayISO()); setNote(""); setSubmitting(false);
+        setDate(todayISO()); setNote(""); setGoalId(""); setSubmitting(false);
         setSteps([
             { type: "exchange", from_account_id: "", to_account_id: "", from_amount: 0, to_amount: 0, fromAmtStr: "", toAmtStr: "" },
             { type: "exchange", from_account_id: "", to_account_id: "", from_amount: 0, to_amount: 0, fromAmtStr: "", toAmtStr: "" },
@@ -478,6 +497,7 @@ function ChainModal({ open, onClose, accounts }: ModalCommonProps) {
             await create.mutateAsync({
                 date,
                 note: note.trim() || null,
+                goal_id: goalId || null,
                 steps: stepDetails.map(s => ({
                     type: s.type,
                     from_account_id: s.from_account_id,
@@ -560,10 +580,142 @@ function ChainModal({ open, onClose, accounts }: ModalCommonProps) {
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </Field>
 
+                <Field label="Цель (опц.)">
+                    <GoalSelector value={goalId} onChange={setGoalId} />
+                </Field>
+
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
                     <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[8rem]">
                         {submitting ? "…" : "Создать цепочку"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+// ── Continue-chain modal (SPEC-009 уровень 3) ──────────────────────────────
+
+interface ContinueModalProps { open: boolean; onClose: () => void; source: Transaction | null; accounts: Account[] }
+function ChainContinueModal({ open, onClose, source, accounts }: ContinueModalProps) {
+    const chainFrom = useChainFrom();
+    const [date, setDate] = useState(todayISO());
+    const [toId, setToId] = useState("");
+    const [toAmt, setToAmt] = useState("");
+    const [type, setType] = useState<TransactionType>("exchange");
+    const [note, setNote] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!open || !source) return;
+        setDate(todayISO()); setToId(""); setToAmt(""); setType("exchange"); setNote(""); setSubmitting(false);
+    }, [open, source?.id]);
+
+    if (!source) return null;
+
+    const fromAcc = accounts.find(a => a.id === source.to_account_id);
+    const toAcc = accounts.find(a => a.id === toId);
+    const numTo = parseFloat(toAmt);
+    const sameBucket = toId === source.to_account_id;
+    const sameCurrency = fromAcc && toAcc && fromAcc.currency === toAcc.currency;
+    const valid = !!date && !!toId && !sameBucket && Number.isFinite(numTo) && numTo > 0
+        && fromAcc && toAcc
+        && (type === "transfer" ? sameCurrency : !sameCurrency);
+
+    const rateText = useMemo(() => {
+        if (!fromAcc || !toAcc || type === "transfer") return null;
+        return formatExchangeRate(source.to_amount, fromAcc.currency, numTo, toAcc.currency);
+    }, [fromAcc, toAcc, source.to_amount, numTo, type]);
+
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!valid) return;
+        setSubmitting(true);
+        try {
+            await chainFrom.mutateAsync({
+                sourceId: source.id,
+                payload: {
+                    date,
+                    note: note.trim() || null,
+                    next_step: {
+                        type,
+                        to_account_id: toId,
+                        to_amount: numTo,
+                    },
+                },
+            });
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <Modal open={open} onClose={onClose} title="Продолжить цепочку" size="md">
+            <form onSubmit={submit} className="space-y-4">
+                <div className="rounded-xl border p-3 bg-secondary/40">
+                    <div className="text-xs text-muted-foreground mb-1">Существующее звено · {formatDate(source.date)}</div>
+                    <div className="text-sm num tabular-nums">
+                        {accounts.find(a => a.id === source.from_account_id)?.name ?? source.from_account_id} →
+                        {" "}{fromAcc?.name ?? source.to_account_id}
+                    </div>
+                    <div className="text-sm num tabular-nums mt-1">
+                        {formatAmount(source.from_amount, source.from_currency)} <Currency code={source.from_currency} size="xs" />
+                        {" → "}
+                        {formatAmount(source.to_amount, source.to_currency)} <Currency code={source.to_currency} size="xs" />
+                    </div>
+                </div>
+
+                <Field label="Дата">
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                        className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                </Field>
+
+                <Field label="Тип">
+                    <Select fullWidth value={type} onChange={e => setType(e.target.value as TransactionType)}>
+                        <option value="exchange">💱 обмен (разные валюты)</option>
+                        <option value="transfer">↔ перевод (та же валюта)</option>
+                    </Select>
+                </Field>
+
+                <Field label={`Куда (из ${fromAcc?.name ?? source.to_account_id}, ${formatAmount(source.to_amount, source.to_currency)} ${source.to_currency})`}>
+                    <Select fullWidth value={toId} onChange={e => setToId(e.target.value)}>
+                        <option value="">— выбери ведро —</option>
+                        {accounts.filter(a => a.id !== source.to_account_id).map(a => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                    </Select>
+                    <input
+                        type="number" inputMode="decimal" step="any" min="0"
+                        value={toAmt} onChange={e => setToAmt(e.target.value)}
+                        placeholder={toAcc ? `сумма в ${toAcc.currency}` : "сумма"}
+                        className="mt-2 w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                </Field>
+
+                {rateText && type === "exchange" && (
+                    <div className="text-sm text-muted-foreground bg-secondary/40 rounded-lg p-3 tabular-nums">
+                        💱 Курс: <span className="text-foreground font-medium">{rateText}</span>
+                    </div>
+                )}
+
+                {source.goal_id && (
+                    <div className="text-xs text-muted-foreground bg-primary/10 rounded-lg p-3">
+                        🎯 Цепочка наследует цель исходного звена.
+                    </div>
+                )}
+
+                <Field label="Заметка (опц.)">
+                    <input type="text" value={note} onChange={e => setNote(e.target.value)} maxLength={500}
+                        placeholder="что-нибудь характерное"
+                        className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                </Field>
+
+                <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
+                    <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[8rem]">
+                        {submitting ? "…" : "Продолжить"}
                     </button>
                 </div>
             </form>
