@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Banknote, Coins, Search } from "lucide-react";
 import { useAccounts, useCreateSnapshot, useDeleteSnapshot, useSnapshots, useUpdateSnapshot } from "@/api/queries";
 import { Modal } from "@/components/Modal";
+import { Currency } from "@/components/Currency";
+import { Select } from "@/components/Select";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Account, Snapshot } from "@/api/types";
 
@@ -71,14 +73,15 @@ export function SnapshotsPage() {
                         className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <select
+                <Select
                     value={filterAccount}
                     onChange={e => setFilterAccount(e.target.value)}
-                    className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[12rem]"
+                    wrapperClassName="min-w-[12rem]"
+                    aria-label="Фильтр по ведру"
                 >
                     <option value="">Все вёдра</option>
                     {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+                </Select>
             </div>
 
             <div className="card overflow-hidden">
@@ -120,8 +123,8 @@ export function SnapshotsPage() {
                                                 <span>{acc?.name ?? s.account_id}</span>
                                             </span>
                                         </td>
-                                        <td className="px-4 py-2.5 text-right num font-medium tabular-nums">
-                                            {formatAmount(s.amount, acc?.currency ?? "")} <span className="text-muted-foreground">{acc?.currency ?? ""}</span>
+                                        <td className="px-4 py-2.5 text-right num font-medium tabular-nums whitespace-nowrap">
+                                            {formatAmount(s.amount, acc?.currency ?? "")} <Currency code={acc?.currency} />
                                         </td>
                                         <td className="px-4 py-2.5">
                                             {s.note
@@ -205,15 +208,11 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
         <Modal open={open} onClose={onClose} title={editing ? "Редактировать снапшот" : "Новый снапшот"}>
             <form onSubmit={submit} className="space-y-4">
                 <Field label="Ведро">
-                    <select
-                        value={accountId}
-                        onChange={e => setAccountId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
+                    <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                         {accounts.map(a => (
                             <option key={a.id} value={a.id}>{a.name}</option>
                         ))}
-                    </select>
+                    </Select>
                 </Field>
 
                 <div className="grid grid-cols-[1fr_auto] gap-3">
@@ -227,10 +226,10 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
                                 value={amount}
                                 onChange={e => setAmount(e.target.value)}
                                 placeholder="0"
-                                className="w-full px-3 py-2 pr-14 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="w-full px-3 py-2 pr-20 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                                {selectedAcc?.currency ?? ""}
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Currency code={selectedAcc?.currency} />
                             </span>
                         </div>
                     </Field>
@@ -246,7 +245,7 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
 
                 {lastForAcc && (
                     <div className="text-xs text-muted-foreground bg-secondary/40 rounded-lg p-3 -mt-1">
-                        Прошлый: <span className="num tabular-nums">{formatAmount(lastForAcc.amount, selectedAcc?.currency ?? "")} {selectedAcc?.currency}</span> от {formatDate(lastForAcc.date)}
+                        Прошлый: <span className="num tabular-nums">{formatAmount(lastForAcc.amount, selectedAcc?.currency ?? "")}</span> <Currency code={selectedAcc?.currency} size="xs" /> от {formatDate(lastForAcc.date)}
                         {amount && (
                             <>
                                 {" · "}

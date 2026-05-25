@@ -10,6 +10,8 @@ import {
     useUpdateIncome,
 } from "@/api/queries";
 import { Modal } from "@/components/Modal";
+import { Currency } from "@/components/Currency";
+import { Select } from "@/components/Select";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Account, Income, IncomeCategory } from "@/api/types";
 
@@ -137,9 +139,9 @@ export function IncomesPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <KpiCard label="Этот месяц"          value={formatAmount(sums.month, "EUR", { withSymbol: true })} sub={`${sums.monthCnt} ${pluralize(sums.monthCnt)}`} />
-                <KpiCard label="Последние 12 месяцев" value={formatAmount(sums.year, "EUR", { withSymbol: true })}  sub={`${sums.yearCnt} ${pluralize(sums.yearCnt)}`} />
-                <KpiCard label="Всего"                value={formatAmount(sums.all, "EUR", { withSymbol: true })}   sub={`${sums.allCnt} ${pluralize(sums.allCnt)}${sums.missingRates ? ` · ${sums.missingRates} без курса` : ""}`} />
+                <KpiCard label="Этот месяц"          value={<><span>{formatAmount(sums.month, "EUR")}</span> <Currency code="EUR" /></>} sub={`${sums.monthCnt} ${pluralize(sums.monthCnt)}`} />
+                <KpiCard label="Последние 12 месяцев" value={<><span>{formatAmount(sums.year, "EUR")}</span> <Currency code="EUR" /></>}  sub={`${sums.yearCnt} ${pluralize(sums.yearCnt)}`} />
+                <KpiCard label="Всего"                value={<><span>{formatAmount(sums.all, "EUR")}</span> <Currency code="EUR" /></>}   sub={`${sums.allCnt} ${pluralize(sums.allCnt)}${sums.missingRates ? ` · ${sums.missingRates} без курса` : ""}`} />
             </div>
 
             {breakdown.length > 0 && (
@@ -167,25 +169,24 @@ export function IncomesPage() {
                         className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <select
+                <Select
                     value={filterCategory}
                     onChange={e => setFilterCategory(e.target.value)}
-                    className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[12rem]"
+                    wrapperClassName="min-w-[12rem]"
                     aria-label="Фильтр по категории"
                 >
                     <option value="">Все категории</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
-                </select>
-                <select
+                </Select>
+                <Select
                     value={period}
                     onChange={e => setPeriod(e.target.value as PeriodKey)}
-                    className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[10rem]"
                     aria-label="Фильтр по периоду"
                 >
                     <option value="all">Всё время</option>
                     <option value="year">12 месяцев</option>
                     <option value="month">Этот месяц</option>
-                </select>
+                </Select>
             </div>
 
             <div className="card overflow-hidden">
@@ -232,10 +233,10 @@ export function IncomesPage() {
                                                 <span>{cat?.name ?? inc.category_id}</span>
                                             </span>
                                         </td>
-                                        <td className="px-4 py-2.5 text-right num font-medium tabular-nums">
-                                            <div>{formatAmount(inc.amount, inc.currency_code)} <span className="text-muted-foreground">{inc.currency_code}</span></div>
+                                        <td className="px-4 py-2.5 text-right num font-medium tabular-nums whitespace-nowrap">
+                                            <div>{formatAmount(inc.amount, inc.currency_code)} <Currency code={inc.currency_code} /></div>
                                             {inc.currency_code !== "EUR" && (
-                                                <div className="text-xs text-muted-foreground">≈ {formatAmount(eur, "EUR")} EUR</div>
+                                                <div className="text-xs text-muted-foreground">≈ {formatAmount(eur, "EUR")} <Currency code="EUR" size="xs" /></div>
                                             )}
                                         </td>
                                         <td className="px-4 py-2.5">
@@ -321,8 +322,8 @@ function CategoryBar({ cat, eur, pct }: CategoryBarProps) {
                 />
             </div>
             <div className="w-28 text-right text-sm tabular-nums">{pct.toFixed(1)}%</div>
-            <div className="w-32 text-right text-sm tabular-nums text-muted-foreground">
-                {formatAmount(eur, "EUR")} EUR
+            <div className="w-32 text-right text-sm tabular-nums text-muted-foreground whitespace-nowrap">
+                {formatAmount(eur, "EUR")} <Currency code="EUR" />
             </div>
         </div>
     );
@@ -418,28 +419,20 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                         />
                     </Field>
                     <Field label="Ведро">
-                        <select
-                            value={accountId}
-                            onChange={e => setAccountId(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        >
+                        <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                             {accounts.map(a => (
                                 <option key={a.id} value={a.id}>{a.name}</option>
                             ))}
-                        </select>
+                        </Select>
                     </Field>
                 </div>
 
                 <Field label="Категория">
-                    <select
-                        value={categoryId}
-                        onChange={e => setCategoryId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
+                    <Select fullWidth value={categoryId} onChange={e => setCategoryId(e.target.value)}>
                         {categories.map(c => (
                             <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
                         ))}
-                    </select>
+                    </Select>
                 </Field>
 
                 {latestInCat && (
@@ -456,13 +449,13 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                         <span className="flex-1">
                             Из последней «{categoriesById.get(latestInCat.category_id)?.name}{latestInCat.source ? ` · ${latestInCat.source}` : ""}»
                             <span className="text-muted-foreground">
-                                {" "}({formatAmount(latestInCat.amount, latestInCat.currency_code)} {latestInCat.currency_code} · {formatDate(latestInCat.date)})
+                                {" "}({formatAmount(latestInCat.amount, latestInCat.currency_code)} <Currency code={latestInCat.currency_code} /> · {formatDate(latestInCat.date)})
                             </span>
                         </span>
                     </button>
                 )}
 
-                <Field label={`Сумма${selectedAcc ? ` (${selectedAcc.currency})` : ""}`}>
+                <Field label={<span className="inline-flex items-center gap-2">Сумма {selectedAcc && <Currency code={selectedAcc.currency} />}</span>}>
                     <input
                         type="number"
                         inputMode="decimal"
@@ -508,7 +501,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
     );
 }
 
-interface FieldProps { label: string; children: React.ReactNode }
+interface FieldProps { label: React.ReactNode; children: React.ReactNode }
 function Field({ label, children }: FieldProps) {
     return (
         <label className="block">

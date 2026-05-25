@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle } from "lucide-react";
 import { useAccounts, useReferences } from "@/api/queries";
+import { Currency } from "@/components/Currency";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
 
@@ -40,7 +41,7 @@ export function AccountsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <SummaryCard label="Net worth (EUR-эквив.)" value={formatAmount(totalEur, "EUR", { withSymbol: true })} />
+                <SummaryCard label="Net worth (EUR-эквив.)" value={<><span>{formatAmount(totalEur, "EUR")}</span> <Currency code="EUR" /></>} />
                 <SummaryCard
                     label="Заполнено вёдер"
                     value={<span>{filledCount}<span className="text-muted-foreground"> / {accounts.length}</span></span>}
@@ -92,8 +93,8 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
                     </div>
                     <div>
                         <div className="font-medium leading-tight">{acc.name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                            {acc.currency} · {isCash ? "наличка" : "цифровой"}
+                        <div className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                            <Currency code={acc.currency} size="xs" /> · {isCash ? "наличка" : "цифровой"}
                         </div>
                     </div>
                 </div>
@@ -104,10 +105,10 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
                 {acc.latest_snapshot ? (
                     <>
                         <div className="text-2xl font-semibold num tabular-nums">
-                            {formatAmount(acc.latest_snapshot.amount, acc.currency)} <span className="text-base text-muted-foreground">{acc.currency}</span>
+                            {formatAmount(acc.latest_snapshot.amount, acc.currency)} <Currency code={acc.currency} size="base" />
                         </div>
                         <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3">
-                            <span>{formatAmount(eurEquiv, "EUR")} EUR</span>
+                            <span className="inline-flex items-center gap-1">{formatAmount(eurEquiv, "EUR")} <Currency code="EUR" size="xs" /></span>
                             <span>·</span>
                             <span>от {formatDate(acc.latest_snapshot.date)}</span>
                         </div>
