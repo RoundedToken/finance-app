@@ -322,7 +322,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
                             value={amount}
                             onChange={e => setAmount(e.target.value)}
                             placeholder="0"
-                            className="w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
+                            className="w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         />
                     </Field>
                     <Field label="Валюта">
