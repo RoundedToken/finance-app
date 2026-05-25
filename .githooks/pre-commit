@@ -1,0 +1,22 @@
+#!/bin/sh
+# Pre-commit hook: проверка секретов через gitleaks.
+# Активировать: ln -s ../../.githooks/pre-commit .git/hooks/pre-commit
+set -e
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "gitleaks не установлен. brew install gitleaks (или skip с --no-verify)" >&2
+    exit 1
+fi
+
+# Сканируем только staged-файлы, не весь tree.
+if ! gitleaks protect --staged --no-banner --redact; then
+    cat <<'MSG' >&2
+
+────────────────────────────────────────────────────────────
+🔒 Обнаружены секреты в staged-изменениях.
+   См. docs/security.md → секция "Если случайно закоммитил секрет"
+   Если ложный positive — добавь в .gitleaksignore
+────────────────────────────────────────────────────────────
+MSG
+    exit 1
+fi

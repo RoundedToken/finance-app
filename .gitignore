@@ -11,6 +11,10 @@ node_modules/
 dist/
 .wrangler/
 
+# Wrangler config с реальными ID — public шаблон в wrangler.example.toml
+cloud/worker/wrangler.toml
+cloud/admin/wrangler.toml
+
 # OS
 .DS_Store
 Thumbs.db
@@ -25,6 +29,16 @@ Thumbs.db
 .env.*.local
 *.secret
 secrets/
+# GCP Service Account JSON (см. docs/setup.md, ключ живёт в ~/.config/finances-gsheets/key.json)
+*-service-account*.json
+finances-rates-*.json
+gcp-key*.json
+service-account*.json
+
+# Google OAuth Client JSON (см. docs/setup.md, ключ живёт в ~/.config/finances-admin/oauth-web-client.json)
+client_secret*.json
+*googleusercontent*.json
+oauth-client*.json
 
 # Locally generated databases (ground truth — обрабатывается отдельным backup-механизмом)
 local/*.db
@@ -48,4 +62,18 @@ tools/csv/
 .vscode/
 .idea/
 *.swp
+
+# Backups D1 (содержат полные финансовые данные — НИКОГДА не коммитить)
+local/backups/
 local/backups/d1-*.sql
+
+# Playwright UI-тестер скриншоты (содержат реальные суммы)
+local/screenshots/
+
+# Trace / debugging
+*.log
+.cache/
+
+# Personal admin .env (Web Admin локальный конфиг)
+cloud/admin/.env
+cloud/admin/.env.local
