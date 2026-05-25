@@ -151,6 +151,12 @@ manual snapshot тогда становится **сверкой** против 
 - [ ] UI: на bucket card показывать drift между computed и last manual
   snapshot («-12 EUR расхождение — внести фактический baланс?»).
 
+### Этап 7.5.3 — Edit transaction — ✅ Закрыто
+- [x] PUT `/v1/web/transactions/:id` partial update. Standalone tx — все поля; chain-tx — только note/fee/goal_id (структурные изменения требуют delete+recreate).
+- [x] Auto-snapshots пересчитываются в atomic batch при structural change (UPDATE tx + soft-delete старых snapshots + INSERT новых с правильным prev_balance).
+- [x] Admin: Pencil button на TxRow → EditTxModal с pre-fill; для chain-tx structural поля disabled + amber warning.
+- См. `specs/SPEC-010-edit-transaction.md`.
+
 ### Этап 7.5.2 — Goal-tagged transactions + saga workflow — ✅ Закрыто
 - [x] `transactions.goal_id` теперь populated в UI (Exchange / Transfer / Chain modals), валидируется в Worker, пробрасывается на все steps цепочки (mixed-goal chains rejected).
 - [x] `listGoals` / `getGoalDetail` пересчитывают balance с учётом `+to − from` (in target_currency) — spread loss явно отображается на goal-detail timeline отдельной колонкой «Δ цели».

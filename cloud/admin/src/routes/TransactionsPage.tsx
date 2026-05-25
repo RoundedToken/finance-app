@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Plus, ArrowRightLeft, Repeat, Link2, Trash2, Search } from "lucide-react";
+import { Plus, ArrowRightLeft, Repeat, Link2, Trash2, Search, Pencil } from "lucide-react";
 import {
     useAccounts,
     useChainFrom,
@@ -8,6 +8,7 @@ import {
     useCreateTransaction,
     useDeleteTransaction,
     useTransactions,
+    useUpdateTransaction,
 } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
@@ -15,7 +16,7 @@ import { Modal } from "@/components/Modal";
 import { GoalSelector } from "@/components/GoalSelector";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
 import { cn, formatAmount, formatDate, formatExchangeRate } from "@/lib/utils";
-import type { Account, ChainStepPayload, Transaction, TransactionCreatePayload, TransactionType } from "@/api/types";
+import type { Account, ChainStepPayload, Transaction, TransactionCreatePayload, TransactionType, TransactionUpdatePayload } from "@/api/types";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -57,6 +58,7 @@ export function TransactionsPage() {
     const [transferOpen, setTransferOpen] = useState(false);
     const [chainOpen, setChainOpen] = useState(false);
     const [continueFromTx, setContinueFromTx] = useState<Transaction | null>(null);
+    const [editTx, setEditTx] = useState<Transaction | null>(null);
 
     return (
         <div className="space-y-6">
@@ -134,7 +136,7 @@ export function TransactionsPage() {
                                     Ничего не найдено по текущим фильтрам.
                                 </td></tr>
                             )}
-                            {filtered.map(tx => <TxRow key={tx.id} tx={tx} accounts={accounts} onContinue={setContinueFromTx} />)}
+                            {filtered.map(tx => <TxRow key={tx.id} tx={tx} accounts={accounts} onContinue={setContinueFromTx} onEdit={setEditTx} />)}
                         </tbody>
                     </table>
                 </div>
@@ -144,11 +146,12 @@ export function TransactionsPage() {
             <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} accounts={accounts} />
             <ChainModal open={chainOpen} onClose={() => setChainOpen(false)} accounts={accounts} />
             <ChainContinueModal open={!!continueFromTx} onClose={() => setContinueFromTx(null)} source={continueFromTx} accounts={accounts} />
+            <EditTxModal open={!!editTx} onClose={() => setEditTx(null)} tx={editTx} accounts={accounts} />
         </div>
     );
 }
 
-function TxRow({ tx, accounts, onContinue }: { tx: Transaction; accounts: Account[]; onContinue: (tx: Transaction) => void }) {
+function TxRow({ tx, accounts, onContinue, onEdit }: { tx: Transaction; accounts: Account[]; onContinue: (tx: Transaction) => void; onEdit: (tx: Transaction) => void }) {
     const remove = useDeleteTransaction();
     const accFrom = accounts.find(a => a.id === tx.from_account_id);
     const accTo = accounts.find(a => a.id === tx.to_account_id);
@@ -194,6 +197,9 @@ function TxRow({ tx, accounts, onContinue }: { tx: Transaction; accounts: Accoun
                 {tx.note ? <span>{tx.note}</span> : <span className="text-muted-foreground italic">—</span>}
             </td>
             <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                <button onClick={() => onEdit(tx)} className="btn-icon" aria-label="Редактировать" title="Редактировать">
+                    <Pencil className="h-4 w-4" />
+                </button>
                 <button onClick={() => onContinue(tx)} className="btn-icon" aria-label="Продолжить цепочку" title="Продолжить цепочку">
                     <Link2 className="h-4 w-4" />
                 </button>
@@ -716,6 +722,135 @@ function ChainContinueModal({ open, onClose, source, accounts }: ContinueModalPr
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
                     <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[8rem]">
                         {submitting ? "…" : "Продолжить"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+// ── Edit transaction modal (SPEC-010) ──────────────────────────────────────
+
+interface EditTxModalProps { open: boolean; onClose: () => void; tx: Transaction | null; accounts: Account[] }
+function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
+    const update = useUpdateTransaction();
+    const [date, setDate] = useState("");
+    const [fromId, setFromId] = useState("");
+    const [toId, setToId] = useState("");
+    const [fromAmt, setFromAmt] = useState("");
+    const [toAmt, setToAmt] = useState("");
+    const [note, setNote] = useState("");
+    const [goalId, setGoalId] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!open || !tx) return;
+        setDate(tx.date);
+        setFromId(tx.from_account_id);
+        setToId(tx.to_account_id);
+        setFromAmt(String(tx.from_amount));
+        setToAmt(String(tx.to_amount));
+        setNote(tx.note ?? "");
+        setGoalId(tx.goal_id ?? "");
+        setSubmitting(false);
+    }, [open, tx?.id]);
+
+    if (!tx) return null;
+
+    const inChain = tx.chain_id != null;
+    const fromAcc = accounts.find(a => a.id === fromId);
+    const toAcc = accounts.find(a => a.id === toId);
+    const numFrom = parseFloat(fromAmt);
+    const numTo = parseFloat(toAmt);
+    const sameBucket = fromId === toId;
+    const valid = !!date && !!fromId && !!toId && !sameBucket
+        && Number.isFinite(numFrom) && numFrom > 0
+        && Number.isFinite(numTo) && numTo > 0
+        && fromAcc && toAcc
+        && (tx.type === "transfer" ? fromAcc.currency === toAcc.currency && numFrom === numTo : fromAcc.currency !== toAcc.currency);
+
+    const rateText = useMemo(
+        () => (tx.type === "exchange" && fromAcc && toAcc) ? formatExchangeRate(numFrom, fromAcc.currency, numTo, toAcc.currency) : null,
+        [tx.type, fromAcc, toAcc, numFrom, numTo],
+    );
+
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!valid) return;
+        setSubmitting(true);
+        try {
+            // Стратегия: посылаем только реально изменённые поля. Для chain
+            // tx — только safe-to-edit. Для standalone — всё что мог менять
+            // user.
+            const patch: TransactionUpdatePayload = {
+                note: note.trim() || null,
+                goal_id: goalId || null,
+            };
+            if (!inChain) {
+                if (date !== tx.date) patch.date = date;
+                if (fromId !== tx.from_account_id) patch.from_account_id = fromId;
+                if (toId !== tx.to_account_id) patch.to_account_id = toId;
+                if (numFrom !== tx.from_amount) patch.from_amount = numFrom;
+                if (numTo !== tx.to_amount) patch.to_amount = numTo;
+            }
+            await update.mutateAsync({ id: tx.id, patch });
+            onClose();
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <Modal open={open} onClose={onClose} title={`Редактировать ${tx.type === "exchange" ? "обмен" : "перевод"}`} size="md">
+            <form onSubmit={submit} className="space-y-4">
+                {inChain && (
+                    <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg p-3">
+                        Транзакция в цепочке — структурные поля (дата, вёдра, суммы) заблокированы. Чтобы их менять, удали цепочку и создай заново.
+                    </div>
+                )}
+
+                <Field label="Дата">
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} disabled={inChain}
+                        className="px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" />
+                </Field>
+
+                <Field label="Откуда">
+                    <Select fullWidth value={fromId} onChange={e => setFromId(e.target.value)} disabled={inChain}>
+                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </Select>
+                    <input type="number" inputMode="decimal" step="any" min="0"
+                        value={fromAmt} onChange={e => setFromAmt(e.target.value)} disabled={inChain}
+                        className="mt-2 w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                </Field>
+
+                <Field label="Куда">
+                    <Select fullWidth value={toId} onChange={e => setToId(e.target.value)} disabled={inChain}>
+                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </Select>
+                    <input type="number" inputMode="decimal" step="any" min="0"
+                        value={toAmt} onChange={e => setToAmt(e.target.value)} disabled={inChain}
+                        className="mt-2 w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                </Field>
+
+                {rateText && (
+                    <div className="text-sm text-muted-foreground bg-secondary/40 rounded-lg p-3 tabular-nums">
+                        💱 Курс: <span className="text-foreground font-medium">{rateText}</span>
+                    </div>
+                )}
+
+                <Field label="Заметка">
+                    <input type="text" value={note} onChange={e => setNote(e.target.value)} maxLength={500}
+                        className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                </Field>
+
+                <Field label="Цель (опц.)">
+                    <GoalSelector value={goalId} onChange={setGoalId} />
+                </Field>
+
+                <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
+                    <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[7rem]">
+                        {submitting ? "…" : "Сохранить"}
                     </button>
                 </div>
             </form>
