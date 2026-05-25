@@ -113,6 +113,7 @@ export interface Income {
     account_id: string;
     amount: number;
     currency_code: string;
+    amount_eur?: number | null;    // date-aware EUR-эквивалент (по курсу даты дохода)
     category_id: string;
     source: string | null;
     note: string | null;

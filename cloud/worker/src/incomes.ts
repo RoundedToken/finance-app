@@ -10,6 +10,7 @@
 
 import type { Env } from "./types";
 import { validateGoalRef } from "./goals";
+import { loadRatesIndex } from "./rates";
 
 export interface IncomePayload {
     id?: string;
@@ -47,7 +48,16 @@ export async function listIncomes(
     sql += " ORDER BY date DESC, created_at DESC LIMIT ?";
     params.push(limit);
     const r = await env.DB.prepare(sql).bind(...params).all();
-    return r.results as any[];
+    const rows = r.results as any[];
+
+    // EUR-эквивалент date-aware (по курсу на дату дохода, НЕ latest) — чтобы
+    // «1300 €-экв в RSD» показывался ровно как 1300 €, а не плавал по курсу.
+    const rates = await loadRatesIndex(env);
+    for (const row of rows) {
+        const eur = rates.toEurAt(row.amount, row.currency_code, row.date);
+        row.amount_eur = eur == null ? null : Math.round(eur * 100) / 100;
+    }
+    return rows;
 }
 
 export async function listIncomeCategories(env: Env): Promise<IncomeCategory[]> {

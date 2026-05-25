@@ -16,6 +16,7 @@
 
 import type { Env } from "./types";
 import { listGoals } from "./goals";
+import { loadRatesIndex } from "./rates";
 
 // ── Date helpers (UTC, строки YYYY-MM-DD / YYYY-MM) ────────────────────────
 
@@ -63,45 +64,9 @@ const round = (x: number, p: number) => {
 };
 const r2 = (x: number) => round(x, 2);
 
-// ── Rates index: ближайший курс на дату (date-aware) ───────────────────────
-
-interface RatePoint { date: string; rate: number; }
-
-class RatesIndex {
-    private byQuote = new Map<string, RatePoint[]>();
-
-    add(quote: string, date: string, rate: number): void {
-        let arr = this.byQuote.get(quote);
-        if (!arr) { arr = []; this.byQuote.set(quote, arr); }
-        arr.push({ date, rate });
-    }
-
-    /** Отсортировать массивы по дате asc — вызвать после загрузки. */
-    finalize(): void {
-        for (const arr of this.byQuote.values()) {
-            arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-        }
-    }
-
-    /** Курс quote на дату (ближайший с date ≤ target). null если данных нет. */
-    rateAt(quote: string, date: string): number | null {
-        if (quote === "EUR") return 1;
-        const arr = this.byQuote.get(quote);
-        if (!arr || !arr.length) return null;
-        let lo = 0, hi = arr.length - 1, ans = -1;
-        while (lo <= hi) {
-            const mid = (lo + hi) >> 1;
-            if (arr[mid].date <= date) { ans = mid; lo = mid + 1; }
-            else hi = mid - 1;
-        }
-        return ans >= 0 ? arr[ans].rate : null;
-    }
-}
-
 // ── Row types ───────────────────────────────────────────────────────────────
 
 interface BucketRow { id: string; name: string; type: string; currency: string; form: string; color: string | null; sort_order: number; }
-interface RateRow { date: string; quote: string; rate: number; }
 interface CatRow { id: string; name: string; emoji: string | null; color: string | null; }
 interface SnapRow { account_id: string; date: string; amount: number; }
 interface IncRow { account_id: string; date: string; amount: number; currency_code: string; }
@@ -121,13 +86,12 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     const toYm = monthKey(toDate);
     let fromDate = opts.from && ISO_DATE.test(opts.from) ? opts.from : addMonths(toYm, -11) + "-01";
     if (fromDate > toDate) fromDate = addMonths(toYm, -11) + "-01";   // невалидный диапазон → дефолт
-    const months = monthRange(monthKey(fromDate), toYm);
 
     // ── Батч-загрузка ──────────────────────────────────────────────────────
-    const [bucketsR, ratesR, catsR, snapsR, incR, expR, txR, gcR] = await Promise.all([
+    const [rates, bucketsR, catsR, snapsR, incR, expR, txR, gcR] = await Promise.all([
+        loadRatesIndex(env),
         env.DB.prepare(`SELECT id, name, type, currency, form, color, sort_order FROM accounts
                         WHERE form != 'external' AND deleted_at IS NULL ORDER BY sort_order, name`).all<BucketRow>(),
-        env.DB.prepare(`SELECT date, quote, rate FROM rates WHERE base = 'EUR'`).all<RateRow>(),
         env.DB.prepare(`SELECT id, name, emoji, color FROM categories WHERE type = 'expense'`).all<CatRow>(),
         env.DB.prepare(`SELECT account_id, date, amount FROM snapshots
                         WHERE source = 'manual' AND deleted_at IS NULL ORDER BY date, created_at`).all<SnapRow>(),
@@ -141,23 +105,20 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     const goals = await listGoals(env, { status: "active" });
 
     const buckets = bucketsR.results;
-    const validBucket = new Set(buckets.map(b => b.id));
 
-    // ── Rates index ──────────────────────────────────────────────────────────
-    const rates = new RatesIndex();
-    let ratesDate: string | null = null;
-    for (const r of ratesR.results) {
-        rates.add(r.quote, r.date, r.rate);
-        if (!ratesDate || r.date > ratesDate) ratesDate = r.date;
-    }
-    rates.finalize();
+    // Окно не уходит раньше первых реальных данных — иначе график начинается
+    // длинным пустым нулевым хвостом (особенно пресет «Всё» = from 2000-01).
+    let earliest = today;
+    const scanMin = (rows: { date: string }[]) => { for (const r of rows) if (r.date < earliest) earliest = r.date; };
+    scanMin(snapsR.results); scanMin(incR.results); scanMin(expR.results); scanMin(gcR.results);
+    for (const t of txR.results) if (t.date < earliest) earliest = t.date;
+    if (fromDate < earliest) fromDate = startOfMonth(earliest);
+    const months = monthRange(monthKey(fromDate), toYm);
 
-    /** Перевод суммы в EUR на дату; null если курса нет. */
-    const toEurAt = (amount: number, quote: string, date: string): number | null => {
-        const r = rates.rateAt(quote, date);
-        if (r == null || r === 0) return null;
-        return amount / r;
-    };
+    // ── Date-aware конверсия (rates index загружен батчем выше, shared с incomes) ─
+    const ratesDate = rates.latestDate();
+    const toEurAt = (amount: number, quote: string, date: string): number | null =>
+        rates.toEurAt(amount, quote, date);
 
     // ── Группировка событий по ведру (native delta) ──────────────────────────
     const evtByBucket = new Map<string, NativeEvent[]>();
