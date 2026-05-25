@@ -174,6 +174,104 @@
 - На MacBook два рантайма: Python + Node (для wrangler).
 - Worker на TS, локально на Python — нет code sharing, но интерфейс REST.
 
+## ADR-013: Spec-driven workflow + parallel review/test gates перед push
+
+**Контекст.** Первые 5 stages делались ad-hoc: я задавал короткие вопросы, начинал кодить, по ходу обнаруживал что-то непонятное, переделывал. Это работало быстро, но имеет проблемы:
+- Нет фиксации «зачем» — через полгода вспомнить почему сделано X сложно.
+- Нет эталона для review (что должно работать?) → review невозможен по факту.
+- Тесты задним числом — поверхностные.
+- Бизнес и тех требования не выстроены вместе — в голове, не на бумаге.
+
+**Решение.** Каждая фича = единый цикл из 4 фаз: Discovery+Spec → Implementation → Test+Review (параллельно) → Commit+Push. Полный процесс — в `docs/process.md`.
+
+**Что меняется:**
+- Появляется папка `specs/SPEC-NNN-<slug>.md` — один документ на фичу, симбиоз бизнес+тех.
+- Появляются кастомные subagents в `.claude/agents/`: `senior-qa.md` для тестирования, `solution-architect.md` для review.
+- Push в git идёт **безусловно** после Phase 3, даже с must-fix → отдельным fix-commit.
+- Двухфазный переход: ретроспективные spec'и для Stage 1-5a + retro-audit → initial push в публичный GitHub repo.
+
+**Почему publish git публично:**
+- Дисциплина: что лежит публично, то делается лучше.
+- Возможность поделиться архитектурой и кодом.
+- Backup через GitHub.
+
+**Что НЕ меняется:**
+- Архитектурные решения (ADR-001…012) остаются.
+- Скорость для тривиальных вещей (typo-фикс, бамп зависимости) — допускается `chore(...)`-commit без full pipeline. Но любая фича / refactor / bug — через pipeline.
+
+**Безопасность для публичного repo (см. `docs/security.md`):**
+- `wrangler.toml`, `.env`, `local/backups/`, `local/screenshots/`, `data/**`, `reports/**` — в `.gitignore`.
+- В репо только `wrangler.example.toml` с плейсхолдерами.
+- `gitleaks` pre-commit hook (см. `.githooks/pre-commit`).
+
+**Следствия.**
+- Phase 2 implementation замедляется примерно на ~30% из-за обязательного spec'а — но это компенсируется отсутствием рефакторингов «потому что вспомнили требование».
+- Review/test agents запускаются через `Agent` tool параллельно → нет последовательного blocking.
+- При работе с публичным repo любой случайный leak становится постоянным — protocol в `docs/security.md` обязателен.
+
+## ADR-012: Web Admin как второй UI-канал; Mini App scope ограничен
+
+**Контекст.** Mini App сейчас несёт ввод расходов и базовую аналитику. Расширять её до полноценного pfm-инструмента (снапшоты, обмены, доходы, портфель, дашборды) упирается в три потолка:
+- Экран iPhone 430×932 — таблицы и multi-series графики не помещаются без компромиссов.
+- Telegram WebView имеет известные ограничения: SVG color-emoji не рендерятся, IndexedDB ведёт себя по-разному на iOS/Android, нет нормального доступа к буферу обмена.
+- Пользователь хочет «банковский» уровень UX: продвинутые таблицы, drag-to-reorder, multi-panel layouts, кейборд-shortcuts — это десктоп-паттерны.
+
+**Варианты.**
+- A) Растягивать Mini App дальше (с tabs/scroll-controlled views).
+- B) Native macOS-приложение (Swift/Electron/Tauri).
+- C) **Веб-приложение на Cloudflare Pages, отдельный UI** (далее «Web Admin»).
+- D) Полноценное PWA для разных платформ.
+
+**Решение.** C — Web Admin на Cloudflare Pages, отдельный SPA, тот же Worker и та же D1.
+
+**Распределение ответственности:**
+
+| Канал | Scope |
+|---|---|
+| Mini App (Telegram) | Ввод расходов + быстрая аналитика расходов «сколько за неделю/месяц». **Финальный scope, дальше не растёт.** |
+| Web Admin (новый) | Снапшоты, доходы, обмены, цепочки, дашборды, портфель. В перспективе — расширенный CRUD по всему, включая расходы. |
+
+**Стек Web Admin:**
+- React 19 + Vite + TypeScript.
+- TanStack Router / Query / Table / Form.
+- shadcn/ui (Radix + Tailwind) для компонентов.
+- ECharts + Tremor для графиков и KPI.
+- Dinero.js v2 для денежной арифметики, date-fns для дат, Zod для валидации.
+- Deploy: отдельный Cloudflare Pages project (`finances-admin`), тот же Worker API.
+
+**Auth:** Google OAuth 2.0, allowlist email через `ADMIN_ALLOWED_EMAILS` wrangler var (CSV-список).
+- Worker: `/v1/auth/google/start` → редирект на Google, `/v1/auth/google/callback` → exchange code → проверка email → выдача JWT HS256.
+- JWT возвращается через URL fragment (`#token=<jwt>`), SPA сохраняет в `localStorage`, шлёт как `Authorization: Bearer <jwt>` на все `/v1/admin/*`.
+- Срок JWT — 30 дней, rotate on use.
+- Cross-origin cookies НЕ используются (Pages.dev и Worker — разные origins, без custom-домена не работает SameSite).
+
+**Почему Google OAuth, а не Telegram Login Widget:**
+- Telegram Widget требует HTTPS-домена настроенного у бота — конфликтует с pages.dev URL.
+- Google уже используется как identity (тот же email — owner GCP-проекта для курсов).
+- Один источник истины для identity всей экосистемы (Google → Worker → D1).
+
+**Что меняется в Worker:**
+- Новые endpoints `/v1/auth/google/*`.
+- Middleware `requireAdmin` на путях `/v1/admin/*` валидирует JWT.
+- Существующие Mini App endpoints (`/v1/expenses`, `/v1/bootstrap`) остаются с Telegram `initData` авторизацией.
+- Две независимые auth-схемы на одном Worker.
+
+**Что меняется в структуре репо:**
+- Новая папка `cloud/admin/` рядом с `cloud/miniapp/`.
+- `cloud/worker/` остаётся единственным API-бэкендом.
+
+**Бесплатность Cloudflare-лимитов проверена:**
+- Pages: unlimited bandwidth, 500 deploys/мес — реально 1-2 user-actions/день.
+- Workers: 100k req/день, 10ms CPU — для нашего объёма (~2000 expenses + ~100 snapshots) даже не приблизимся.
+- D1: 5 GB / 5M reads / 100k writes — запас 1000×.
+- Узкое место только для тяжёлых аналитических запросов (CPU 10ms на free). Решается клиентской агрегацией или Workers Paid $5/мес при необходимости.
+
+**Следствия.**
+- Архитектурная диаграмма дополнена вторым клиентским каналом (см. `docs/architecture.md`).
+- Stage 4+ переводятся в Web Admin; в Mini App теперь только полировка.
+- При желании в будущем — миграция Worker в Pages Functions для общего origin (опционально).
+- ADR-008 (Excel как human-friendly view) уже устарел после ADR-011; этот ADR окончательно закрывает Excel-направление — все дашборды теперь в Web Admin.
+
 ## ADR-011: D1 как единственный источник правды (pivot)
 
 **Контекст.** Изначально архитектура была: SQLite на MacBook = ground truth, D1 = транзитный outbox-буфер, Excel — view. Mini App пишет в D1, MacBook каждую минуту тянет к себе.

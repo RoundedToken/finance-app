@@ -1,7 +1,12 @@
 # Архитектура
 
 ## Цель
-Personal finance system для одного пользователя с офлайн-first вводом расходов с iPhone, без VPS/подписок, под полным контролем разработчика-владельца. Источник правды — локальный SQLite. Excel — производный дашборд. Telegram — единственный канал ввода с телефона.
+Personal finance system для одного пользователя, без VPS/подписок, под полным контролем разработчика-владельца. **D1 (Cloudflare SQLite) — единственный источник правды**, MacBook — только daily backup. Два клиентских канала:
+
+- **Mini App в Telegram** — ввод расходов с iPhone + быстрая аналитика (закрытый scope).
+- **Web Admin (React SPA)** — снапшоты, доходы, обмены, дашборды, портфель (растущий scope).
+
+См. ADR-011 (D1-centric pivot) и ADR-012 (Web Admin как второй канал).
 
 ## Контекст и ограничения
 - **Один пользователь** (Stepan), один MacBook, один iPhone.
@@ -13,129 +18,118 @@ Personal finance system для одного пользователя с офла
 - **Несколько валют одновременно**: EUR, USD, RUB, RSD, USDT. Курсы фиксируются на момент операции.
 - **Эволюция функциональности**: начинаем с расходов, добавляем снапшоты/обмены/инвестиции по мере роста.
 
-## Высокоуровневая диаграмма
+## Высокоуровневая диаграмма (после ADR-011 + ADR-012)
 
 ```
-┌──────────────────────────────────────────────┐
-│           iPhone — Telegram client           │
-│  ┌────────────────────────────────────────┐  │
-│  │  Mini App (HTML/JS)                    │  │
-│  │  UI: сетка категорий, num pad, графики │  │
-│  └──────────────┬─────────────────────────┘  │
-└─────────────────┼──────────────────────────────┘
-                  │ HTTPS (Telegram WebApp API + REST)
-                  ▼
-┌──────────────────────────────────────────────┐
-│        Cloudflare edge (serverless, free)    │
-│  ┌────────────────────────────────────────┐  │
-│  │ Worker:                                │  │
-│  │  - webhook /tg — Telegram bot          │  │
-│  │  - api /v1/expenses, /v1/sync          │  │
-│  │  - cron — раз в сутки чистит outbox    │  │
-│  └──────────────┬─────────────────────────┘  │
-│  ┌──────────────▼─────────────────────────┐  │
-│  │ D1 (SQLite в облаке) — outbox/buffer   │  │
-│  │  - expenses_outbox                     │  │
-│  │  - accounts, categories (read-only-ish)│  │
-│  └────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────┐  │
-│  │ Pages — статика для Mini App           │  │
-│  └────────────────────────────────────────┘  │
-└────────────────┬─────────────────────────────┘
-                 │ REST API (GET /v1/sync?since=...,
-                 │           POST /v1/sync/confirm)
-                 ▼  (запускается launchd при пробуждении)
-┌──────────────────────────────────────────────┐
-│              MacBook (не всегда онлайн)       │
-│  ┌────────────────────────────────────────┐  │
-│  │ local/scripts/sync.py                  │  │
-│  │  1. fetch new from D1                  │  │
-│  │  2. insert into local SQLite           │  │
-│  │  3. confirm UUIDs back to D1           │  │
-│  │  4. regenerate Finances.xlsx           │  │
-│  │  5. notify (macOS notification)        │  │
-│  └──────────────┬─────────────────────────┘  │
-│  ┌──────────────▼─────────────────────────┐  │
-│  │ local/finances.db                      │  │
-│  │ ИСТОЧНИК ПРАВДЫ                        │  │
-│  │  - expenses (полная история)           │  │
-│  │  - transactions, snapshots, rates...   │  │
-│  └──────────────┬─────────────────────────┘  │
-│  ┌──────────────▼─────────────────────────┐  │
-│  │ reports/Finances.generated.xlsx                 │  │
-│  │ Read-only dashboard                    │  │
-│  └────────────────────────────────────────┘  │
-└──────────────────────────────────────────────┘
+┌──────────────────────────┐    ┌───────────────────────────┐
+│   iPhone — Telegram      │    │   Desktop browser         │
+│  ┌────────────────────┐  │    │  ┌─────────────────────┐  │
+│  │ Mini App           │  │    │  │ Web Admin (React)   │  │
+│  │ - numpad + cats    │  │    │  │ - accounts          │  │
+│  │ - история          │  │    │  │ - snapshots         │  │
+│  │ - 📊 статистика     │  │    │  │ - incomes / chains  │  │
+│  │ - settings         │  │    │  │ - dashboards        │  │
+│  └──────────┬─────────┘  │    │  └──────────┬──────────┘  │
+└─────────────┼────────────┘    └─────────────┼─────────────┘
+              │ initData auth                 │ Bearer JWT
+              │ HTTPS                         │ HTTPS
+              ▼                               ▼
+        ┌─────────────────────────────────────────────────┐
+        │     Cloudflare edge (serverless, free)          │
+        │  ┌───────────────────────────────────────────┐  │
+        │  │ Worker (TypeScript)                       │  │
+        │  │  - /tg                webhook Telegram    │  │
+        │  │  - /v1/auth/google/*  OAuth flow          │  │
+        │  │  - /v1/expenses/...   Mini App CRUD       │  │
+        │  │  - /v1/admin/...      Web Admin CRUD      │  │
+        │  │  - /v1/rates/...      курсы               │  │
+        │  │  - cron               daily rates pull    │  │
+        │  └──────────────────┬────────────────────────┘  │
+        │  ┌──────────────────▼────────────────────────┐  │
+        │  │ D1 — ИСТОЧНИК ПРАВДЫ                      │  │
+        │  │  expenses, categories, accounts,          │  │
+        │  │  currencies, rates, authorized_users,     │  │
+        │  │  snapshots (planned), transactions ...    │  │
+        │  └───────────────────────────────────────────┘  │
+        │  ┌─────────────────┐    ┌─────────────────────┐ │
+        │  │ Pages           │    │ Pages               │ │
+        │  │ finances-miniapp│    │ finances-admin      │ │
+        │  │ (Mini App SPA)  │    │ (Web Admin SPA)     │ │
+        │  └─────────────────┘    └─────────────────────┘ │
+        └────────────────────────┬────────────────────────┘
+                                 │ wrangler d1 export (daily)
+                                 ▼
+                ┌─────────────────────────────────┐
+                │   MacBook — daily backup only   │
+                │  local/scripts/backup_d1.py     │
+                │  → finances.db.<ts>.sql         │
+                │  → iCloud Drive copy            │
+                └─────────────────────────────────┘
 ```
+
+**Ключевое отличие от исходной архитектуры:** MacBook сведён к роли backup-узла. Mini App пишет напрямую в D1 (нет outbox/cleanup), Web Admin — тоже напрямую. Аналитика и дашборды живут в Web Admin, не в Excel.
 
 ## Потоки данных
 
-### Поток 1: запись расхода с iPhone
+### Поток 1: запись расхода с iPhone (Mini App)
 1. Пользователь открывает Mini App в Telegram.
 2. Тапает категорию → набирает сумму → подтверждает.
 3. Mini App генерирует **UUID** в браузере и шлёт `POST /v1/expenses` на Worker.
-4. Worker валидирует (Telegram-инициатива через `initData`-подпись), пишет в `expenses_outbox` D1.
-5. Mini App получает 200 OK, показывает «✓ записано».
+4. Worker валидирует Telegram `initData`-подпись, пишет напрямую в D1 (`INSERT OR IGNORE`).
+5. Mini App получает 200 OK.
 
-Если связь пропала между шагами 3 и 4 — Mini App кэширует в `localStorage` и повторяет при появлении сети. UUID не меняется → идемпотентно.
+Если связь пропала — Mini App кэширует в `localStorage` и повторяет при появлении сети. UUID не меняется → идемпотентно (ADR-005).
 
-### Триггеры sync
+### Поток 2: вход в Web Admin (Google OAuth)
+1. Пользователь открывает `https://finances-admin.pages.dev/`.
+2. SPA проверяет JWT в `localStorage`. Если нет — рендерит `/login` с кнопкой «Sign in with Google».
+3. Клик → редирект на `<worker>/v1/auth/google/start?return_to=<spa-url>`.
+4. Worker генерит state-nonce, ставит state-cookie, редиректит на Google `accounts.google.com/o/oauth2/v2/auth?...&scope=openid%20email`.
+5. Google → callback `<worker>/v1/auth/google/callback?code=...&state=...`.
+6. Worker exchange `code` на `id_token`, проверяет email против allowlist в `ADMIN_ALLOWED_EMAILS`.
+7. Если ОК — Worker генерит JWT HS256 (`sub=email`, `exp=now+30d`), редиректит на `<spa-url>#token=<jwt>`.
+8. SPA достаёт token из URL fragment, сохраняет в `localStorage`, чистит URL.
 
-MacBook не имеет публичного endpoint'а (за NAT, без VPS), поэтому **push с Worker'а напрямую невозможен**. Используется **pull-режим**: MacBook сам опрашивает D1.
+### Поток 3: CRUD из Web Admin
+1. SPA делает `fetch('/v1/admin/<resource>', { headers: { Authorization: 'Bearer ' + token } })`.
+2. Worker middleware `requireAdmin` валидирует JWT (HS256, проверка `exp`, проверка `sub` в allowlist).
+3. Если ОК — handler работает с D1 напрямую.
+4. Если 401 — SPA чистит token и показывает /login.
 
-**Три триггера запуска `sync.py`:**
+### Поток 4: курсы валют (cron)
+1. Cloudflare Cron Trigger срабатывает раз в сутки.
+2. Worker делает `fetch(GOOGLE_RATES_LATEST_CSV)`, парсит CSV (см. ADR-006).
+3. `INSERT OR REPLACE INTO rates (date, base, quote, rate)` для каждой валюты.
+4. Mini App и Web Admin читают актуальные курсы из D1 при bootstrap.
 
-1. **launchd-агент `com.user.excel-sync.plist`** — `StartInterval = 60` сек.
-   Запускает `sync.py --once --quiet` каждую минуту, когда MacBook не спит. `RunAtLoad=true` гарантирует пуск сразу после login.
-2. **Пользователь явно нажал `/sync` в боте.**
-   Команда возвращает текущий outbox-status + heartbeat. Это не "push to MacBook", а информационный запрос. Так как launchd опрашивает раз в минуту, max ожидание ≤ 60 секунд.
-3. **Кнопка «🔄 Sync now» в Mini App** (Этап 2).
-   Делает то же самое: показывает статус и количество ожидающих записей.
-
-**Heartbeat-механизм:**
-- При каждом `sync.py` MacBook посылает heartbeat в D1 (`POST /v1/sync/heartbeat`).
-- Bot и Mini App читают `GET /v1/sync/status`: видят `last_seen` MacBook, outbox-counters, последнюю ошибку.
-- Пользователь всегда видит честную картину: «MacBook был онлайн 30s назад, в outbox 3 ожидают».
-
-### Поток 2: синхронизация MacBook → локальный SQLite
-1. macOS просыпается / пользователь логинится.
-2. `launchd`-агент `com.user.excel-sync.plist` запускает `local/scripts/sync.py`.
-3. Скрипт читает `local/sync_state` — последний `synced_at` timestamp.
-4. `GET /v1/sync?since=<timestamp>` к Worker — получает новые expenses (JSON массив).
-5. В одной транзакции SQLite: `INSERT OR IGNORE INTO expenses ...` по UUID.
-6. После commit: `POST /v1/sync/confirm {ids: [...]}` → Worker помечает `synced_at = now()` в D1.
-7. Обновляет `local/sync_state` с новым timestamp.
-8. Запускает `regenerate_xlsx.py` — перестраивает `Finances.xlsx`.
-9. macOS notification: «Sync: +N трат, баланс XXX EUR».
-
-### Поток 3: cron-очистка D1
-1. Cloudflare Cron Trigger срабатывает раз в сутки (например, 03:00 UTC).
-2. Worker выполняет `DELETE FROM expenses_outbox WHERE synced_at IS NOT NULL AND synced_at < datetime('now', '-7 days')`.
-3. Логирует в Worker logs сколько удалено.
-
-### Поток 4: ручной ввод снапшота/обмена с MacBook
-1. Открыть терминал, активировать venv.
-2. `python local/scripts/add_snapshot.py` или `add_transaction.py` — интерактивный TUI с автодополнением аккаунтов/валют.
-3. Пишет напрямую в локальный SQLite.
-4. Регенерирует Excel.
-
-Снапшоты и обмены **тоже** можно ввести с iPhone позже — когда расширим Mini App. Но это не Этап 1.
-
-### Поток 5: курсы валют
-1. Пользователь однажды настраивает Google Sheet с `=GOOGLEFINANCE("CURRENCY:USDEUR")` для всех нужных пар.
-2. Публикует sheet как CSV (Share → Publish to web).
-3. `local/scripts/fetch_rates.py` читает CSV → пишет в `rates` таблицу.
-4. Запускается раз в день launchd-агентом или внутри `sync.py`.
+### Поток 5: backup MacBook (раз в день)
+1. launchd-агент запускает `local/scripts/backup_d1.py`.
+2. Скрипт делает `wrangler d1 export finances-outbox --output=local/backups/d1-<ts>.sql`.
+3. Копирует в iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/finances-backups/`).
+4. Старые backup'ы старше 30 дней — удаляются.
 
 ## Безопасность
 
-1. **Telegram authorization**: Worker валидирует `initData` от Mini App с использованием `WEBAPP_SECRET` (HMAC от bot token). Это гарантирует, что запрос пришёл из настоящего Telegram Mini App, а не curl.
-2. **Whitelist users**: только telegram_id из таблицы `authorized_users` D1 может писать. По умолчанию там только владелец.
-3. **Секреты**: bot token + cloudflare API token хранятся:
-   - В облаке — `wrangler secret put TELEGRAM_BOT_TOKEN`
-   - Локально — `.env` (в `.gitignore`)
-4. **CORS**: Worker отвечает с `Access-Control-Allow-Origin: https://<mini-app>.pages.dev` строго.
-5. **Rate limiting**: на уровне Worker — простой counter в D1 (например, max 60 expenses/min per user).
+### Два независимых auth-канала
+
+| Канал | Метод | Где валидируется |
+|---|---|---|
+| Mini App | Telegram `initData` HMAC | Worker через bot token |
+| Web Admin | Google OAuth → JWT HS256 | Worker через `ADMIN_JWT_SECRET` |
+
+### Конкретики
+
+1. **Telegram authorization**: Worker валидирует `initData` от Mini App с использованием HMAC от bot token. Гарантирует, что запрос пришёл из настоящего Telegram Mini App.
+2. **Telegram whitelist**: только `telegram_id` из таблицы `authorized_users` D1. По умолчанию там только владелец.
+3. **Google OAuth для Web Admin**: проверяется `id_token`-`email` против allowlist `ADMIN_ALLOWED_EMAILS` (CSV-список, конфигурируется в wrangler vars). Audience = свой `GOOGLE_CLIENT_ID`.
+4. **JWT для сессий Web Admin**: HS256, секрет в `ADMIN_JWT_SECRET` (wrangler secret), `exp = 30d`, `sub = email`. Передаётся в `Authorization: Bearer ...` header.
+5. **CORS**: Worker отвечает с `Access-Control-Allow-Origin: https://<pages>.pages.dev` для конкретного domain. Pre-flight `OPTIONS` обрабатывается.
+6. **Секреты**:
+   - В облаке — `wrangler secret put TELEGRAM_BOT_TOKEN`, `GOOGLE_CLIENT_SECRET`, `ADMIN_JWT_SECRET`.
+   - Локально — `.env` (в `.gitignore`).
+   - GCP Service Account JSON для Sheets — `~/.config/finances-gsheets/key.json`, никогда в репо.
+7. **Token storage в SPA**: JWT в `localStorage`. Защищено CSP (`default-src 'self'`), нет user-generated content, нет внешних inline-скриптов.
+8. **Rate limiting**: на уровне Worker — простой counter в D1 (max 60 req/min per user).
 
 ## Отказоустойчивость
 
@@ -152,17 +146,15 @@ MacBook не имеет публичного endpoint'а (за NAT, без VPS),
 
 ## Что НЕ делает архитектура (и не должна)
 - Не агрегирует данные нескольких пользователей.
-- Не делает realtime push на MacBook (только pull при пробуждении).
+- Не делает realtime push (free Cloudflare без WebSocket / Durable Objects).
 - Не интегрируется с банковскими API.
 - Не считает налоги.
 - Не присылает SMS-уведомления.
 
 ## Эволюция
-- **Этап 1**: только расходы через Mini App, текст-only Telegram bot для bootstrap.
-- **Этап 2**: красивый UI Mini App (категории как сетка с эмодзи, как в «Расходах ОК»).
-- **Этап 3**: миграция CSV из «Расходы ОК».
-- **Этап 4**: снапшоты и обмены через Mini App.
-- **Этап 5**: инвестиции (вклады с %, USDT Earn, ETF когда появятся).
-- **Этап 6**: полноценный Dashboard с графиками.
 
-См. `docs/roadmap.md` для актуального состояния.
+См. `docs/roadmap.md` для актуального состояния. Кратко:
+- **Stage 0-2**: инфра + Mini App MVP (закрыто).
+- **Stage 3**: курсы валют + аналитика в Mini App (закрыто).
+- **Stage 4**: **Web Admin Bootstrap** — Google OAuth + read-only expenses (в работе).
+- **Stage 5+**: снапшоты, доходы, обмены, дашборды, инвестиции — всё в Web Admin.

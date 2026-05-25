@@ -1,0 +1,43 @@
+# Шаблон для cloud/worker/wrangler.toml.
+# Реальный wrangler.toml — в .gitignore, никогда не комитим (содержит account_id и database_id).
+# Чтобы поднять свой instance: cp wrangler.example.toml wrangler.toml, заполнить значения,
+# и установить secrets через `wrangler secret put`.
+
+name = "finances-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+# Cloudflare Account ID. dash.cloudflare.com → правый сайдбар.
+account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"
+
+[observability]
+enabled = true
+
+# D1 — `wrangler d1 create <name>` создаст и выведет database_id.
+[[d1_databases]]
+binding = "DB"
+database_name = "<YOUR_D1_DATABASE_NAME>"
+database_id = "<YOUR_D1_DATABASE_ID>"
+
+[triggers]
+crons = ["0 6 * * *"]
+
+# Vars — публичная конфигурация (не secrets, но privacy: настрой под свой deployment).
+# - GOOGLE_RATES_LATEST_CSV: published-CSV листа `latest` из Google Sheet с GOOGLEFINANCE-курсами (ADR-006).
+# - GOOGLE_REDIRECT_URI: callback URL для Google OAuth Web Admin (ADR-012).
+# - ADMIN_ALLOWED_EMAILS: CSV-список email, которым разрешён вход.
+# - ADMIN_ALLOWED_ORIGINS: CSV-список https-origins для return_to.
+# - ADMIN_DEFAULT_RETURN_URL: fallback редирект после OAuth callback.
+[vars]
+GOOGLE_RATES_LATEST_CSV = "https://docs.google.com/spreadsheets/d/<YOUR_SHEET_ID>/export?format=csv&gid=<YOUR_GID>"
+GOOGLE_REDIRECT_URI = "https://<your-worker>.workers.dev/v1/auth/google/callback"
+ADMIN_ALLOWED_EMAILS = "<your-email@example.com>"
+ADMIN_ALLOWED_ORIGINS = "https://<your-admin>.pages.dev"
+ADMIN_DEFAULT_RETURN_URL = "https://<your-admin>.pages.dev/"
+
+# Secrets устанавливаются через `wrangler secret put <NAME>` интерактивно:
+#   TELEGRAM_BOT_TOKEN       — Telegram bot token (Mini App auth)
+#   SYNC_TOKEN               — Bearer для миграционных endpoints (любой random 32+ байт)
+#   GOOGLE_CLIENT_ID         — OAuth Web client ID (см. docs/setup.md §8)
+#   GOOGLE_CLIENT_SECRET     — OAuth Web client secret
+#   ADMIN_JWT_SECRET         — секрет для подписи admin-сессий (openssl rand -base64 48)
