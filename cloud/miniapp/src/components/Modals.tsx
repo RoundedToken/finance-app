@@ -2,6 +2,7 @@ import { History as HistoryIcon, BarChart3, X } from "lucide-react";
 import { useBootstrap } from "@/api/queries";
 import { useApp } from "@/store";
 import { Modal } from "./Modal";
+import { Currency } from "./Currency";
 import { dateShiftISO } from "@/lib/utils";
 import { haptic } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
@@ -55,8 +56,8 @@ function AccountPicker({ open }: { open: boolean }) {
                     <button key={a.id} onClick={() => { haptic("light"); d({ t: "account", v: a.id }); }}
                         className={cn("w-full flex items-center justify-between py-3 px-3 rounded-xl active:animate-pop transition-colors text-left",
                             s.accountId === a.id ? "bg-accent/15 text-accent ring-1 ring-accent/40" : "bg-secondary-bg")}>
-                        <span className="text-sm">{a.name}</span>
-                        <span className="text-xs text-hint">{a.currency}</span>
+                        <span className="text-sm inline-flex items-center gap-2"><Currency code={a.currency} flagOnly className="text-lg" />{a.name}</span>
+                        <Currency code={a.currency} size="xs" />
                     </button>
                 ))}
             </div>
