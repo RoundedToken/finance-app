@@ -6,6 +6,7 @@ import { useToast } from "@/components/Toast";
 import { CurrencyFlag } from "@/components/Currency";
 import { Amount } from "@/components/Amount";
 import { SwipeRow } from "@/components/SwipeRow";
+import { Numpad } from "@/components/Numpad";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import { cn, fmt, humanDay, uuid4 } from "@/lib/utils";
 import { toBase } from "@/lib/money";
@@ -42,7 +43,7 @@ export function MainScreen() {
                 <IconBtn label="История" onClick={() => d({ t: "screen", v: "history" })}><HistoryIcon className="h-5 w-5" /></IconBtn>
             </header>
 
-            <Numpad />
+            <Numpad onKey={(k) => d({ t: "key", k })} className="px-4 mt-2" />
 
             <SideActions account={account} hasNote={!!s.note} />
 
@@ -65,34 +66,13 @@ function Display() {
     );
 }
 
-function Numpad() {
-    const { d } = useApp();
-    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
-    const press = (k: string) => {
-        haptic("light");
-        if (k === ".") d({ t: "dot" });
-        else if (k === "⌫") d({ t: "back" });
-        else d({ t: "digit", d: k });
-    };
-    return (
-        <div className="grid grid-cols-3 gap-px px-4 mt-2">
-            {keys.map(k => (
-                <button key={k} onClick={() => press(k)}
-                    className="h-16 grid place-items-center text-2xl font-medium no-select active:bg-secondary-bg active:animate-pop rounded-xl transition-colors">
-                    {k}
-                </button>
-            ))}
-        </div>
-    );
-}
-
 function SideActions({ account, hasNote }: { account: Account | null; hasNote: boolean }) {
     const { s, d } = useApp();
     return (
         <div className="grid grid-cols-3 gap-2 px-4 mt-3">
             <ActionChip icon={<Calendar className="h-4 w-4" />} label={humanDay(s.date)} onClick={() => d({ t: "modal", v: "date" })} />
             <ActionChip icon={<Wallet className="h-4 w-4" />} label={account ? account.name : "Счёт"} active={!!account} onClick={() => d({ t: "modal", v: "account" })} />
-            <ActionChip icon={<MessageSquare className="h-4 w-4" />} label={hasNote ? "Описание ✓" : "Описание"} active={hasNote} onClick={() => d({ t: "modal", v: "note" })} />
+            <ActionChip icon={<MessageSquare className="h-4 w-4" />} label={hasNote ? "Описание ✓" : "Описание"} active={hasNote} onClick={() => d({ t: "screen", v: "note" })} />
         </div>
     );
 }
@@ -189,7 +169,7 @@ function RecentRow({ e }: { e: Expense }) {
         del.mutate(e.id, { onSuccess: () => { haptic("success"); toast("Удалено"); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } });
     };
     return (
-        <SwipeRow onTap={() => d({ t: "edit", e })} onDelete={remove}>
+        <SwipeRow onTap={() => d({ t: "loadEdit", e })} onDelete={remove}>
             <div className="w-full flex items-center gap-3 py-2.5 px-3 bg-secondary-bg/50">
                 <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (cat?.color ?? "#9ca3af") + "33" }}>{cat?.emoji ?? "🏷"}</span>
                 <span className="flex-1 min-w-0">

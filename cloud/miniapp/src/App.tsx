@@ -4,6 +4,8 @@ import { AppProvider, useApp } from "@/store";
 import { ToastProvider } from "@/components/Toast";
 import { MainScreen } from "@/screens/MainScreen";
 import { HistoryScreen } from "@/screens/HistoryScreen";
+import { EditScreen } from "@/screens/EditScreen";
+import { NoteScreen } from "@/screens/NoteScreen";
 import { Modals } from "@/components/Modals";
 
 function Shell() {
@@ -29,6 +31,8 @@ function Shell() {
         <>
             {s.screen === "main" && <MainScreen />}
             {s.screen === "history" && <HistoryScreen />}
+            {s.screen === "edit" && <EditScreen />}
+            {s.screen === "note" && <NoteScreen />}
             <Modals />
         </>
     );

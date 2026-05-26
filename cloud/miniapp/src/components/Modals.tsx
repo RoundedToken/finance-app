@@ -1,9 +1,7 @@
-import { useState } from "react";
 import { History as HistoryIcon, BarChart3, X } from "lucide-react";
 import { useBootstrap } from "@/api/queries";
 import { useApp } from "@/store";
 import { Modal } from "./Modal";
-import { EditModal } from "./EditModal";
 import { dateShiftISO } from "@/lib/utils";
 import { haptic } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
@@ -15,9 +13,7 @@ export function Modals() {
             <CurrencyPicker open={s.modal === "currency"} />
             <AccountPicker open={s.modal === "account"} />
             <DatePicker open={s.modal === "date"} />
-            <NotePicker open={s.modal === "note"} />
             <MenuModal open={s.modal === "menu"} />
-            <EditModal />
         </>
     );
 }
@@ -90,29 +86,6 @@ function DatePicker({ open }: { open: boolean }) {
                     <input type="date" value={s.date} max={dateShiftISO(0)} onChange={e => d({ t: "date", v: e.target.value })}
                         className="bg-transparent text-right tabular-nums outline-none" />
                 </label>
-            </div>
-        </Modal>
-    );
-}
-
-function NotePicker({ open }: { open: boolean }) {
-    const { s, d } = useApp();
-    const [text, setText] = useState(s.note);
-    return (
-        <Modal open={open} onClose={() => d({ t: "modal", v: null })} title="Описание покупки">
-            <textarea
-                key={open ? "open" : "closed"}
-                defaultValue={s.note}
-                onChange={e => setText(e.target.value)}
-                rows={3}
-                placeholder="Введите описание"
-                className="w-full rounded-xl bg-secondary-bg p-3 text-sm outline-none resize-none border border-border"
-            />
-            <div className="flex gap-2 mt-3">
-                <button onClick={() => { setText(""); d({ t: "note", v: "" }); d({ t: "modal", v: null }); }}
-                    className="flex-1 py-2.5 rounded-xl bg-secondary-bg text-sm text-hint">Очистить</button>
-                <button onClick={() => { haptic("light"); d({ t: "note", v: text }); d({ t: "modal", v: null }); }}
-                    className="flex-1 py-2.5 rounded-xl bg-accent text-accent-fg text-sm font-medium">OK</button>
             </div>
         </Modal>
     );
