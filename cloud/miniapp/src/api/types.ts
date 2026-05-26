@@ -66,4 +66,5 @@ export interface ExpenseInput {
     category_id: string | null;
     account_id?: string | null;
     note?: string | null;
+    created_at?: string;
 }

@@ -31,7 +31,7 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
             e.source ?? "mini_app",
             e.source_record_id ?? null,
             userId,
-            e.created_at,
+            e.created_at ?? new Date().toISOString(),   // fallback: created_at NOT NULL, клиент мог не прислать
         )
         .run();
     return { inserted: (r.meta.changes ?? 0) > 0 };
