@@ -25,7 +25,9 @@ export function NoteScreen() {
             <textarea
                 autoFocus
                 value={text}
+                enterKeyHint="done"
                 onChange={e => setText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } }}
                 placeholder="Введите описание покупки"
                 className="flex-1 w-full px-4 py-3 text-base bg-transparent outline-none resize-none"
             />

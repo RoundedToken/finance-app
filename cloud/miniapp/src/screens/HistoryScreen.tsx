@@ -7,7 +7,7 @@ import { Amount } from "@/components/Amount";
 import { humanDay } from "@/lib/utils";
 import { toBase } from "@/lib/money";
 import { haptic, confirmDialog } from "@/lib/telegram";
-import type { Expense, Category } from "@/api/types";
+import type { Expense, Category, Account } from "@/api/types";
 
 export function HistoryScreen() {
     const { s, d } = useApp();
@@ -16,6 +16,7 @@ export function HistoryScreen() {
     const expenses = data?.expenses ?? [];
     const rates = boot.data?.rates;
     const cats = boot.data?.categories ?? [];
+    const accounts = boot.data?.accounts ?? [];
 
     const byDay = new Map<string, typeof expenses>();
     for (const e of expenses) {
@@ -47,8 +48,8 @@ export function HistoryScreen() {
                                 <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
                                 <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                             </div>
-                            <div className="rounded-2xl overflow-hidden border border-border/40 divide-y divide-border/40">
-                                {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} />)}
+                            <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
+                                {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} accounts={accounts} />)}
                             </div>
                         </div>
                     );
@@ -58,11 +59,13 @@ export function HistoryScreen() {
     );
 }
 
-function HistoryRow({ e, cats }: { e: Expense; cats: Category[] }) {
+function HistoryRow({ e, cats, accounts }: { e: Expense; cats: Category[]; accounts: Account[] }) {
     const { d } = useApp();
     const del = useDeleteExpense();
     const toast = useToast();
     const c = cats.find(x => x.id === e.category_id);
+    const acc = accounts.find(a => a.id === e.account_id);
+    const sub = [e.note, acc?.name].filter(Boolean).join(" · ");
     const remove = async () => {
         if (!(await confirmDialog("Удалить запись?"))) return;
         del.mutate(e.id, { onSuccess: () => { haptic("success"); toast("Удалено"); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } });
@@ -73,7 +76,7 @@ function HistoryRow({ e, cats }: { e: Expense; cats: Category[] }) {
                 <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (c?.color ?? "#9ca3af") + "59" }}>{c?.emoji ?? "🏷"}</span>
                 <span className="flex-1 min-w-0">
                     <span className="block truncate text-sm">{c?.name || "—"}</span>
-                    {e.note && <span className="block truncate text-xs text-hint">{e.note}</span>}
+                    {sub && <span className="block truncate text-xs text-hint">{sub}</span>}
                 </span>
                 <Amount amount={e.amount} currency={e.currency} className="text-sm" />
             </div>
