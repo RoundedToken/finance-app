@@ -11,7 +11,7 @@ import {
 } from "@/api/queries";
 import { GoalSelector } from "@/components/GoalSelector";
 import { Modal } from "@/components/Modal";
-import { Currency } from "@/components/Currency";
+import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
@@ -429,7 +429,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                     <Field label="Ведро">
                         <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                             {accounts.map(a => (
-                                <option key={a.id} value={a.id}>{a.name}</option>
+                                <AccountOption key={a.id} account={a} />
                             ))}
                         </Select>
                     </Field>

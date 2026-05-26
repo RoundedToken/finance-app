@@ -32,3 +32,16 @@ export function Currency({ code, flagOnly = false, size = "sm", className }: Cur
         </span>
     );
 }
+
+/**
+ * <option> для нативного <select> со счётом: эмодзи-флаг валюты впереди имени
+ * («🇷🇸 RSD банк»). В нативный <option> нельзя вставить компонент <Currency>,
+ * поэтому глиф берём из currencies и подставляем текстом — так же, как уже
+ * делается для категорий ({c.emoji} {c.name}). Помогает не путать вёдра
+ * одного банка в разных валютах.
+ */
+export function AccountOption({ account }: { account: { id: string; name: string; currency: string } }) {
+    const { data: refs } = useReferences();
+    const glyph = refs?.currencies?.find(c => c.code === account.currency)?.emoji;
+    return <option value={account.id}>{glyph ? `${glyph} ${account.name}` : account.name}</option>;
+}
