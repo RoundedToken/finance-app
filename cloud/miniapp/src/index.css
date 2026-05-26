@@ -2,24 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Палитра 1:1 с админкой (cloud/admin/src/index.css). Тему dark включает
+   .dark на <html> — синхронизируется с Telegram colorScheme (см. telegram.ts),
+   вне Telegram — по prefers-color-scheme. */
 @layer base {
     :root {
-        color-scheme: light dark;
+        --background: 220 17% 99%;
+        --foreground: 224 71% 4%;
+        --card: 220 17% 100%;
+        --card-foreground: 224 71% 4%;
+        --primary: 158 64% 40%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 14% 96%;
+        --secondary-foreground: 224 71% 4%;
+        --muted: 220 14% 96%;
+        --muted-foreground: 220 8% 46%;
+        --border: 220 13% 91%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 210 40% 98%;
+        --radius: 0.875rem;
     }
-    html, body, #root {
-        height: 100%;
+    .dark {
+        --background: 222 18% 8%;
+        --foreground: 210 20% 96%;
+        --card: 222 18% 10%;
+        --card-foreground: 210 20% 96%;
+        --primary: 158 64% 52%;
+        --primary-foreground: 222 18% 8%;
+        --secondary: 222 14% 16%;
+        --secondary-foreground: 210 20% 96%;
+        --muted: 222 14% 16%;
+        --muted-foreground: 215 14% 65%;
+        --border: 222 12% 20%;
+        --destructive: 0 70% 60%;
+        --destructive-foreground: 210 20% 96%;
     }
+
+    html, body, #root { height: 100%; }
     body {
         margin: 0;
-        background: theme(colors.bg);
-        color: theme(colors.text);
-        font-family: theme(fontFamily.sans);
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
         overscroll-behavior: none;
-        /* безопасные зоны iOS (notch / home indicator) */
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
-    /* убрать синюю подсветку тапа на iOS */
     * { -webkit-tap-highlight-color: transparent; }
     button { font: inherit; color: inherit; }
 }

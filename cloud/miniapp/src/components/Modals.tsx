@@ -101,12 +101,11 @@ function NotePicker({ open }: { open: boolean }) {
         <Modal open={open} onClose={() => d({ t: "modal", v: null })} title="Описание покупки">
             <textarea
                 key={open ? "open" : "closed"}
-                autoFocus
                 defaultValue={s.note}
                 onChange={e => setText(e.target.value)}
                 rows={3}
                 placeholder="Введите описание"
-                className="w-full rounded-xl bg-secondary-bg p-3 text-sm outline-none resize-none"
+                className="w-full rounded-xl bg-secondary-bg p-3 text-sm outline-none resize-none border border-border"
             />
             <div className="flex gap-2 mt-3">
                 <button onClick={() => { setText(""); d({ t: "note", v: "" }); d({ t: "modal", v: null }); }}
