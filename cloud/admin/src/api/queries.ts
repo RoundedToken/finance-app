@@ -123,6 +123,14 @@ export function useIncomes() {
     });
 }
 
+function invalidateOnIncomeMutation(qc: ReturnType<typeof useQueryClient>) {
+    // Доход — это «событие» для счёта (snapshots.ts: incomes +amount): влияет на
+    // effective_balance и events_count на странице «Счета». Без инвалидации
+    // ["accounts"] баланс/счётчик событий не обновляются до перезагрузки страницы.
+    qc.invalidateQueries({ queryKey: ["incomes"] });
+    qc.invalidateQueries({ queryKey: ["accounts"] });
+}
+
 export function useCreateIncome() {
     const qc = useQueryClient();
     return useMutation({
@@ -132,7 +140,7 @@ export function useCreateIncome() {
                 body: JSON.stringify(payload),
             }),
         onSuccess: (_d, payload) => {
-            qc.invalidateQueries({ queryKey: ["incomes"] });
+            invalidateOnIncomeMutation(qc);
             // Если income привязан к цели — обновляем goal balance.
             if (payload.goal_id) {
                 qc.invalidateQueries({ queryKey: ["goals"] });
@@ -151,7 +159,7 @@ export function useUpdateIncome() {
                 body: JSON.stringify(patch),
             }),
         onSuccess: (_d, { patch }) => {
-            qc.invalidateQueries({ queryKey: ["incomes"] });
+            invalidateOnIncomeMutation(qc);
             // Goal attachment изменился или amount/account/date — пересчитать
             // balance во всех goals; конкретный goal-detail тоже.
             qc.invalidateQueries({ queryKey: ["goals"] });
@@ -166,7 +174,7 @@ export function useDeleteIncome() {
         mutationFn: (id: string) =>
             apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/incomes/${id}`, { method: "DELETE" }),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ["incomes"] });
+            invalidateOnIncomeMutation(qc);
             qc.invalidateQueries({ queryKey: ["goals"] });
         },
     });
