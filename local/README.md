@@ -1,102 +1,58 @@
-# local — локальный SQLite + sync + регенерация Excel
+# local — backup D1 + тест-харнесы + разовые скрипты
 
-Здесь живёт **источник правды** всей системы: `finances.db` (SQLite). Сюда же — все скрипты, которые с ней работают: создание БД, миграции, sync из облака, регенерация Excel.
+> **Важно (ADR-011/012):** источник правды — **Cloudflare D1**, не локальная БД.
+> Папка `local/` НЕ содержит «ground truth». Здесь только: бэкап D1, локальные
+> UI-тест-харнесы и разовые import/setup-скрипты. MacBook может быть выключен
+> неделями — на работу облака это не влияет.
 
-## Содержимое
+## 🧪 Тестовые харнесы (читать перед любой frontend-задачей)
 
-```
-local/
-├── README.md              ← этот файл
-├── schema.sql             ← current snapshot схемы (для людей)
-├── migrations/            ← нумерованные миграции (для init_db.py)
-│   └── 001_init.sql
-├── scripts/
-│   ├── init_db.py         ← применяет миграции, создаёт finances.db
-│   ├── sync.py            ← pull из D1, insert local, confirm
-│   ├── regenerate_xlsx.py ← собрать Finances.xlsx из БД
-│   ├── fetch_rates.py     ← Google Sheets CSV → таблица rates
-│   ├── add_account.py     ← TUI-добавление счёта
-│   ├── add_transaction.py ← TUI-добавление обмена/перевода
-│   ├── add_snapshot.py    ← TUI-ввод снапшота баланса
-│   ├── import_ok_csv.py   ← миграция CSV из «Расходы ОК»
-│   └── _common.py         ← общие утилиты (paths, db connection, env)
-├── backups/               ← копии finances.db с timestamp
-├── logs/                  ← sync.log и другие
-└── finances.db            ← (создаётся init_db.py, в .gitignore)
-```
+Frontend **нельзя** деплоить непроверенным (правило Степана, см. memory
+`frontend-test-locally-before-deploy`). Запускать из корня репо через venv:
+`.venv/bin/python local/scripts/<harness>.py`. Скриншоты → `local/screenshots/`,
+их надо **открыть глазами** (Read PNG) в light и dark.
 
-## Quick reference команд
-
-```bash
-# Активировать venv (в корне репо)
-source ../.venv/bin/activate
-
-# Создать БД (или применить новые миграции)
-python scripts/init_db.py
-
-# Запустить sync
-python scripts/sync.py --once
-python scripts/sync.py --watch        # бесконечный цикл (для launchd)
-
-# Регенерировать Excel
-python scripts/regenerate_xlsx.py
-
-# Подтянуть курсы
-python scripts/fetch_rates.py
-```
-
-## Принципы работы с БД
-
-1. **Не редактировать `schema.sql` напрямую** для изменений.
-   Сделать новую миграцию `migrations/00X_<имя>.sql`, потом обновить `schema.sql` как зеркало.
-
-2. **Перед миграцией / правкой данных — backup.**
-   ```bash
-   cp finances.db backups/finances.$(date +%Y%m%d_%H%M%S).db
-   ```
-
-3. **Не открывать БД параллельно из нескольких процессов на запись.**
-   WAL-режим помогает (`PRAGMA journal_mode = WAL`), но всё равно — sync + ручная правка одновременно = риск.
-
-4. **Все timestamps — ISO 8601 в UTC.**
-
-5. **При расхождении локальной БД и D1 — права у локальной.**
-   D1 — транзитный буфер, локальная БД — ground truth.
-
-## Sync state
-
-В таблице `sync_state` хранятся служебные ключи:
-
-| key | value | смысл |
+| Харнес | Что тестирует | Как |
 |---|---|---|
-| `last_synced_at` | ISO timestamp | до какого момента уже забрали из D1 |
-| `last_xlsx_regenerated_at` | ISO timestamp | когда последний раз пересобирали Excel |
-| `last_rates_fetched_at` | ISO timestamp | когда тянули курсы |
-| `last_references_pushed_at` | ISO timestamp | когда пушили справочники в D1 |
-| `schema_version` | integer | последняя применённая миграция |
+| **`test_admin_ui.py`** | **Web Admin** (React SPA). Поднимает `vite dev` для `cloud/admin`, кладёт mock-JWT в localStorage, перехватывает **все** `/v1/**` моками (mock-данные прямо в скрипте: ACCOUNTS, INCOMES, GOALS, DASHBOARD…). Скриншоты `admin-*.png`. Покрывает дашборд (обе линзы + ETA + адаптивная проекция), доходы, снапшоты, обмены, цели, расходы, sidebar. **Не нужен** реальный Google-auth / D1. | `.venv/bin/python local/scripts/test_admin_ui.py [--headed]` |
+| **`test_miniapp_ios.py`** | **Mini App на РЕАЛЬНОМ iOS** через Appium + Xcode iOS Simulator. Единственный способ воспроизвести баги нативной клавиатуры iOS (скачки, scroll-lock, фокус). Мокает Telegram+fetch, гасит Safari-онбординг. Детали запуска — в memory `ios-appium-keyboard-test` (Appium server, capabilities, nativeWebTap). | см. docstring + memory |
+| **`test_miniapp_react.py`** | **Mini App (React, SPEC-014)** через Playwright Chromium. Мокает Telegram+fetch (блокирует реальный `telegram-web-app.js`), скриншоты light/dark → `local/screenshots/react/`, ловит console errors. Быстрая проверка вёрстки/темы (НЕ ловит iOS-клавиатуру — для этого iOS-харнес). | `.venv/bin/python local/scripts/test_miniapp_react.py [--dark]` |
+| `test_ui.py` | Legacy: старый vanilla Mini App (до React-переписывания). Оставлен для истории. | — |
 
-## Бэкап и восстановление
+**Цикл frontend-фичи:** код → `npm --prefix cloud/<app> run build` → харнес → Read
+скриншоты (light+dark) → фикс → повтор → только потом deploy.
 
-**Авто-бэкап** через launchd-агент `com.user.excel-backup.plist` копирует `finances.db` в:
-- `local/backups/finances.<ts>.db` (локальная история, последние 30)
-- `~/Library/Mobile Documents/com~apple~CloudDocs/finances-backups/finances.<ts>.db` (iCloud Drive, удалённая копия)
+## 💾 Backup D1
 
-**Восстановление:**
+- **`backup_d1.py`** — `wrangler d1 export finances-outbox` → `local/backups/d1-<ts>.sql`
+  + копия в iCloud Drive. Запускается launchd-агентом ежедневно
+  (`launchd/com.user.excel-backup.plist`).
+- **Перед массовой правкой данных в D1 — делать backup вручную:**
+  ```bash
+  cd cloud/worker && wrangler d1 export finances-outbox --remote \
+    --output=../../local/backups/d1-pre-<что>-$(date +%Y%m%d-%H%M%S).sql
+  ```
+
+## 🛠 Разовые import / setup
+
+| Скрипт | Назначение |
+|---|---|
+| `setup_rates_sheet.py` | Однократная настройка Google Sheet с `GOOGLEFINANCE` (источник курсов). |
+| `backfill_rates.py` | Однократная заливка исторических курсов в таблицу `rates`. |
+| `import_legacy_snapshots.py` | Импорт истории снапшотов из `data/legacy/Finances.xlsx` (EUR-eq → native по историческому курсу, UUID5-идемпотентность). |
+| `import_ok_csv.py` | Миграция исторических трат из CSV «Расходы ОК». |
+| `_common.py` | Общие константы (пути к GCP key и т.п.). |
+
+> `init_db.py`, `migrate_to_d1.py` — наследие старой локально-SQLite эпохи
+> (до pivot к D1). Не использовать в текущей архитектуре.
+
+## Прямые операции с D1 (без скрипта)
+
+CRUD идут через Worker, но для разовых правок/проверок — `wrangler d1 execute`:
 ```bash
-cp local/backups/finances.2026-05-23_120000.db local/finances.db
-python scripts/regenerate_xlsx.py
+cd cloud/worker
+wrangler d1 execute finances-outbox --remote --command "SELECT ... "
+# идемпотентная вставка истории: детерминированный id + INSERT OR IGNORE
 ```
-
-## Расположение в общей системе
-
-```
-Cloudflare D1 (cloud, transient)
-        │
-        │ sync.py pulls
-        ▼
-local/finances.db (this — ground truth)
-        │
-        │ regenerate_xlsx.py reads
-        ▼
-finances/Finances.xlsx (read-only dashboard)
-```
+Перед записью — backup (см. выше). Схема D1 меняется только миграциями
+(`cloud/worker/migrations/`), `schema.sql` — зеркало-снапшот.
