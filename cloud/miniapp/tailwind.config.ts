@@ -1,27 +1,21 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
 
-/**
- * Цвета берём из CSS-переменных Telegram-темы (--tg-theme-*), которые Telegram
- * сам инжектит в :root под клиента (светлая/тёмная). Дефолты — на случай
- * запуска вне Telegram. `accent` — наш brand (зелёный, как админка).
- */
-const tg = (name: string, fallback: string) => `var(--tg-theme-${name}, ${fallback})`;
-
+/** Палитра 1:1 с админкой через HSL-переменные (см. src/index.css). */
 const config: Config = {
+    darkMode: ["class"],
     content: ["./index.html", "./src/**/*.{ts,tsx}"],
     theme: {
         extend: {
             colors: {
-                bg: tg("bg-color", "#ffffff"),
-                "secondary-bg": tg("secondary-bg-color", "#f1f1f4"),
-                text: tg("text-color", "#0f0f0f"),
-                hint: tg("hint-color", "#8a8a8e"),
-                link: tg("link-color", "#2481cc"),
-                button: tg("button-color", "#2481cc"),
-                "button-text": tg("button-text-color", "#ffffff"),
-                accent: { DEFAULT: "hsl(158 64% 45%)", fg: "#ffffff" },
-                danger: "hsl(0 72% 55%)",
+                bg: "hsl(var(--background))",
+                "secondary-bg": "hsl(var(--secondary))",
+                card: "hsl(var(--card))",
+                text: "hsl(var(--foreground))",
+                hint: "hsl(var(--muted-foreground))",
+                border: "hsl(var(--border))",
+                accent: { DEFAULT: "hsl(var(--primary))", fg: "hsl(var(--primary-foreground))" },
+                danger: "hsl(var(--destructive))",
             },
             borderRadius: { xl: "0.875rem", "2xl": "1.25rem" },
             fontFamily: {

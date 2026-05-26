@@ -17,11 +17,14 @@ export function initTelegram(): void {
     w.expand();
     // расходы вводятся свайпами по категориям — гасим вертикальный свайп-закрытие
     try { w.disableVerticalSwipes?.(); } catch { /* старый клиент */ }
-    try {
-        const theme = w.themeParams ?? {};
-        w.setHeaderColor?.(theme.bg_color ?? "#ffffff");
-        w.setBackgroundColor?.(theme.bg_color ?? "#ffffff");
-    } catch { /* noop */ }
+    syncTheme();
+}
+
+/** Включает .dark по Telegram colorScheme (наша палитра, не tg-vars). Вне Telegram — по prefers-color-scheme. */
+export function syncTheme(): void {
+    const scheme = tg()?.colorScheme;
+    const dark = scheme ? scheme === "dark" : (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+    document.documentElement.classList.toggle("dark", dark);
 }
 
 /** Haptic feedback (тап/успех/ошибка). No-op вне Telegram. */
