@@ -7,7 +7,7 @@ import {
     useTransactions,
     useUpdateTransaction,
 } from "@/api/queries";
-import { Currency } from "@/components/Currency";
+import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
@@ -95,7 +95,7 @@ export function TransactionsPage() {
                 </Select>
                 <Select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} aria-label="Ведро">
                     <option value="">Все вёдра</option>
-                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                 </Select>
             </div>
 
@@ -259,7 +259,7 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
                 <Field label="Откуда">
                     <Select fullWidth value={fromId} onChange={e => setFromId(e.target.value)}>
                         <option value="">— выбери ведро —</option>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                     <input
                         type="number" inputMode="decimal" step="any" min="0"
@@ -272,7 +272,7 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
                 <Field label="Куда">
                     <Select fullWidth value={toId} onChange={e => setToId(e.target.value)}>
                         <option value="">— выбери ведро —</option>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                     <input
                         type="number" inputMode="decimal" step="any" min="0"
@@ -367,14 +367,14 @@ function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
                 <Field label="Откуда">
                     <Select fullWidth value={fromId} onChange={e => { setFromId(e.target.value); setToId(""); }}>
                         <option value="">— выбери ведро —</option>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                 </Field>
 
                 <Field label="Куда (только вёдра той же валюты)">
                     <Select fullWidth value={toId} onChange={e => setToId(e.target.value)} disabled={!from}>
                         <option value="">— выбери ведро —</option>
-                        {sameCurrencyAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {sameCurrencyAccounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                 </Field>
 
@@ -490,7 +490,7 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
 
                 <Field label="Откуда">
                     <Select fullWidth value={fromId} onChange={e => setFromId(e.target.value)} disabled={inChain}>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                     <input type="number" inputMode="decimal" step="any" min="0"
                         value={fromAmt} onChange={e => setFromAmt(e.target.value)} disabled={inChain}
@@ -499,7 +499,7 @@ function EditTxModal({ open, onClose, tx, accounts }: EditTxModalProps) {
 
                 <Field label="Куда">
                     <Select fullWidth value={toId} onChange={e => setToId(e.target.value)} disabled={inChain}>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                     <input type="number" inputMode="decimal" step="any" min="0"
                         value={toAmt} onChange={e => setToAmt(e.target.value)} disabled={inChain}
