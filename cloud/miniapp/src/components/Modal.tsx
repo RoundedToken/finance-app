@@ -82,7 +82,16 @@ export function Modal({ open, onClose, title, children, className }: {
     };
 
     return (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+        // Высота контейнера = Telegram viewport (--tg-viewport-height обновляется
+        // Telegram'ом при появлении клавиатуры; в Safari fallback 100dvh тоже
+        // follows клавиатуру). Модалка bottom:0 от этой высоты → всегда над
+        // клавиатурой, без ручной visualViewport-компенсации.
+        <div
+            className="fixed left-0 right-0 top-0 z-50"
+            style={{ height: "var(--tg-viewport-height, 100dvh)" }}
+            role="dialog"
+            aria-modal="true"
+        >
             <div
                 className="absolute inset-0 bg-black/50 animate-fade-in"
                 style={{ touchAction: "none" }}
