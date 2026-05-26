@@ -29,13 +29,17 @@ excel/                            # имя корня — historical; см. ADR-
 │   ├── README.md
 │   ├── legacy/                   — Finances.xlsx (старый ground truth) + бэкапы
 │   └── money-ok/                 — CSV-экспорт из «Расходы ОК» + скриншоты UI
-├── local/                        ← только backup-скрипты + Playwright UI-тестер
-│   ├── scripts/
+├── local/                        ← backup D1 + UI тест-харнесы + разовые импорты (НЕ источник правды)
+│   ├── scripts/                  — детали и как запускать: local/README.md § Тестовые харнесы
 │   │   ├── backup_d1.py          — wrangler d1 export → iCloud Drive (daily)
-│   │   ├── test_ui.py            — Playwright UI-тестер для Mini App (iPhone 15 Pro Max)
+│   │   ├── test_admin_ui.py      — Playwright Web Admin (mock JWT + mock /v1/**, скриншоты)
+│   │   ├── test_miniapp_ios.py   — Appium + iOS Simulator (РЕАЛЬНАЯ клавиатура iOS)
+│   │   ├── test_miniapp_react.py — Playwright Mini App React (light/dark)
+│   │   ├── test_ui.py            — legacy тестер старого vanilla Mini App
 │   │   ├── _common.py            — общие константы (пути GCP key и т.п.)
 │   │   ├── setup_rates_sheet.py  — настройка Google Sheet с GOOGLEFINANCE
-│   │   └── backfill_rates.py     — заливка исторических курсов
+│   │   ├── backfill_rates.py     — заливка исторических курсов
+│   │   └── import_legacy_snapshots.py / import_ok_csv.py — разовые импорты
 │   ├── launchd/                  — plist для автозапуска backup_d1.py
 │   ├── backups/                  — копии D1 (sql dump)
 │   └── logs/                     — backup.out.log, backup.err.log
@@ -111,12 +115,13 @@ excel/                            # имя корня — historical; см. ADR-
 | Как поднять проект с нуля | `docs/setup.md` |
 | Полный список зависимостей и версий | `docs/stack.md` |
 | Что сейчас делаем, что дальше | `docs/roadmap.md` |
-| Mini App код | `cloud/miniapp/public/` |
-| Worker код (API + bot + auth) | `cloud/worker/src/` |
+| Mini App код (React, SPEC-014) | `cloud/miniapp/src/` |
+| Worker код (API + bot + auth + dashboard) | `cloud/worker/src/` |
 | Web Admin код | `cloud/admin/src/` |
 | Excel-инспекция (legacy lens) | `tools/CLAUDE.md` |
 | Source data (CSV/скрины/Legacy xlsx) | `data/README.md` |
-| Локальные скрипты (backup, тестер) | `local/README.md` |
+| **Как тестировать UI** (Admin — Playwright+mock JWT; Mini App — iOS Simulator/Playwright) | `local/README.md` § Тестовые харнесы |
+| Локальные скрипты (backup D1, разовые импорты) | `local/README.md` |
 
 ## Минимальный workflow для агента в новой сессии
 
