@@ -24,7 +24,7 @@ export function SwipeRow({ children, onTap, onDelete }: {
     };
 
     return (
-        <div className="relative overflow-hidden rounded-lg">
+        <div className="relative overflow-hidden">
             <button onClick={onDelete} aria-label="Удалить"
                 className="absolute inset-y-0 right-0 w-[72px] grid place-items-center bg-danger text-white">
                 <Trash2 className="h-5 w-5" />
