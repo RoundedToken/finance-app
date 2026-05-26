@@ -165,6 +165,56 @@ CURRENCIES = [
 ]
 
 
+# Дашборд (SPEC-013) — агрегат, который worker отдаёт на /v1/web/dashboard.
+def _build_dashboard() -> dict:
+    months = [f"2025-{m:02d}" for m in range(6, 13)] + [f"2026-{m:02d}" for m in range(1, 6)]
+    net_worth_series, cashflow_series = [], []
+    for i, m in enumerate(months):
+        total = 3000.0 + i * 115.0
+        net_worth_series.append({
+            "month": m, "total_eur": round(total, 2),
+            "by_bucket": {"rub-bank": round(total * 0.40, 2), "rsd-bank": round(total * 0.20, 2),
+                          "eur-bank": round(total * 0.25, 2), "usdt": round(total * 0.15, 2)},
+            "by_form": {"digital": round(total * 0.70, 2), "cash": round(total * 0.15, 2), "crypto": round(total * 0.15, 2)},
+            "by_currency": {"EUR": round(total * 0.45, 2), "RUB": round(total * 0.30, 2),
+                            "RSD": round(total * 0.10, 2), "USDT": round(total * 0.15, 2)},
+        })
+        cashflow_series.append({"month": m, "income_eur": round(1300 + (i % 3) * 220, 2),
+                                "expense_eur": round(900 + (i % 4) * 130, 2)})
+    return {
+        "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24",
+        "window": {"from": "2025-06-30", "to": "2026-05-31", "months": len(months)},
+        "kpi": {
+            "net_worth_eur": 4303.0, "free_net_worth_eur": 2100.0, "targeted_eur": 2203.0,
+            "monthly_burn_eur": 1080.0, "monthly_income_eur": 1500.0,
+            "savings_rate": 0.28, "runway_months": 1.9, "runway_months_total": 4.0,
+            "burn_window_months": 3, "buckets_without_baseline": 2, "missing_rates": 0,
+            # SPEC-015: линза «свободные» + Δ к предыдущему окну
+            "monthly_income_free_eur": 1500.0, "savings_rate_free": 0.28,
+            "prev_monthly_burn_eur": 1150.0, "prev_monthly_income_eur": 1400.0,
+            "prev_monthly_income_free_eur": 1400.0,
+            "prev_net_worth_eur": 4000.0, "prev_free_net_worth_eur": 1850.0,
+        },
+        "net_worth_series": net_worth_series,
+        "cashflow_series": cashflow_series,
+        "expenses_by_category": [
+            {"category_id": "groceries",     "name": "Продукты",    "emoji": "🛒", "color": "#B5E3C5", "total_eur": 420.0, "share": 0.38},
+            {"category_id": "food",          "name": "Еда",         "emoji": "🍔", "color": "#FFB199", "total_eur": 300.0, "share": 0.27},
+            {"category_id": "cafe",          "name": "Кафе",        "emoji": "☕", "color": "#D7B894", "total_eur": 180.0, "share": 0.16},
+            {"category_id": "transport",     "name": "Транспорт",   "emoji": "🚗", "color": "#A8C8F0", "total_eur": 120.0, "share": 0.11},
+            {"category_id": "entertainment", "name": "Развлечения", "emoji": "🎬", "color": "#C9A8E8", "total_eur":  90.0, "share": 0.08},
+        ],
+        "buckets": [
+            {"id": a["id"], "name": a["name"], "form": a["form"], "type": a["type"],
+             "currency": a["currency"], "color": a["color"], "sort_order": a["sort_order"]}
+            for a in ACCOUNTS
+        ],
+    }
+
+
+DASHBOARD = _build_dashboard()
+
+
 # ── Vite dev server ────────────────────────────────────────────────────────
 def free_port(start: int = 5173) -> int:
     for p in range(start, start + 50):
@@ -272,6 +322,9 @@ async def setup_mocks(page, base: str) -> None:
             filtered = [g for g in GOALS if status == "all" or g["status"] == status]
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"goals": filtered}))
+        if "/v1/web/dashboard" in url:
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps(DASHBOARD))
         if "/v1/web/references" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({
@@ -451,6 +504,27 @@ async def scenario_sidebar_navigation(page, base: str) -> None:
         print(f"  ✓ {out.name}  active={label}")
 
 
+async def scenario_dashboard(page, base: str) -> None:
+    """Полный дашборд (SPEC-013): KPI + графики echarts. Ждём дольше —
+    canvas рендерится не мгновенно."""
+    await page.goto(f"{base}/", wait_until="networkidle")
+    await page.wait_for_selector("text=Дашборд", timeout=5000)
+    await page.wait_for_timeout(1400)  # echarts canvas
+    # линза «Свободные» (дефолт)
+    await page.screenshot(path=str(OUT_DIR / "admin-dashboard.png"), full_page=True)
+    print("  ✓ admin-dashboard.png (линза: свободные)")
+    # переключить на «Со всеми фондами»
+    await page.get_by_role("button", name="Со всеми фондами").click()
+    await page.wait_for_timeout(700)
+    await page.screenshot(path=str(OUT_DIR / "admin-dashboard-total.png"), full_page=True)
+    print("  ✓ admin-dashboard-total.png (линза: все фонды)")
+    # ETA целей — доскроллить к блоку прогноза
+    await page.get_by_text("Цели — прогноз достижения").scroll_into_view_if_needed()
+    await page.wait_for_timeout(400)
+    await page.screenshot(path=str(OUT_DIR / "admin-dashboard-goals.png"))
+    print("  ✓ admin-dashboard-goals.png (ETA целей)")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 async def run(headed: bool) -> int:
     from playwright.async_api import async_playwright
@@ -477,7 +551,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/snapshots", "admin-snapshots.png", "Снапшоты")
             await scenario_full_page(page, base, "/expenses", "admin-expenses.png", "Расходы")
             await scenario_expenses_week(page, base)
-            await scenario_full_page(page, base, "/", "admin-dashboard.png", "Дашборд")
+            await scenario_dashboard(page, base)
             await scenario_goals_list(page, base)
             await scenario_goal_detail(page, base)
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")

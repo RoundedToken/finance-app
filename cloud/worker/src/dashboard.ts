@@ -69,7 +69,7 @@ const r2 = (x: number) => round(x, 2);
 interface BucketRow { id: string; name: string; type: string; currency: string; form: string; color: string | null; sort_order: number; }
 interface CatRow { id: string; name: string; emoji: string | null; color: string | null; }
 interface SnapRow { account_id: string; date: string; amount: number; }
-interface IncRow { account_id: string; date: string; amount: number; currency_code: string; }
+interface IncRow { account_id: string; date: string; amount: number; currency_code: string; goal_id: string | null; }
 interface ExpRow { account_id: string | null; date: string; amount: number; currency: string; category_id: string | null; }
 interface TxRow { from_account_id: string; to_account_id: string; date: string; from_amount: number; to_amount: number; }
 interface GcRow { account_id: string | null; date: string; amount: number; }
@@ -95,7 +95,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
         env.DB.prepare(`SELECT id, name, emoji, color FROM categories WHERE type = 'expense'`).all<CatRow>(),
         env.DB.prepare(`SELECT account_id, date, amount FROM snapshots
                         WHERE source = 'manual' AND deleted_at IS NULL ORDER BY date, created_at`).all<SnapRow>(),
-        env.DB.prepare(`SELECT account_id, date, amount, currency_code FROM incomes WHERE deleted_at IS NULL`).all<IncRow>(),
+        env.DB.prepare(`SELECT account_id, date, amount, currency_code, goal_id FROM incomes WHERE deleted_at IS NULL`).all<IncRow>(),
         env.DB.prepare(`SELECT account_id, date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL`).all<ExpRow>(),
         env.DB.prepare(`SELECT from_account_id, to_account_id, date, from_amount, to_amount FROM transactions WHERE deleted_at IS NULL`).all<TxRow>(),
         env.DB.prepare(`SELECT account_id, date, amount FROM goal_contributions WHERE deleted_at IS NULL`).all<GcRow>(),
@@ -176,26 +176,49 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     }
     const freeNow = netNow - targeted;
 
-    // ── KPI burn / income / savings (3 полных календарных месяца) ────────────
+    // ── KPI burn / income / savings (WIN полных календарных месяцев) ─────────
+    // SPEC-015: считаем окно дважды — текущее (shift=0) и предыдущее (shift=WIN),
+    // для Δ к прошлому периоду. income_free = доход без goal-помеченного (линза
+    // «свободные деньги»). missing считаем в net worth/period (overlap), не здесь.
     const curMonth = monthKey(today);
-    const start3 = addMonths(curMonth, -3) + "-01";          // начало 3-го месяца назад
-    const end3 = endOfMonth(addMonths(curMonth, -1));        // конец прошлого месяца
-    let burnSum = 0, incomeSum = 0;
-    for (const e of expR.results) {
-        if (e.date < start3 || e.date > end3) continue;
-        const v = toEurAt(e.amount, e.currency, e.date);
-        if (v != null) burnSum += v;     // missing считаем в net worth/period (overlap), не здесь
-    }
-    for (const i of incR.results) {
-        if (i.date < start3 || i.date > end3) continue;
-        const v = toEurAt(i.amount, i.currency_code, i.date);
-        if (v != null) incomeSum += v;
-    }
-    const monthlyBurn = burnSum / 3;
-    const monthlyIncome = incomeSum / 3;
+    const WIN = 3;
+    const windowSums = (shift: number) => {
+        const start = addMonths(curMonth, -(WIN + shift)) + "-01";
+        const end = endOfMonth(addMonths(curMonth, -(1 + shift)));
+        let burn = 0, income = 0, incomeFree = 0;
+        for (const e of expR.results) {
+            if (e.date < start || e.date > end) continue;
+            const v = toEurAt(e.amount, e.currency, e.date);
+            if (v != null) burn += v;
+        }
+        for (const i of incR.results) {
+            if (i.date < start || i.date > end) continue;
+            const v = toEurAt(i.amount, i.currency_code, i.date);
+            if (v == null) continue;
+            income += v;
+            if (i.goal_id == null) incomeFree += v;   // свободный доход — не отложенный в цель
+        }
+        return { burn: burn / WIN, income: income / WIN, incomeFree: incomeFree / WIN };
+    };
+    const cur = windowSums(0);
+    const prev = windowSums(WIN);
+    const monthlyBurn = cur.burn;
+    const monthlyIncome = cur.income;
+    const monthlyIncomeFree = cur.incomeFree;
     const savingsRate = monthlyIncome > 0 ? round((monthlyIncome - monthlyBurn) / monthlyIncome, 4) : null;
+    const savingsRateFree = monthlyIncomeFree > 0 ? round((monthlyIncomeFree - monthlyBurn) / monthlyIncomeFree, 4) : null;
     const runway = monthlyBurn > 0 ? round(Math.max(0, freeNow) / monthlyBurn, 1) : null;
     const runwayTotal = monthlyBurn > 0 ? round(Math.max(0, netNow) / monthlyBurn, 1) : null;
+
+    // Net worth «WIN месяцев назад» (для Δ): тот же in-memory balanceAt на конец
+    // месяца WIN назад. prev_free ≈ prevNet − targeted (текущее targeted —
+    // историч. goal balance не реконструируем; для Δ-сигнала достаточно).
+    const prevAsOf = endOfMonth(addMonths(curMonth, -WIN));
+    let prevNet = 0;
+    for (const b of buckets) {
+        const eur = toEurAt(balanceAt(b.id, prevAsOf), b.currency, prevAsOf);
+        if (eur != null) prevNet += eur;
+    }
 
     // ── Net worth series (по месяцам окна, конец месяца) ─────────────────────
     const netSeries = months.map(m => {
@@ -270,9 +293,17 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
             savings_rate: savingsRate,
             runway_months: runway,
             runway_months_total: runwayTotal,
-            burn_window_months: 3,
+            burn_window_months: WIN,
             buckets_without_baseline: bucketsWithoutBaseline,
             missing_rates: missingRates,
+            // SPEC-015: линза «свободные деньги» + Δ к предыдущему окну
+            monthly_income_free_eur: r2(monthlyIncomeFree),
+            savings_rate_free: savingsRateFree,
+            prev_monthly_burn_eur: r2(prev.burn),
+            prev_monthly_income_eur: r2(prev.income),
+            prev_monthly_income_free_eur: r2(prev.incomeFree),
+            prev_net_worth_eur: r2(prevNet),
+            prev_free_net_worth_eur: r2(prevNet - targeted),
         },
         net_worth_series: netSeries,
         cashflow_series,

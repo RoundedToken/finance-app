@@ -308,6 +308,14 @@ export interface DashboardKpi {
     burn_window_months: number;
     buckets_without_baseline: number;
     missing_rates: number;
+    // SPEC-015: линза «свободные деньги» + Δ к предыдущему окну
+    monthly_income_free_eur: number;       // доход за окно без goal-помеченного, /мес
+    savings_rate_free: number | null;      // (income_free − burn)/income_free; null если ≤ 0
+    prev_monthly_burn_eur: number;
+    prev_monthly_income_eur: number;
+    prev_monthly_income_free_eur: number;
+    prev_net_worth_eur: number;            // net worth на конец окна назад (для Δ)
+    prev_free_net_worth_eur: number;
 }
 
 export interface NetWorthPoint {
