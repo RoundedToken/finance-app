@@ -186,9 +186,14 @@ def main() -> int:
             try: driver.find_element(By.XPATH, "//textarea").click()   # добиваем фокус (nativeWebTap)
             except Exception: pass
             time.sleep(1.5); shot("03_note_screen_KEYBOARD")
-            try: driver.find_element(By.XPATH, "//*[normalize-space()='Готово']").click()
-            except Exception: pass
-            time.sleep(0.6); shot("04_after_note")
+            # Enter в textarea = «Готово» (закрыть экран), а не новая строка
+            try:
+                from selenium.webdriver.common.keys import Keys
+                ta = driver.find_element(By.XPATH, "//textarea")
+                ta.send_keys("кофе"); ta.send_keys(Keys.ENTER)
+            except Exception as e2:
+                print(f"  ! enter: {e2}")
+            time.sleep(0.8); shot("04_after_enter_should_be_main")
         except Exception as e:
             print(f"  ! note: {e}")
 

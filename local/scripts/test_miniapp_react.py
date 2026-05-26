@@ -70,7 +70,7 @@ def gen_expenses(n_days=60, today=dt.date(2026, 5, 26)):
             if ccy == "EUR":
                 amount = round(amount / 117, 2)
             out.append({
-                "id": f"mock-{d}-{_}", "date": day.isoformat(), "account_id": None,
+                "id": f"mock-{d}-{_}", "date": day.isoformat(), "account_id": rng.choice([None, "rsd-bank", "eur-cash", None]),
                 "amount": amount, "currency": ccy, "category_id": cat, "note": None,
                 "source": "mock", "created_at": day.isoformat() + "T12:00:00Z", "updated_at": day.isoformat() + "T12:00:00Z",
             })
