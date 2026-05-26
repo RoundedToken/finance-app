@@ -27,7 +27,7 @@ export function MainScreen() {
         if (amount <= 0) { haptic("error"); toast("Введите сумму", "err"); return; }
         const catName = cats.find(c => c.id === categoryId)?.name ?? "";
         create.mutate(
-            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null },
+            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null, created_at: new Date().toISOString() },
             {
                 onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
                 onError: () => { haptic("error"); toast("Ошибка сохранения", "err"); },
