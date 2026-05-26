@@ -7,9 +7,9 @@ import { CurrencyFlag } from "@/components/Currency";
 import { Amount } from "@/components/Amount";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Numpad } from "@/components/Numpad";
+import { DayTotal } from "@/components/DayTotal";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import { cn, fmt, humanDay, uuid4 } from "@/lib/utils";
-import { toBase } from "@/lib/money";
 import type { Category, Account, Expense } from "@/api/types";
 
 export function MainScreen() {
@@ -126,7 +126,6 @@ function RecentDays() {
     const { s } = useApp();
     const { data } = useBootstrap();
     const expenses = data?.expenses ?? [];
-    const rates = data?.rates;
     // последние 2 дня с тратами
     const byDay = new Map<string, typeof expenses>();
     for (const e of expenses) {
@@ -142,12 +141,11 @@ function RecentDays() {
         <div className="px-4 mt-5 mb-2 space-y-4">
             {days.map(day => {
                 const rows = byDay.get(day)!;
-                const total = rates ? rows.reduce((sum, e) => sum + toBase(e.amount, e.currency, s.baseCurrency, rates), 0) : 0;
                 return (
                     <div key={day}>
-                        <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint">
-                            <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
-                            <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
+                        <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
+                            <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
+                            <DayTotal rows={rows} base={s.baseCurrency} />
                         </div>
                         <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
                             {rows.slice(0, 6).map(e => <RecentRow key={e.id} e={e} />)}

@@ -4,8 +4,8 @@ import { useApp } from "@/store";
 import { useToast } from "@/components/Toast";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Amount } from "@/components/Amount";
+import { DayTotal } from "@/components/DayTotal";
 import { humanDay } from "@/lib/utils";
-import { toBase } from "@/lib/money";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import type { Expense, Category, Account } from "@/api/types";
 
@@ -14,7 +14,6 @@ export function HistoryScreen() {
     const { data, isLoading } = useExpenses();
     const boot = useBootstrap();
     const expenses = data?.expenses ?? [];
-    const rates = boot.data?.rates;
     const cats = boot.data?.categories ?? [];
     const accounts = boot.data?.accounts ?? [];
 
@@ -41,12 +40,11 @@ export function HistoryScreen() {
                 {!isLoading && !days.length && <p className="text-center text-hint py-10">Пока нет трат</p>}
                 {days.map(day => {
                     const rows = byDay.get(day)!;
-                    const total = rates ? rows.reduce((sm, e) => sm + toBase(e.amount, e.currency, s.baseCurrency, rates), 0) : 0;
                     return (
                         <div key={day}>
-                            <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint">
-                                <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
-                                <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
+                            <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
+                                <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
+                                <DayTotal rows={rows} base={s.baseCurrency} />
                             </div>
                             <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
                                 {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} accounts={accounts} />)}
