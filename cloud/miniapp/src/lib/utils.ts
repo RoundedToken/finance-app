@@ -29,6 +29,24 @@ export function uuid4(): string {
     return (crypto as Crypto).randomUUID();
 }
 
+const MAX_NUMPAD_DIGITS = 12;
+
+/** Применяет нажатие numpad-клавиши к строке суммы. key: цифра | "." | "dot" | "⌫" | "back". */
+export function applyNumpadKey(amount: string, key: string): string {
+    if (key === "back" || key === "⌫") {
+        const n = amount.slice(0, -1);
+        return n === "" ? "0" : n;
+    }
+    if (key === "dot" || key === ".") {
+        return amount.includes(".") ? amount : amount + ".";
+    }
+    const next = amount === "0" ? key : amount + key;
+    if (next.replace(".", "").length > MAX_NUMPAD_DIGITS) return amount;
+    const dec = next.split(".")[1];
+    if (dec && dec.length > 2) return amount;
+    return next;
+}
+
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
 /** «Сегодня» / «Вчера» / «12 мая» / «12 мая 2025». */

@@ -68,7 +68,7 @@ function HistoryRow({ e, cats }: { e: Expense; cats: Category[] }) {
         del.mutate(e.id, { onSuccess: () => { haptic("success"); toast("Удалено"); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } });
     };
     return (
-        <SwipeRow onTap={() => d({ t: "edit", e })} onDelete={remove}>
+        <SwipeRow onTap={() => d({ t: "loadEdit", e })} onDelete={remove}>
             <div className="flex items-center gap-3 py-2.5 px-3 bg-secondary-bg/50">
                 <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (c?.color ?? "#9ca3af") + "33" }}>{c?.emoji ?? "🏷"}</span>
                 <span className="flex-1 min-w-0">

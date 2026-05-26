@@ -178,29 +178,27 @@ def main() -> int:
                 print(f"  ! numpad {k}: {e}")
         shot("02_amount")
 
-        # note modal: фокус textarea через send_keys → НАСТОЯЩАЯ клавиатура (note раньше прыгал)
+        # note — отдельный ЭКРАН (не модалка): тап «Описание» → autofocus textarea → клавиатура.
+        # место под клавиатуру заложено (header + textarea flex в высоте viewport), без прыжков.
         try:
             driver.find_element(By.XPATH, "//*[normalize-space()='Описание']").click()
-            time.sleep(0.8); shot("03_note_open")
-            pos = driver.execute_script("return getComputedStyle(document.body).position;")
-            print(f"  scroll-lock: body.position={pos!r} (ждём 'fixed' — фон залочен)")
-            driver.find_element(By.XPATH, "//textarea").click()   # nativeWebTap → реальная клавиатура
-            time.sleep(1.8); shot("04_note_KEYBOARD")
-            # тап по фону (backdrop) при активном input → должен blur, НЕ закрыть модалку
-            driver.execute_script("document.querySelectorAll('[role=dialog] > div')[0]?.click();")
-            time.sleep(1.2); shot("05_note_after_backdrop_tap")
+            time.sleep(0.6)
+            try: driver.find_element(By.XPATH, "//textarea").click()   # добиваем фокус (nativeWebTap)
+            except Exception: pass
+            time.sleep(1.5); shot("03_note_screen_KEYBOARD")
+            try: driver.find_element(By.XPATH, "//*[normalize-space()='Готово']").click()
+            except Exception: pass
+            time.sleep(0.6); shot("04_after_note")
         except Exception as e:
             print(f"  ! note: {e}")
 
-        # edit modal: фокус amount input → клавиатура (edit телепортировался)
+        # edit — отдельный ЭКРАН с numpad (системной клавиатуры НЕТ → нечему прыгать)
         try:
             goto_main()
             row = driver.find_element(By.XPATH, "//*[contains(text(),'Кафе')]")
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row)
-            time.sleep(0.6); row.click()
-            time.sleep(1.0); shot("06_edit_open")
-            driver.find_element(By.XPATH, "//input[@type='number' or @inputmode='decimal']").click()
-            time.sleep(1.8); shot("07_edit_amount_KEYBOARD")
+            time.sleep(0.5); row.click()
+            time.sleep(1.2); shot("05_edit_screen_numpad")
         except Exception as e:
             print(f"  ! edit: {e}")
 
