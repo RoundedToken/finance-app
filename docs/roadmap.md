@@ -112,11 +112,16 @@
 - Web Admin `DashboardPage`: блок «Сейчас» (5 KPI) + «История за период» (ECharts: net worth over time с toggle форма/валюта, income vs expenses bars, donut категорий) + пресеты 12м/6м/Год/Всё/Период + фильтры форма/категория.
 - Math зеркалит SPEC-011 (`balanceAt` ≡ `getEffectiveBalance`). Audit: solution-architect APPROVED_WITH_NICES, senior-qa PASS_WITH_NICES, 0 блокеров. Fix-commit: missing_rates (E3 + убран double-count), D6 пересчёт долей легенды.
 
+### Stage 8.5 — Дашборд v2: линза / прогресс / прогноз (SPEC-015)
+- Тумблер линзы «Свободные ↔ Со всеми фондами» (дефолт — свободные): переключает Net worth / Runway / Доход / Норму. Под каждым KPI — подпись, что входит. Worker: free/prev KPI-поля (`monthly_income_free_eur`, `savings_rate_free`, `prev_*`); `income_free` = доход без goal-помеченного.
+- Прогресс: Δ-бейджи к предыдущему 3-мес окну (цвет по смыслу), спарклайны в KPI из существующих series.
+- Прогноз: пунктир-проекция net worth (12 мес по темпу свободных сбережений); блок «Цели — прогноз достижения» (ETA-дата + сравнение с дедлайном, прогресс-бары). test_admin_ui — обе линзы + ETA проверены.
+
 ---
 
 ## 🔄 В работе
 
-Между этапами. Stage 8 (Dashboard) закрыт. Следующее на выбор: date-aware rates в `/accounts` + goal balance (выровнять фундамент с dashboard), Stage 5b (графики снапшотов), Stage 9 (инвестиции).
+Между этапами. Stage 8 + 8.5 (Dashboard v2) закрыты. Следующее на выбор: date-aware rates в `/accounts` + goal balance (выровнять фундамент с dashboard), Stage 5b (графики снапшотов), Stage 9 (инвестиции).
 
 ---
 

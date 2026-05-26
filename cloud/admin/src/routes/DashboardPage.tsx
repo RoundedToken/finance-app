@@ -3,10 +3,10 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { Link } from "@tanstack/react-router";
 import { Wallet, TrendingDown, TrendingUp, PiggyBank, Clock, AlertCircle, Info, RefreshCw } from "lucide-react";
-import { useDashboard } from "@/api/queries";
+import { useDashboard, useGoals, useReferences } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, cn } from "@/lib/utils";
-import type { DashboardResponse, NetWorthPoint, DashboardBucket } from "@/api/types";
+import type { DashboardResponse, NetWorthPoint, DashboardBucket, Goal } from "@/api/types";
 
 /**
  * Stage 8 (SPEC-013). Дашборд: блок «Сейчас» (5 KPI, фильтры не трогают) +
@@ -48,6 +48,9 @@ function presetRange(p: Preset, cf: string, ct: string): { from?: string; to?: s
 
 const MON = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const monthLabel = (ym: string) => { const [y, m] = ym.split("-"); return `${MON[+m - 1]} ’${y.slice(2)}`; };
+const addMonthYm = (ym: string, d: number) => { const [y, m] = ym.split("-").map(Number); const dt = new Date(Date.UTC(y, m - 1 + d, 1)); return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}`; };
+const fmtMonthYear = (ym: string) => { const [y, m] = ym.split("-"); return `${MON[+m - 1]} ${y}`; };
+const monthDiff = (fromYm: string, toYm: string) => { const [fy, fm] = fromYm.split("-").map(Number); const [ty, tm] = toYm.split("-").map(Number); return (ty - fy) * 12 + (tm - fm); };
 
 // ── Палитра + маппинги форм ─────────────────────────────────────────────────
 const PALETTE = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16"];
@@ -83,6 +86,7 @@ export function DashboardPage() {
     const range = presetRange(preset, cf, ct);
     const { data, isLoading, isError, refetch, isFetching } = useDashboard(range);
 
+    const [lens, setLens] = useState<Lens>("free");               // SPEC-015: дефолт — свободные деньги
     const [nwMode, setNwMode] = useState<"total" | "form" | "currency">("total");
     const [forms, setForms] = useState<Set<string>>(new Set());   // пусто = все
     const [cats, setCats] = useState<Set<string>>(new Set());     // пусто = все
@@ -111,8 +115,11 @@ export function DashboardPage() {
 
                     {/* Блок «Сейчас» — KPI, фильтры не трогают */}
                     <section className="space-y-3">
-                        <SectionTitle>Сейчас</SectionTitle>
-                        {isLoading || !data ? <KpiSkeleton /> : <KpiRow data={data} />}
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <SectionTitle>Сейчас</SectionTitle>
+                            <LensToggle lens={lens} setLens={setLens} />
+                        </div>
+                        {isLoading || !data ? <KpiSkeleton /> : <KpiRow data={data} lens={lens} />}
                     </section>
 
                     {/* Блок «История за период» — графики + фильтры */}
@@ -146,7 +153,8 @@ export function DashboardPage() {
                                     {nwMode !== "currency" && (
                                         <FormFilter buckets={data.buckets} forms={forms} setForms={setForms} />
                                     )}
-                                    <NetWorthChart data={data} mode={nwMode} forms={forms} />
+                                    <NetWorthChart data={data} mode={nwMode} forms={forms}
+                                        projectMonths={12} projectRate={data.kpi.monthly_income_free_eur - data.kpi.monthly_burn_eur} />
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -166,6 +174,11 @@ export function DashboardPage() {
                             </>
                         )}
                     </section>
+
+                    {/* Цели — прогноз достижения (SPEC-015) */}
+                    {!isLoading && data && (
+                        <GoalsForecastSection monthlySavings={data.kpi.monthly_income_free_eur - data.kpi.monthly_burn_eur} />
+                    )}
                 </>
             )}
         </div>
@@ -174,38 +187,88 @@ export function DashboardPage() {
 
 // ── KPI ───────────────────────────────────────────────────────────────────────
 
-function KpiRow({ data }: { data: DashboardResponse }) {
+/** Линза дашборда (SPEC-015): «свободные деньги» (без целевых фондов) или «всё». */
+type Lens = "free" | "total";
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const k = data.kpi;
+    const free = lens === "free";
+    const t = chartTheme();
     const hasGoals = k.targeted_eur > 0.005;
+
+    // Значения по линзе (free = без целевых фондов / без goal-доходов)
+    const nw = free ? k.free_net_worth_eur : k.net_worth_eur;
+    const prevNw = free ? k.prev_free_net_worth_eur : k.prev_net_worth_eur;
+    const inc = free ? k.monthly_income_free_eur : k.monthly_income_eur;
+    const prevInc = free ? k.prev_monthly_income_free_eur : k.prev_monthly_income_eur;
+    const sr = free ? k.savings_rate_free : k.savings_rate;
+    const prevSr = prevInc > 0 ? (prevInc - k.prev_monthly_burn_eur) / prevInc : null;
+    const rw = free ? k.runway_months : k.runway_months_total;
+    const prevRw = k.prev_monthly_burn_eur > 0 ? Math.max(0, prevNw) / k.prev_monthly_burn_eur : null;
+
+    // Спарклайны из существующих series. free net worth ≈ total − текущее
+    // targeted (форма тренда сохраняется; историч. goal balance не реконструируем).
+    const nwSpark = data.net_worth_series.map(p => (free ? p.total_eur - k.targeted_eur : p.total_eur));
+    const incSpark = data.cashflow_series.map(p => p.income_eur);
+    const burnSpark = data.cashflow_series.map(p => p.expense_eur);
+    const srSpark = data.cashflow_series.map(p => (p.income_eur > 0 ? (p.income_eur - p.expense_eur) / p.income_eur : 0));
+
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            <KpiCard icon={Wallet} label="Net worth" value={eur(k.net_worth_eur)} negative={k.net_worth_eur < 0}>
+            <KpiCard icon={Wallet} label="Net worth" value={eur(nw)} negative={nw < 0}
+                delta={<DeltaBadge cur={nw} prev={prevNw} />}
+                spark={<Sparkline values={nwSpark} color={t.positive} />}
+                sub={free ? "свободно, без целевых фондов" : "всё, включая целевые фонды"}>
                 {hasGoals && (
                     <div className="mt-2 space-y-0.5 text-xs">
-                        <Row label="Свободно" value={eur(k.free_net_worth_eur)} danger={k.free_net_worth_eur < 0} />
+                        {free
+                            ? <Row label="Всего" value={eur(k.net_worth_eur)} />
+                            : <Row label="Свободно" value={eur(k.free_net_worth_eur)} danger={k.free_net_worth_eur < 0} />}
                         <Row label="Целевые фонды" value={eur(k.targeted_eur)} />
                     </div>
                 )}
             </KpiCard>
-            <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)} sub={`среднее за ${k.burn_window_months} мес`} />
-            <KpiCard icon={TrendingUp} label="Доход / мес" value={eur(k.monthly_income_eur)} sub={`среднее за ${k.burn_window_months} мес`} />
-            <KpiCard icon={PiggyBank} label="Норма сбережений" value={k.savings_rate == null ? "—" : `${Math.round(k.savings_rate * 100)}%`} sub="доход − траты" positive={(k.savings_rate ?? 0) > 0} negative={(k.savings_rate ?? 1) < 0} />
-            <KpiCard icon={Clock} label="Runway" value={k.runway_months == null ? "∞" : `${k.runway_months.toFixed(1)} мес`}
-                sub={k.runway_months_total == null ? "по свободным" : `со всеми фондами: ${k.runway_months_total.toFixed(1)} мес`} />
+
+            <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)}
+                delta={<DeltaBadge cur={k.monthly_burn_eur} prev={k.prev_monthly_burn_eur} goodUp={false} />}
+                spark={<Sparkline values={burnSpark} color={t.negative} />}
+                sub={`все траты, ср. за ${k.burn_window_months} мес`} />
+
+            <KpiCard icon={TrendingUp} label="Доход / мес" value={eur(inc)}
+                delta={<DeltaBadge cur={inc} prev={prevInc} />}
+                spark={<Sparkline values={incSpark} color={t.positive} />}
+                sub={free ? `свободный доход, ср. за ${k.burn_window_months} мес` : `весь доход, ср. за ${k.burn_window_months} мес`} />
+
+            <KpiCard icon={PiggyBank} label="Норма сбережений" value={sr == null ? "—" : pct(sr)}
+                positive={(sr ?? 0) > 0} negative={(sr ?? 1) < 0}
+                delta={sr != null && prevSr != null ? <DeltaBadge cur={sr} prev={prevSr} unit="pp" /> : null}
+                spark={<Sparkline values={srSpark} color={t.positive} />}
+                sub={free ? "из свободного дохода" : "из всего дохода"} />
+
+            <KpiCard icon={Clock} label="Runway" value={rw == null ? "∞" : `${rw.toFixed(1)} мес`}
+                delta={rw != null && prevRw != null ? <DeltaBadge cur={rw} prev={prevRw} /> : null}
+                spark={<Sparkline values={nwSpark} color={t.positive} />}
+                sub={free ? "без целевых фондов" : "со всеми фондами"} />
         </div>
     );
 }
 
-interface KpiCardProps { icon: typeof Wallet; label: string; value: React.ReactNode; sub?: string; positive?: boolean; negative?: boolean; children?: React.ReactNode; }
-function KpiCard({ icon: Icon, label, value, sub, positive, negative, children }: KpiCardProps) {
+interface KpiCardProps { icon: typeof Wallet; label: string; value: React.ReactNode; sub?: string; positive?: boolean; negative?: boolean; delta?: React.ReactNode; spark?: React.ReactNode; children?: React.ReactNode; }
+function KpiCard({ icon: Icon, label, value, sub, positive, negative, delta, spark, children }: KpiCardProps) {
     return (
         <div className="card p-5">
             <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{label}</span>
                 <Icon className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className={cn("mt-2 text-2xl font-semibold tracking-tight num", positive && "text-positive", negative && "text-destructive")}>{value}</div>
+            <div className="mt-2 flex items-baseline gap-2 flex-wrap">
+                <span className={cn("text-2xl font-semibold tracking-tight num", positive && "text-positive", negative && "text-destructive")}>{value}</span>
+                {delta}
+            </div>
             {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+            {spark && <div className="mt-2">{spark}</div>}
             {children}
         </div>
     );
@@ -220,27 +283,86 @@ function Row({ label, value, danger }: { label: string; value: string; danger?: 
     );
 }
 
+/** Мини-тренд в KPI-карточке — без осей, из существующих series. */
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+    if (values.length < 2) return null;
+    const option: EChartsOption = {
+        backgroundColor: "transparent",
+        grid: { left: 2, right: 2, top: 3, bottom: 3 },
+        xAxis: { type: "category", show: false, data: values.map((_, i) => i) },
+        yAxis: { type: "value", show: false, scale: true },
+        tooltip: { show: false },
+        series: [{
+            type: "line", data: values.map(v => Math.round(v)), showSymbol: false, smooth: true,
+            lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color },
+        }],
+    };
+    return <ReactECharts option={option} style={{ height: 34, width: "100%" }} notMerge />;
+}
+
+/** Δ к предыдущему окну. unit="rel" — относительный %, "pp" — процентные пункты (для нормы). */
+function DeltaBadge({ cur, prev, goodUp = true, unit = "rel" }: { cur: number; prev: number; goodUp?: boolean; unit?: "rel" | "pp" }) {
+    if (!isFinite(prev) || Math.abs(prev) < 0.005) return null;        // нет базы — скрываем
+    const diff = unit === "pp" ? cur - prev : (cur - prev) / Math.abs(prev);
+    if (Math.abs(diff) < 0.005) return null;
+    const text = unit === "pp" ? `${diff >= 0 ? "+" : ""}${Math.round(diff * 100)} п.п.` : `${diff >= 0 ? "+" : ""}${Math.round(diff * 100)}%`;
+    const good = goodUp ? diff > 0 : diff < 0;
+    const Icon = diff > 0 ? TrendingUp : TrendingDown;
+    return (
+        <span className={cn("inline-flex items-center gap-0.5 text-xs font-medium", good ? "text-positive" : "text-destructive")} title="к предыдущему периоду">
+            <Icon className="h-3 w-3" /> {text}
+        </span>
+    );
+}
+
+function LensToggle({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void }) {
+    return <Segmented options={[["free", "Свободные"], ["total", "Со всеми фондами"]]} value={lens} onChange={v => setLens(v as Lens)} />;
+}
+
 // ── Charts ──────────────────────────────────────────────────────────────────
 
 const sumBuckets = (p: NetWorthPoint, ids: string[]) => ids.reduce((s, id) => s + (p.by_bucket[id] ?? 0), 0);
 
-function NetWorthChart({ data, mode, forms }: { data: DashboardResponse; mode: "total" | "form" | "currency"; forms: Set<string> }) {
+function NetWorthChart({ data, mode, forms, projectMonths = 0, projectRate = 0 }: {
+    data: DashboardResponse; mode: "total" | "form" | "currency"; forms: Set<string>;
+    projectMonths?: number; projectRate?: number;
+}) {
     const t = chartTheme();
-    const months = data.net_worth_series.map(p => p.month);
-    if (months.length === 0 || data.net_worth_series.every(p => p.total_eur === 0)) {
+    const histMonths = data.net_worth_series.map(p => p.month);
+    if (histMonths.length === 0 || data.net_worth_series.every(p => p.total_eur === 0)) {
         return <EmptyChart label="Нет данных за период" />;
     }
     // в режиме currency фильтр формы не применяем (ortho-измерение)
     const selected = data.buckets.filter(b => mode === "currency" || forms.size === 0 || forms.has(b.form));
 
+    // Проекция — только для линии total: пунктир на projectMonths вперёд по темпу.
+    const doProject = mode === "total" && projectMonths > 0;
+    const futureMonths: string[] = [];
+    if (doProject) {
+        let ym = histMonths[histMonths.length - 1];
+        for (let i = 0; i < projectMonths; i++) { ym = addMonthYm(ym, 1); futureMonths.push(ym); }
+    }
+    const months = [...histMonths, ...futureMonths];
+
     let series: EChartsOption["series"];
     if (mode === "total") {
         const ids = selected.map(b => b.id);
+        const hist = data.net_worth_series.map(p => Math.round(sumBuckets(p, ids)));
         series = [{
             name: "Net worth", type: "line", smooth: true, showSymbol: false,
             areaStyle: { opacity: 0.18 }, lineStyle: { width: 2 }, color: t.positive,
-            data: data.net_worth_series.map(p => Math.round(sumBuckets(p, ids))),
+            data: [...hist, ...Array(futureMonths.length).fill(null)],
         }];
+        if (doProject && hist.length > 0) {
+            const last = hist[hist.length - 1] ?? 0;
+            const proj: (number | null)[] = Array(Math.max(0, hist.length - 1)).fill(null);
+            proj.push(last);   // стыкуем пунктир с последней фактической точкой
+            for (let i = 1; i <= futureMonths.length; i++) proj.push(Math.round(last + projectRate * i));
+            series.push({
+                name: "Прогноз", type: "line", smooth: false, showSymbol: false,
+                lineStyle: { width: 2, type: "dashed", color: t.muted }, color: t.muted, data: proj,
+            });
+        }
     } else {
         const groups = new Map<string, { label: string; color: string; ids: string[] }>();
         selected.forEach((b, i) => {
@@ -261,11 +383,12 @@ function NetWorthChart({ data, mode, forms }: { data: DashboardResponse; mode: "
         }));
     }
 
+    const showLegend = mode !== "total" || doProject;
     const option: EChartsOption = {
         backgroundColor: "transparent",
-        grid: { left: 8, right: 12, top: mode === "total" ? 16 : 36, bottom: 4, containLabel: true },
-        legend: mode === "total" ? undefined : { top: 0, textStyle: { color: t.muted }, icon: "roundRect" },
-        tooltip: { trigger: "axis", valueFormatter: (v) => eur(Number(v)) },
+        grid: { left: 8, right: 12, top: showLegend ? 36 : 16, bottom: 4, containLabel: true },
+        legend: showLegend ? { top: 0, textStyle: { color: t.muted }, icon: "roundRect" } : undefined,
+        tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "—" : eur(Number(v))) },
         xAxis: { type: "category", data: months, axisLabel: { color: t.muted, formatter: monthLabel }, axisLine: { lineStyle: { color: t.border } }, axisTick: { show: false } },
         yAxis: { type: "value", axisLabel: { color: t.muted, formatter: (v: number) => compact(v) }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series,
@@ -393,6 +516,84 @@ function Segmented({ options, value, onChange }: { options: [string, string][]; 
                     {label}
                 </button>
             ))}
+        </div>
+    );
+}
+
+// ── Goals forecast (SPEC-015) ────────────────────────────────────────────────
+
+function GoalsForecastSection({ monthlySavings }: { monthlySavings: number }) {
+    const { data: goalsData } = useGoals("active");
+    const { data: refs } = useReferences();
+    const goals = goalsData?.goals ?? [];
+    if (goals.length === 0) return null;
+    const rates = refs?.rates?.quotes ?? {};
+    const toEur = (amt: number, ccy: string | null) => (!ccy || ccy === "EUR" ? amt : rates[ccy] ? amt / rates[ccy] : null);
+    return (
+        <section className="space-y-3">
+            <SectionTitle>Цели — прогноз достижения</SectionTitle>
+            <p className="text-xs text-muted-foreground -mt-1">
+                Прогноз по текущему темпу свободных сбережений (доход − траты). Линейная оценка, не гарантия.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {goals.map(g => <GoalForecastCard key={g.id} goal={g} monthlySavings={monthlySavings} toEur={toEur} />)}
+            </div>
+        </section>
+    );
+}
+
+function GoalForecastCard({ goal, monthlySavings, toEur }: { goal: Goal; monthlySavings: number; toEur: (a: number, c: string | null) => number | null }) {
+    const ccy = goal.target_currency;
+    const hasTarget = goal.target_amount != null && goal.target_amount > 0;
+    const reached = hasTarget && goal.balance >= goal.target_amount!;
+    const remaining = hasTarget ? Math.max(0, goal.target_amount! - goal.balance) : 0;
+    const remainingEur = hasTarget ? toEur(remaining, ccy) : null;
+    const months = hasTarget && remainingEur != null && monthlySavings > 0 ? remainingEur / monthlySavings : null;
+    const etaYm = months != null ? addMonthYm(todayIso().slice(0, 7), Math.ceil(months)) : null;
+    const deadlineYm = goal.deadline ? goal.deadline.slice(0, 7) : null;
+    const late = !!(etaYm && deadlineYm && etaYm > deadlineYm);
+    const monthsLate = etaYm && deadlineYm && late ? monthDiff(deadlineYm, etaYm) : 0;
+    const color = goal.color ?? "#94a3b8";
+    const pctDone = hasTarget ? Math.min(100, (goal.balance / goal.target_amount!) * 100) : null;
+
+    return (
+        <div className="card p-4">
+            <div className="flex items-center gap-3">
+                <span className="h-9 w-9 rounded-xl grid place-items-center text-lg shrink-0" style={{ background: color + "22", color }}>{goal.emoji ?? "🎯"}</span>
+                <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{goal.name}</div>
+                    <div className="text-xs text-muted-foreground tabular-nums">
+                        {hasTarget
+                            ? <>{formatAmount(goal.balance, ccy ?? "")} / {formatAmount(goal.target_amount!, ccy ?? "")} {ccy}{pctDone != null ? ` · ${Math.round(pctDone)}%` : ""}</>
+                            : "цель без суммы"}
+                    </div>
+                </div>
+            </div>
+            {hasTarget && pctDone != null && (
+                <div className="mt-3 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pctDone}%`, background: color }} />
+                </div>
+            )}
+            <div className="mt-3 text-sm">
+                {reached ? (
+                    <span className="text-positive font-medium">✓ достигнута</span>
+                ) : !hasTarget ? (
+                    <span className="text-muted-foreground">задай целевую сумму для прогноза</span>
+                ) : monthlySavings <= 0 ? (
+                    <span className="text-amber-600 dark:text-amber-400">при текущем темпе не достигается (нет свободных сбережений)</span>
+                ) : (
+                    <div className="space-y-1">
+                        <div className="text-muted-foreground">
+                            при +{eur(monthlySavings)}/мес → <span className="text-foreground font-medium">{etaYm && fmtMonthYear(etaYm)}</span>
+                        </div>
+                        {deadlineYm && (
+                            <div className={cn("text-xs", late ? "text-destructive" : "text-positive")}>
+                                дедлайн {fmtMonthYear(deadlineYm)} · {late ? `⚠ опаздываешь на ~${monthsLate} мес` : "✓ успеваешь"}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
