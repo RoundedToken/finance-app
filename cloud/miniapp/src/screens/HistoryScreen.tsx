@@ -65,7 +65,6 @@ function HistoryRow({ e, cats, accounts }: { e: Expense; cats: Category[]; accou
     const toast = useToast();
     const c = cats.find(x => x.id === e.category_id);
     const acc = accounts.find(a => a.id === e.account_id);
-    const sub = [e.note, acc?.name].filter(Boolean).join(" · ");
     const remove = async () => {
         if (!(await confirmDialog("Удалить запись?"))) return;
         del.mutate(e.id, { onSuccess: () => { haptic("success"); toast("Удалено"); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } });
@@ -76,9 +75,12 @@ function HistoryRow({ e, cats, accounts }: { e: Expense; cats: Category[]; accou
                 <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (c?.color ?? "#9ca3af") + "59" }}>{c?.emoji ?? "🏷"}</span>
                 <span className="flex-1 min-w-0">
                     <span className="block truncate text-sm">{c?.name || "—"}</span>
-                    {sub && <span className="block truncate text-xs text-hint">{sub}</span>}
+                    {e.note && <span className="block truncate text-xs text-hint">{e.note}</span>}
                 </span>
-                <Amount amount={e.amount} currency={e.currency} className="text-sm" />
+                <span className="text-right shrink-0 leading-tight">
+                    <Amount amount={e.amount} currency={e.currency} className="text-sm" />
+                    {acc && <span className="block text-[10px] text-hint mt-0.5">{acc.name}</span>}
+                </span>
             </div>
         </SwipeRow>
     );
