@@ -67,9 +67,10 @@ export function EditScreen() {
                 <div className="grid grid-cols-4 gap-2">
                     {cats.map(c => (
                         <button key={c.id} onClick={() => { haptic("light"); d({ t: "category", v: c.id }); }}
+                            style={{ background: (c.color ?? "#9ca3af") + "40" }}
                             className={cn("flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all active:animate-pop",
-                                c.id === s.categoryId ? "bg-accent/15 ring-1 ring-accent/40" : "bg-secondary-bg")}>
-                            <span className="h-8 w-8 rounded-full grid place-items-center text-lg" style={{ background: (c.color ?? "#9ca3af") + "33" }}>{c.emoji ?? "🏷"}</span>
+                                c.id === s.categoryId && "ring-2 ring-accent")}>
+                            <span className="text-2xl leading-none">{c.emoji ?? "🏷"}</span>
                             <span className="text-[10px] leading-tight text-center">{c.name}</span>
                         </button>
                     ))}

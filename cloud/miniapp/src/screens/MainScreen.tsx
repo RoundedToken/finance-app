@@ -103,7 +103,8 @@ function Categories({ cats, onPick, busy, canSave }: { cats: Category[]; onPick:
                     <div key={i} className="shrink-0 w-full snap-center grid grid-cols-4 gap-2 px-4">
                         {pg.map(c => (
                             <button key={c.id} disabled={disabled} onClick={() => onPick(c.id)}
-                                className={cn("flex flex-col items-center gap-1 py-3 rounded-xl bg-secondary-bg transition-all",
+                                style={{ background: (c.color ?? "#9ca3af") + "40" }}
+                                className={cn("flex flex-col items-center gap-1 py-3 rounded-xl transition-all",
                                     disabled ? "opacity-40 pointer-events-none" : "active:animate-pop")}>
                                 <span className="text-2xl leading-none">{c.emoji ?? "🏷"}</span>
                                 <span className="text-[11px] text-center leading-tight">{c.name}</span>
@@ -148,7 +149,7 @@ function RecentDays() {
                             <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
                             <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                         </div>
-                        <div className="rounded-2xl bg-secondary-bg/50 divide-y divide-border/60 overflow-hidden">
+                        <div className="rounded-2xl overflow-hidden border border-border/40 divide-y divide-border/40">
                             {rows.slice(0, 6).map(e => <RecentRow key={e.id} e={e} />)}
                         </div>
                     </div>
@@ -170,8 +171,8 @@ function RecentRow({ e }: { e: Expense }) {
     };
     return (
         <SwipeRow onTap={() => d({ t: "loadEdit", e })} onDelete={remove}>
-            <div className="w-full flex items-center gap-3 py-2.5 px-3 bg-secondary-bg/50">
-                <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (cat?.color ?? "#9ca3af") + "33" }}>{cat?.emoji ?? "🏷"}</span>
+            <div className="w-full flex items-center gap-3 py-2.5 px-3" style={{ background: (cat?.color ?? "#9ca3af") + "26" }}>
+                <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (cat?.color ?? "#9ca3af") + "59" }}>{cat?.emoji ?? "🏷"}</span>
                 <span className="flex-1 min-w-0">
                     <span className="block truncate text-sm">{cat?.name || "—"}</span>
                     {e.note && <span className="block truncate text-xs text-hint">{e.note}</span>}
