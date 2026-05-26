@@ -3,7 +3,8 @@ import { useBootstrap, useExpenses, useDeleteExpense } from "@/api/queries";
 import { useApp } from "@/store";
 import { useToast } from "@/components/Toast";
 import { SwipeRow } from "@/components/SwipeRow";
-import { fmt, humanDay } from "@/lib/utils";
+import { Amount } from "@/components/Amount";
+import { humanDay } from "@/lib/utils";
 import { toBase } from "@/lib/money";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import type { Expense, Category } from "@/api/types";
@@ -44,7 +45,7 @@ export function HistoryScreen() {
                         <div key={day}>
                             <div className="flex items-center justify-between text-xs text-hint mb-1.5">
                                 <span>{humanDay(day)}</span>
-                                <span className="num">{fmt(total, s.baseCurrency)} {s.baseCurrency}</span>
+                                <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                             </div>
                             <div className="space-y-0.5">
                                 {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} />)}
@@ -71,7 +72,7 @@ function HistoryRow({ e, cats }: { e: Expense; cats: Category[] }) {
             <div className="flex items-center gap-2 py-1.5 px-2 bg-bg">
                 <span className="text-lg">{c?.emoji ?? "🏷"}</span>
                 <span className="flex-1 truncate text-sm">{e.note || c?.name || "—"}</span>
-                <span className="num text-sm">{fmt(e.amount, e.currency)} {e.currency}</span>
+                <Amount amount={e.amount} currency={e.currency} className="text-sm" />
             </div>
         </SwipeRow>
     );

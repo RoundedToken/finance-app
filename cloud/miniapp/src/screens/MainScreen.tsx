@@ -4,6 +4,7 @@ import { useBootstrap, useCreateExpense, useDeleteExpense } from "@/api/queries"
 import { useApp, amountValue } from "@/store";
 import { useToast } from "@/components/Toast";
 import { CurrencyFlag } from "@/components/Currency";
+import { Amount } from "@/components/Amount";
 import { SwipeRow } from "@/components/SwipeRow";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import { cn, fmt, humanDay, uuid4 } from "@/lib/utils";
@@ -23,10 +24,11 @@ export function MainScreen() {
     const save = (categoryId: string) => {
         const amount = amountValue(s);
         if (amount <= 0) { haptic("error"); toast("Введите сумму", "err"); return; }
+        const catName = cats.find(c => c.id === categoryId)?.name ?? "";
         create.mutate(
             { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null },
             {
-                onSuccess: () => { haptic("success"); toast("Записано"); d({ t: "resetDraft" }); },
+                onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
                 onError: () => { haptic("error"); toast("Ошибка сохранения", "err"); },
             },
         );
@@ -44,7 +46,7 @@ export function MainScreen() {
 
             <SideActions account={account} hasNote={!!s.note} />
 
-            <Categories cats={cats} onPick={save} busy={create.isPending} />
+            <Categories cats={cats} onPick={save} busy={create.isPending} canSave={amountValue(s) > 0} />
 
             <RecentDays />
         </div>
@@ -55,7 +57,7 @@ function Display() {
     const { s, d } = useApp();
     return (
         <button onClick={() => { haptic("light"); d({ t: "modal", v: "currency" }); }} className="flex flex-col items-center min-w-0">
-            <span className="text-4xl font-semibold num tabular-nums leading-none truncate max-w-[60vw]">{s.amount}</span>
+            <span className={cn("text-4xl font-semibold num tabular-nums leading-none truncate max-w-[60vw]", s.amount === "0" && "text-hint")}>{s.amount}</span>
             <span className="mt-1 inline-flex items-center gap-1 text-sm text-hint">
                 <CurrencyFlag code={s.currency} /> {s.currency}
             </span>
@@ -105,13 +107,14 @@ function ActionChip({ icon, label, active, onClick }: { icon: React.ReactNode; l
     );
 }
 
-function Categories({ cats, onPick, busy }: { cats: Category[]; onPick: (id: string) => void; busy: boolean }) {
+function Categories({ cats, onPick, busy, canSave }: { cats: Category[]; onPick: (id: string) => void; busy: boolean; canSave: boolean }) {
     const PER = 8;
     const pages: Category[][] = [];
     for (let i = 0; i < cats.length; i += PER) pages.push(cats.slice(i, i + PER));
     const [page, setPage] = useState(0);
     const ref = useRef<HTMLDivElement>(null);
     const onScroll = () => { const el = ref.current; if (el) setPage(Math.round(el.scrollLeft / el.clientWidth)); };
+    const disabled = busy || !canSave;
 
     return (
         <div className="mt-4">
@@ -119,9 +122,10 @@ function Categories({ cats, onPick, busy }: { cats: Category[]; onPick: (id: str
                 {pages.map((pg, i) => (
                     <div key={i} className="shrink-0 w-full snap-center grid grid-cols-4 gap-2 px-4">
                         {pg.map(c => (
-                            <button key={c.id} disabled={busy} onClick={() => onPick(c.id)}
-                                className="flex flex-col items-center gap-1 py-3 rounded-xl bg-secondary-bg active:animate-pop disabled:opacity-50 transition-transform">
-                                <span className="text-2xl leading-none" style={{ filter: c.color ? undefined : undefined }}>{c.emoji ?? "🏷"}</span>
+                            <button key={c.id} disabled={disabled} onClick={() => onPick(c.id)}
+                                className={cn("flex flex-col items-center gap-1 py-3 rounded-xl bg-secondary-bg transition-all",
+                                    disabled ? "opacity-40 pointer-events-none" : "active:animate-pop")}>
+                                <span className="text-2xl leading-none">{c.emoji ?? "🏷"}</span>
                                 <span className="text-[11px] text-center leading-tight">{c.name}</span>
                             </button>
                         ))}
@@ -162,7 +166,7 @@ function RecentDays() {
                     <div key={day}>
                         <div className="flex items-center justify-between text-xs text-hint mb-1">
                             <span>{humanDay(day)}</span>
-                            <span className="num">{fmt(total, s.baseCurrency)} {s.baseCurrency}</span>
+                            <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                         </div>
                         <div className="space-y-1">
                             {rows.slice(0, 5).map(e => <RecentRow key={e.id} e={e} />)}
@@ -189,7 +193,7 @@ function RecentRow({ e }: { e: Expense }) {
             <div className="w-full flex items-center gap-2 py-1.5 px-2">
                 <span className="text-lg">{cat?.emoji ?? "🏷"}</span>
                 <span className="flex-1 truncate text-sm">{e.note || cat?.name || "—"}</span>
-                <span className="num text-sm">{fmt(e.amount, e.currency)} {e.currency}</span>
+                <Amount amount={e.amount} currency={e.currency} className="text-sm" />
             </div>
         </SwipeRow>
     );

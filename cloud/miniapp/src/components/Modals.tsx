@@ -31,10 +31,11 @@ function CurrencyPicker({ open }: { open: boolean }) {
             <div className="grid grid-cols-3 gap-2">
                 {currencies.map(c => (
                     <button key={c.code} onClick={() => { haptic("light"); d({ t: "currency", v: c.code }); }}
-                        className={cn("flex flex-col items-center gap-1 py-3 rounded-xl active:animate-pop transition-colors",
+                        className={cn("flex flex-col items-center gap-0.5 py-3 rounded-xl active:animate-pop transition-colors",
                             c.code === s.currency ? "bg-accent/15 text-accent ring-1 ring-accent/40" : "bg-secondary-bg")}>
-                        <span className="text-2xl">{c.emoji ?? "💱"}</span>
-                        <span className="text-xs">{c.code}</span>
+                        <span className="text-2xl leading-none">{c.emoji ?? "💱"}</span>
+                        <span className="text-xs font-medium">{c.code}</span>
+                        <span className="text-[10px] text-hint leading-tight">{c.name}</span>
                     </button>
                 ))}
             </div>

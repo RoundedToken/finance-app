@@ -176,6 +176,22 @@ def main() -> int:
             page.get_by_label("История").click(timeout=2000); shot("07_history")
         except Exception as e: print(f"  ! history: {e}")
 
+        # ── currency picker (тап на дисплей) + interaction-флоу ──
+        page.goto(base, wait_until="networkidle"); page.wait_for_timeout(600)
+        try:
+            page.get_by_text("RSD", exact=True).first.click(timeout=2000); shot("08_currency"); esc()
+        except Exception as e: print(f"  ! currency: {e}")
+        for k in ["5", "0", "0"]:
+            try: page.get_by_role("button", name=k, exact=True).first.click(timeout=1500)
+            except Exception: pass
+        shot("09_amount_entered")
+        try:
+            page.get_by_text("Еда", exact=True).first.click(timeout=2000); page.wait_for_timeout(700); shot("10_after_save")
+        except Exception as e: print(f"  ! save: {e}")
+        try:
+            page.get_by_text("Кафе", exact=True).first.click(timeout=2000); page.wait_for_timeout(400); shot("11_edit_modal")
+        except Exception as e: print(f"  ! edit: {e}")
+
         browser.close()
 
     server.shutdown()
