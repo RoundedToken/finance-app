@@ -71,13 +71,18 @@ function SideActions({ account, hasNote }: { account: Account | null; hasNote: b
     return (
         <div className="grid grid-cols-3 gap-2 px-4 mt-3">
             <ActionChip icon={<Calendar className="h-4 w-4" />} label={humanDay(s.date)} onClick={() => d({ t: "modal", v: "date" })} />
-            <ActionChip icon={<Wallet className="h-4 w-4" />} label={account ? account.name : "Счёт"} active={!!account} onClick={() => d({ t: "modal", v: "account" })} />
+            <ActionChip
+                icon={<Wallet className="h-4 w-4" />}
+                label={account ? <span className="inline-flex items-center gap-1"><CurrencyFlag code={account.currency} />{account.name}</span> : "Счёт"}
+                active={!!account}
+                onClick={() => d({ t: "modal", v: "account" })}
+            />
             <ActionChip icon={<MessageSquare className="h-4 w-4" />} label={hasNote ? "Описание ✓" : "Описание"} active={hasNote} onClick={() => d({ t: "screen", v: "note" })} />
         </div>
     );
 }
 
-function ActionChip({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
+function ActionChip({ icon, label, active, onClick }: { icon: React.ReactNode; label: React.ReactNode; active?: boolean; onClick: () => void }) {
     return (
         <button onClick={() => { haptic("light"); onClick(); }}
             className={cn("flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-medium truncate transition-colors active:animate-pop",
