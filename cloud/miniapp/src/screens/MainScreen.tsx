@@ -158,18 +158,18 @@ function RecentDays() {
     if (!days.length) return <div className="px-4 py-6 text-center text-hint text-sm">Пока нет трат</div>;
 
     return (
-        <div className="px-4 mt-4 mb-2 space-y-3">
+        <div className="px-4 mt-5 mb-2 space-y-4">
             {days.map(day => {
                 const rows = byDay.get(day)!;
                 const total = rates ? rows.reduce((sum, e) => sum + toBase(e.amount, e.currency, s.baseCurrency, rates), 0) : 0;
                 return (
                     <div key={day}>
-                        <div className="flex items-center justify-between text-xs text-hint mb-1">
-                            <span>{humanDay(day)}</span>
+                        <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint">
+                            <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
                             <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                         </div>
-                        <div className="space-y-1">
-                            {rows.slice(0, 5).map(e => <RecentRow key={e.id} e={e} />)}
+                        <div className="rounded-2xl bg-secondary-bg/50 divide-y divide-border/60 overflow-hidden">
+                            {rows.slice(0, 6).map(e => <RecentRow key={e.id} e={e} />)}
                         </div>
                     </div>
                 );
@@ -190,9 +190,12 @@ function RecentRow({ e }: { e: Expense }) {
     };
     return (
         <SwipeRow onTap={() => d({ t: "edit", e })} onDelete={remove}>
-            <div className="w-full flex items-center gap-2 py-1.5 px-2">
-                <span className="text-lg">{cat?.emoji ?? "🏷"}</span>
-                <span className="flex-1 truncate text-sm">{e.note || cat?.name || "—"}</span>
+            <div className="w-full flex items-center gap-3 py-2.5 px-3 bg-secondary-bg/50">
+                <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (cat?.color ?? "#9ca3af") + "33" }}>{cat?.emoji ?? "🏷"}</span>
+                <span className="flex-1 min-w-0">
+                    <span className="block truncate text-sm">{cat?.name || "—"}</span>
+                    {e.note && <span className="block truncate text-xs text-hint">{e.note}</span>}
+                </span>
                 <Amount amount={e.amount} currency={e.currency} className="text-sm" />
             </div>
         </SwipeRow>

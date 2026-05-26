@@ -22,9 +22,17 @@ export function initTelegram(): void {
 
 /** Включает .dark по Telegram colorScheme (наша палитра, не tg-vars). Вне Telegram — по prefers-color-scheme. */
 export function syncTheme(): void {
-    const scheme = tg()?.colorScheme;
+    const w = tg();
+    const scheme = w?.colorScheme;
     const dark = scheme ? scheme === "dark" : (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
     document.documentElement.classList.toggle("dark", dark);
+    // Красим шапку и фон Telegram нашим bg (hex из палитры админки) — иначе шапка
+    // чёрная, а overscroll при скролле показывает чужой серый/чёрный фон.
+    const bg = dark ? "#111318" : "#fcfcfd";
+    try {
+        (w as unknown as { setHeaderColor?: (c: string) => void; setBackgroundColor?: (c: string) => void } | undefined)?.setHeaderColor?.(bg);
+        (w as unknown as { setBackgroundColor?: (c: string) => void } | undefined)?.setBackgroundColor?.(bg);
+    } catch { /* старый клиент */ }
 }
 
 /** Haptic feedback (тап/успех/ошибка). No-op вне Telegram. */

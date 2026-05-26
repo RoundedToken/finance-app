@@ -43,11 +43,11 @@ export function HistoryScreen() {
                     const total = rates ? rows.reduce((sm, e) => sm + toBase(e.amount, e.currency, s.baseCurrency, rates), 0) : 0;
                     return (
                         <div key={day}>
-                            <div className="flex items-center justify-between text-xs text-hint mb-1.5">
-                                <span>{humanDay(day)}</span>
+                            <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint">
+                                <span className="font-medium uppercase tracking-wide">{humanDay(day)}</span>
                                 <span className="inline-flex items-center gap-1">≈ <Amount amount={total} currency={s.baseCurrency} /></span>
                             </div>
-                            <div className="space-y-0.5">
+                            <div className="rounded-2xl bg-secondary-bg/50 divide-y divide-border/60 overflow-hidden">
                                 {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} />)}
                             </div>
                         </div>
@@ -69,9 +69,12 @@ function HistoryRow({ e, cats }: { e: Expense; cats: Category[] }) {
     };
     return (
         <SwipeRow onTap={() => d({ t: "edit", e })} onDelete={remove}>
-            <div className="flex items-center gap-2 py-1.5 px-2 bg-bg">
-                <span className="text-lg">{c?.emoji ?? "🏷"}</span>
-                <span className="flex-1 truncate text-sm">{e.note || c?.name || "—"}</span>
+            <div className="flex items-center gap-3 py-2.5 px-3 bg-secondary-bg/50">
+                <span className="h-9 w-9 rounded-full grid place-items-center text-lg shrink-0" style={{ background: (c?.color ?? "#9ca3af") + "33" }}>{c?.emoji ?? "🏷"}</span>
+                <span className="flex-1 min-w-0">
+                    <span className="block truncate text-sm">{c?.name || "—"}</span>
+                    {e.note && <span className="block truncate text-xs text-hint">{e.note}</span>}
+                </span>
                 <Amount amount={e.amount} currency={e.currency} className="text-sm" />
             </div>
         </SwipeRow>
