@@ -323,8 +323,16 @@ async def setup_mocks(page, base: str) -> None:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"goals": filtered}))
         if "/v1/web/dashboard" in url:
-            return await route.fulfill(status=200, content_type="application/json",
-                                       body=json.dumps(DASHBOARD))
+            # учитываем from — обрезаем series, чтобы проверить адаптивную проекцию
+            from urllib.parse import urlparse, parse_qs
+            frm = parse_qs(urlparse(url).query).get("from", [None])[0]
+            body = DASHBOARD
+            if frm:
+                fm = frm[:7]
+                body = {**DASHBOARD,
+                        "net_worth_series": [p for p in DASHBOARD["net_worth_series"] if p["month"] >= fm],
+                        "cashflow_series": [p for p in DASHBOARD["cashflow_series"] if p["month"] >= fm]}
+            return await route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
         if "/v1/web/references" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({
@@ -523,6 +531,11 @@ async def scenario_dashboard(page, base: str) -> None:
     await page.wait_for_timeout(400)
     await page.screenshot(path=str(OUT_DIR / "admin-dashboard-goals.png"))
     print("  ✓ admin-dashboard-goals.png (ETA целей)")
+    # период «6 мес» — проекция должна адаптироваться (пунктир короче истории)
+    await page.get_by_role("button", name="6 мес", exact=True).click()
+    await page.wait_for_timeout(1000)
+    await page.screenshot(path=str(OUT_DIR / "admin-dashboard-6m.png"), full_page=True)
+    print("  ✓ admin-dashboard-6m.png (период 6 мес, адаптивная проекция)")
 
 
 # ── Main ───────────────────────────────────────────────────────────────────

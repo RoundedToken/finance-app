@@ -154,7 +154,7 @@ export function DashboardPage() {
                                         <FormFilter buckets={data.buckets} forms={forms} setForms={setForms} />
                                     )}
                                     <NetWorthChart data={data} mode={nwMode} forms={forms}
-                                        projectMonths={12} projectRate={data.kpi.monthly_income_free_eur - data.kpi.monthly_burn_eur} />
+                                        project projectRate={data.kpi.monthly_income_free_eur - data.kpi.monthly_burn_eur} />
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -323,9 +323,9 @@ function LensToggle({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void 
 
 const sumBuckets = (p: NetWorthPoint, ids: string[]) => ids.reduce((s, id) => s + (p.by_bucket[id] ?? 0), 0);
 
-function NetWorthChart({ data, mode, forms, projectMonths = 0, projectRate = 0 }: {
+function NetWorthChart({ data, mode, forms, project = false, projectRate = 0 }: {
     data: DashboardResponse; mode: "total" | "form" | "currency"; forms: Set<string>;
-    projectMonths?: number; projectRate?: number;
+    project?: boolean; projectRate?: number;
 }) {
     const t = chartTheme();
     const histMonths = data.net_worth_series.map(p => p.month);
@@ -336,11 +336,15 @@ function NetWorthChart({ data, mode, forms, projectMonths = 0, projectRate = 0 }
     const selected = data.buckets.filter(b => mode === "currency" || forms.size === 0 || forms.has(b.form));
 
     // Проекция — только для линии total: пунктир на projectMonths вперёд по темпу.
-    const doProject = mode === "total" && projectMonths > 0;
+    const doProject = mode === "total" && project && histMonths.length > 0;
+    // Длина проекции адаптируется к выбранному периоду: ~половина истории,
+    // в пределах [3..12] мес. Иначе на «6 мес» пунктир (фикс. 12) вдвое
+    // длиннее факта, а на «Всё» — наоборот теряется.
+    const projMonths = Math.min(12, Math.max(3, Math.round(histMonths.length / 2)));
     const futureMonths: string[] = [];
     if (doProject) {
         let ym = histMonths[histMonths.length - 1];
-        for (let i = 0; i < projectMonths; i++) { ym = addMonthYm(ym, 1); futureMonths.push(ym); }
+        for (let i = 0; i < projMonths; i++) { ym = addMonthYm(ym, 1); futureMonths.push(ym); }
     }
     const months = [...histMonths, ...futureMonths];
 
