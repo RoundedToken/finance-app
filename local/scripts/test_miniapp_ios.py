@@ -105,11 +105,57 @@ def main() -> int:
     # форсим программную клавиатуру (иначе Simulator c hardware keyboard её прячет)
     opts.set_capability("appium:forceSimulatorSoftwareKeyboardPresence", True)
     opts.set_capability("appium:safariInitialUrl", f"http://127.0.0.1:{PORT}/")
+    # nativeWebTap: Appium конвертирует web-click в НАСТОЯЩИЙ нативный тач — это
+    # поднимает software-клавиатуру (обычный web-click/send_keys её не вызывают).
+    opts.set_capability("appium:nativeWebTap", True)
 
     driver = None
     try:
         driver = webdriver.Remote(f"http://127.0.0.1:{APPIUM_PORT}", options=opts)
         driver.implicitly_wait(6)
+
+        def dismiss_dialogs():
+            """Закрыть системные диалоги Safari (онбординг «выбор поисковика» и т.п.) через нативный контекст."""
+            try:
+                driver.switch_to.context("NATIVE_APP")
+                for label in ["Продолжить", "Continue", "Не сейчас", "Not Now", "Закрыть", "Close", "OK"]:
+                    for b in driver.find_elements(By.XPATH, f"//XCUIElementTypeButton[@name='{label}']"):
+                        try:
+                            if b.is_displayed():
+                                b.click(); time.sleep(0.4)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            try:
+                webs = [c for c in driver.contexts if "WEBVIEW" in c]
+                if webs:
+                    driver.switch_to.context(webs[-1])
+            except Exception:
+                pass
+
+        def native_tap_web(css: str) -> bool:
+            """Нативный тап по web-элементу (поднимает РЕАЛЬНУЮ software-клавиатуру,
+            в отличие от web-click/send_keys, которые её не вызывают)."""
+            coords = driver.execute_script(
+                "var e=document.querySelector(arguments[0]);if(!e)return null;"
+                "var r=e.getBoundingClientRect();return [r.left+r.width/2, r.top+r.height/2];", css)
+            if not coords:
+                return False
+            cx, cy = coords
+            try:
+                driver.switch_to.context("NATIVE_APP")
+                wvs = driver.find_elements(By.XPATH, "//XCUIElementTypeWebView")
+                wv_top = wvs[0].location["y"] if wvs else 0
+                driver.execute_script("mobile: tap", {"x": float(cx), "y": float(wv_top + cy)})
+                time.sleep(0.4)
+            except Exception as e:
+                print(f"  ! native_tap_web({css}): {e}")
+            finally:
+                webs = [c for c in driver.contexts if "WEBVIEW" in c]
+                if webs:
+                    driver.switch_to.context(webs[-1])
+            return True
 
         def shot(name: str):
             time.sleep(1.0)
@@ -118,7 +164,9 @@ def main() -> int:
 
         def goto_main():
             driver.get(f"http://127.0.0.1:{PORT}/")
-            time.sleep(2.5)
+            time.sleep(2.0)
+            dismiss_dialogs()
+            time.sleep(1.2)
 
         goto_main()
         shot("01_main")
@@ -130,26 +178,27 @@ def main() -> int:
                 print(f"  ! numpad {k}: {e}")
         shot("02_amount")
 
-        # note modal: фокус textarea → клавиатура (КЛЮЧЕВОЙ кейс — note раньше прыгал)
+        # note modal: фокус textarea через send_keys → НАСТОЯЩАЯ клавиатура (note раньше прыгал)
         try:
             driver.find_element(By.XPATH, "//*[normalize-space()='Описание']").click()
             time.sleep(0.8); shot("03_note_open")
-            driver.find_element(By.XPATH, "//textarea").click()
-            time.sleep(1.4); shot("04_note_KEYBOARD")
-            # тап по фону при активном input — должен blur (не закрыть модалку)
-            driver.find_element(By.XPATH, "//body").click()
-            time.sleep(1.0); shot("05_note_after_backdrop_tap")
+            driver.find_element(By.XPATH, "//textarea").click()   # nativeWebTap → реальная клавиатура
+            time.sleep(1.8); shot("04_note_KEYBOARD")
+            # тап по фону (backdrop) при активном input → должен blur, НЕ закрыть модалку
+            driver.execute_script("document.querySelectorAll('[role=dialog] > div')[0]?.click();")
+            time.sleep(1.2); shot("05_note_after_backdrop_tap")
         except Exception as e:
             print(f"  ! note: {e}")
 
-        # edit modal: фокус amount input → клавиатура (КЛЮЧЕВОЙ — edit телепортировался)
+        # edit modal: фокус amount input → клавиатура (edit телепортировался)
         try:
             goto_main()
-            driver.find_element(By.XPATH, "//*[contains(text(),'Кафе')]").click()
+            row = driver.find_element(By.XPATH, "//*[contains(text(),'Кафе')]")
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row)
+            time.sleep(0.6); row.click()
             time.sleep(1.0); shot("06_edit_open")
-            inp = driver.find_element(By.XPATH, "//input[@inputmode='decimal' or @type='number']")
-            inp.click()
-            time.sleep(1.4); shot("07_edit_amount_KEYBOARD")
+            driver.find_element(By.XPATH, "//input[@type='number' or @inputmode='decimal']").click()
+            time.sleep(1.8); shot("07_edit_amount_KEYBOARD")
         except Exception as e:
             print(f"  ! edit: {e}")
 
