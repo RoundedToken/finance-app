@@ -11,7 +11,7 @@ import {
     useCreateContribution,
     useDeleteContribution,
 } from "@/api/queries";
-import { Currency } from "@/components/Currency";
+import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
@@ -353,7 +353,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
                 <Field label="Из ведра (опц.)">
                     <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                         <option value="">— не указано —</option>
-                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                 </Field>
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Banknote, Coins, Search } from "lucide-react";
 import { useAccounts, useCreateSnapshot, useDeleteSnapshot, useSnapshots, useUpdateSnapshot } from "@/api/queries";
 import { Modal } from "@/components/Modal";
-import { Currency } from "@/components/Currency";
+import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { cn, formatAmount, formatDate } from "@/lib/utils";
 import type { Account, Snapshot } from "@/api/types";
@@ -80,7 +80,7 @@ export function SnapshotsPage() {
                     aria-label="Фильтр по ведру"
                 >
                     <option value="">Все вёдра</option>
-                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                 </Select>
             </div>
 
@@ -221,7 +221,7 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
                 <Field label="Ведро">
                     <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                         {accounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
+                            <AccountOption key={a.id} account={a} />
                         ))}
                     </Select>
                 </Field>
