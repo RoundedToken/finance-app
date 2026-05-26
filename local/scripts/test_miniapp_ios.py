@@ -182,6 +182,8 @@ def main() -> int:
         try:
             driver.find_element(By.XPATH, "//*[normalize-space()='Описание']").click()
             time.sleep(0.8); shot("03_note_open")
+            pos = driver.execute_script("return getComputedStyle(document.body).position;")
+            print(f"  scroll-lock: body.position={pos!r} (ждём 'fixed' — фон залочен)")
             driver.find_element(By.XPATH, "//textarea").click()   # nativeWebTap → реальная клавиатура
             time.sleep(1.8); shot("04_note_KEYBOARD")
             # тап по фону (backdrop) при активном input → должен blur, НЕ закрыть модалку
