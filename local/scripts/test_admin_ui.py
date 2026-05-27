@@ -512,6 +512,12 @@ async def scenario_categories(page, base: str) -> None:
     out = OUT_DIR / "admin-categories.png"
     await page.screenshot(path=str(out), full_page=True)
     print(f"  ✓ {out.name}")
+    # hover на строку — подсветка (как в таблицах)
+    await page.hover("text=Продукты")
+    await page.wait_for_timeout(200)
+    out = OUT_DIR / "admin-categories-hover.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
     await page.click("text=Новая категория")
     await page.wait_for_timeout(400)
     out = OUT_DIR / "admin-categories-modal.png"
