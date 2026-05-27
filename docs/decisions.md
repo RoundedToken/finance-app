@@ -174,6 +174,36 @@
 - На MacBook два рантайма: Python + Node (для wrangler).
 - Worker на TS, локально на Python — нет code sharing, но интерфейс REST.
 
+## ADR-014: Единый слой конвертации валют — запас (mark-to-market) vs поток (date-aware)
+
+**Контекст.** Конверсия сумм в EUR была размазана по коду в трёх несовместимых вариантах: date-aware через `RatesIndex` (dashboard, incomes), latest-global на worker (`goals.ts`: `loadRates` по `MAX(date)`), latest-snapshot на клиенте (AccountsPage / ExpensesPage / Mini App: `refs.rates.quotes`). Это давало расхождение цифр между страницами (особенно RUB-вёдра — курс сильно двигался 2024–2026) и баг: клиентская конверсия по глобальному `MAX(date)`-snapshot возвращала **0**, если по валюте не было котировки ровно на эту дату.
+
+**Варианты.**
+- A) Оставить как есть, точечно чинить расхождения по месту.
+- B) Единый canonical util на worker + явная модель «запас / поток», клиент не конвертирует.
+
+**Решение.** B.
+1. **Единая точка конверсии** — `RatesIndex` (`rates.ts`) на worker. Клиенты НЕ конвертируют, получают готовые `*_eur` поля (`amount_eur`, `effective_balance_eur`, `summary`).
+2. **Модель двух классов** определяет, какой курс брать:
+   - **Запас** (баланс в моменте: вёдра, net worth, goal balance) → курс **на сегодня** (mark-to-market). «Сколько это стоит сейчас».
+   - **Поток** (операция на дату: расход, доход, day-total; net worth на конец месяца в series) → курс **на дату операции** (date-aware historical). «Сколько потратил/получил тогда».
+3. `RatesIndex.rateAt` берёт ближайший курс с `date ≤ target` — устаревшие/неполные котировки не дают 0, а тянут последний известный.
+
+**Почему.**
+- Консистентность цифр между `/accounts`, `/goals`, `/dashboard`, `/expenses`, Mini App.
+- `free = net − targeted` сходится: обе величины — запас по сегодняшнему курсу.
+- Поток фиксируется в момент операции (трата 2024 в RUB = EUR того периода) — отражает реальную историю.
+- Один util → будущий код не плодит четвёртый вариант конверсии.
+
+**Следствия.**
+- `goals.ts`: `loadRates(MAX date)` / `convertVia` удалены → `RatesIndex.convertAt(today)`.
+- `db.ts` `listExpenses` + `getBootstrapData`: `amount_eur` date-aware (покрывает Mini App + Admin + bootstrap из одного места).
+- `index.ts` `/v1/web/accounts`: `effective_balance_eur` + `summary{net_worth,free,targeted,missing_rates}` считаются на worker.
+- AccountsPage / ExpensesPage: клиентская `toEur`-арифметика убрана.
+- Mini App `DayTotal`: `Σ amount_eur`; `lib/money.ts` (`toBase`, latest-конвертер) удалён как мёртвый.
+- Goal balance — mark-to-market (текущая стоимость), осознанный выбор (SPEC-016 Q1): прогресс к цели может колебаться с курсом, зато split консистентен.
+- Без миграций D1. Подробности — SPEC-016.
+
 ## ADR-013: Spec-driven workflow + parallel review/test gates перед push
 
 **Контекст.** Первые 5 stages делались ad-hoc: я задавал короткие вопросы, начинал кодить, по ходу обнаруживал что-то непонятное, переделывал. Это работало быстро, но имеет проблемы:

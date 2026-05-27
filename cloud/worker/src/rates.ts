@@ -107,6 +107,16 @@ export async function getRateAt(
 // ── Date-aware индекс курсов (batch) ───────────────────────────────────────
 // Альтернатива getRateAt для случаев, когда нужно много конверсий за один
 // запрос (dashboard, list incomes): грузим все курсы один раз, ищем бинпоиском.
+//
+// CANONICAL: это единственный слой конвертации валют (ADR-014, SPEC-016).
+// Клиенты НЕ конвертируют — worker отдаёт готовые *_eur поля. Модель двух
+// классов задаёт, какую дату передавать:
+//   • Запас (баланс в моменте: вёдра, net worth, goal balance) → курс НА СЕГОДНЯ
+//     (mark-to-market): convertAt(..., today) / toEurAt(..., today).
+//   • Поток (операция на дату: расход, доход, day-total) → курс НА ДАТУ ОПЕРАЦИИ
+//     (date-aware historical): toEurAt(amount, ccy, operationDate).
+// rateAt берёт ближайший курс с date ≤ target (нет точного — fallback назад),
+// поэтому устаревшие/неполные котировки не дают 0, а тянут последний известный.
 
 interface RatePoint { date: string; rate: number; }
 
@@ -147,6 +157,21 @@ export class RatesIndex {
         const r = this.rateAt(quote, date);
         if (r == null || r === 0) return null;
         return amount / r;
+    }
+
+    /**
+     * Перевод суммы из `from` в `to` через EUR на дату. null если любого
+     * курса нет. Обобщение toEurAt для случая, когда целевая валюта ≠ EUR
+     * (например goal balance в target_currency).
+     */
+    convertAt(amount: number, from: string, to: string, date: string): number | null {
+        if (from === to) return amount;
+        const eur = this.toEurAt(amount, from, date);
+        if (eur == null) return null;
+        if (to === "EUR") return eur;
+        const rTo = this.rateAt(to, date);
+        if (rTo == null) return null;
+        return eur * rTo;
     }
 
     latestDate(): string | null { return this.maxDate; }
