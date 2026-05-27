@@ -4,7 +4,7 @@ import {
     useAccounts,
     useCreateIncome,
     useDeleteIncome,
-    useIncomeCategories,
+    useManagedCategories,
     useIncomes,
     useUpdateIncome,
 } from "@/api/queries";
@@ -32,7 +32,9 @@ function minusDays(days: number): string {
 
 export function IncomesPage() {
     const { data: incData, isLoading } = useIncomes();
-    const { data: catData } = useIncomeCategories();
+    // managed = все категории (вкл. неактивные) — чтобы подпись в истории/breakdown
+    // сохранялась после деактивации (SPEC-017 AC4). Выбор фильтрует is_active.
+    const { data: catData } = useManagedCategories("income");
     const { data: accData } = useAccounts();
 
     const create = useCreateIncome();
@@ -176,7 +178,7 @@ export function IncomesPage() {
                     aria-label="Фильтр по категории"
                 >
                     <option value="">Все категории</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                    {categories.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
                 </Select>
             </div>
 
@@ -428,8 +430,8 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
 
                 <Field label="Категория">
                     <Select fullWidth value={categoryId} onChange={e => setCategoryId(e.target.value)}>
-                        {categories.map(c => (
-                            <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                        {categories.filter(c => c.is_active || c.id === categoryId).map(c => (
+                            <option key={c.id} value={c.id}>{c.emoji} {c.name}{c.is_active ? "" : " (неактивна)"}</option>
                         ))}
                     </Select>
                 </Field>
