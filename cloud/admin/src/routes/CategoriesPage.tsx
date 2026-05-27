@@ -141,7 +141,7 @@ interface RowProps {
 function CategoryRow({ cat, onEdit, onToggle, onUp, onDown, inactive }: RowProps) {
     const color = cat.color ?? "#94a3b8";
     return (
-        <div className="flex items-center gap-3 px-4 py-2.5">
+        <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-secondary/30 transition-colors">
             <div className="h-9 w-9 rounded-lg grid place-items-center text-lg shrink-0" style={{ background: color + "22", color }}>
                 {cat.emoji ?? "📁"}
             </div>
