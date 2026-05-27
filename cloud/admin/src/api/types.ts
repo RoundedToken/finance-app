@@ -139,6 +139,7 @@ export interface IncomeCategory {
     emoji: string | null;
     color: string | null;
     sort_order: number;
+    is_active?: number;
 }
 
 export interface IncomesResponse {
@@ -147,6 +148,38 @@ export interface IncomesResponse {
 
 export interface IncomeCategoriesResponse {
     categories: IncomeCategory[];
+}
+
+// ── Category management (SPEC-017) ──
+export interface ManagedCategory {
+    id: string;
+    name: string;
+    type?: string;
+    parent_id?: string | null;
+    emoji: string | null;
+    color: string | null;
+    sort_order: number;
+    is_active: number;
+}
+
+export interface ManagedCategoriesResponse {
+    categories: ManagedCategory[];
+}
+
+export interface CategoryCreatePayload {
+    id?: string;
+    name: string;
+    emoji?: string | null;
+    color?: string | null;
+    sort_order?: number | null;
+}
+
+export interface CategoryUpdatePayload {
+    name?: string;
+    emoji?: string | null;
+    color?: string | null;
+    sort_order?: number | null;
+    is_active?: boolean | number;
 }
 
 export interface IncomeCreatePayload {
@@ -184,6 +217,8 @@ export interface Goal {
     status: GoalStatus;
     sort_order: number;
     balance: number;
+    balance_eur?: number | null;          // SPEC-017: mark-to-market today (worker-side)
+    target_amount_eur?: number | null;
     balance_missing_rates: number;
     contribution_count: number;
     created_at: string;

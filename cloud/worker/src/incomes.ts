@@ -29,6 +29,7 @@ export interface IncomeCategory {
     emoji: string | null;
     color: string | null;
     sort_order: number;
+    is_active?: number;
 }
 
 export async function listIncomes(
@@ -60,11 +61,11 @@ export async function listIncomes(
     return rows;
 }
 
-export async function listIncomeCategories(env: Env): Promise<IncomeCategory[]> {
-    const r = await env.DB.prepare(
-        "SELECT id, name, emoji, color, sort_order " +
-        "FROM income_categories WHERE is_active = 1 ORDER BY sort_order, name",
-    ).all<IncomeCategory>();
+export async function listIncomeCategories(env: Env, includeInactive = false): Promise<IncomeCategory[]> {
+    let sql = "SELECT id, name, emoji, color, sort_order, is_active FROM income_categories";
+    if (!includeInactive) sql += " WHERE is_active = 1";
+    sql += " ORDER BY sort_order, name";
+    const r = await env.DB.prepare(sql).all<IncomeCategory>();
     return r.results;
 }
 

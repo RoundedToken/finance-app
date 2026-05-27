@@ -41,6 +41,13 @@ import {
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
 import { fetchLatestRatesEUR, saveRates, getLatestRates, loadRatesIndex } from "./rates";
+import {
+    listExpenseCategories,
+    createExpenseCategory,
+    updateExpenseCategory,
+    createIncomeCategory,
+    updateIncomeCategory,
+} from "./categories";
 import { handleGoogleStart, handleGoogleCallback, handleAdminMe, requireAdminSession } from "./auth-google";
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
@@ -132,7 +139,15 @@ export default {
                 if (request.method === "PUT") return handleWebSnapshotsUpdate(request, env, snapMatch[1]);
                 if (request.method === "DELETE") return handleWebSnapshotsDelete(request, env, snapMatch[1]);
             }
-            if (path === "/v1/web/income-categories" && request.method === "GET") return handleWebIncomeCategories(request, env);
+            // Category management (SPEC-017)
+            if (path === "/v1/web/categories" && request.method === "GET") return handleWebCategoriesList(request, env, url);
+            if (path === "/v1/web/categories" && request.method === "POST") return handleWebCategoriesCreate(request, env);
+            const catMatch = path.match(/^\/v1\/web\/categories\/([^/]+)$/);
+            if (catMatch && request.method === "PUT") return handleWebCategoriesUpdate(request, env, catMatch[1]);
+            if (path === "/v1/web/income-categories" && request.method === "GET") return handleWebIncomeCategories(request, env, url);
+            if (path === "/v1/web/income-categories" && request.method === "POST") return handleWebIncomeCategoriesCreate(request, env);
+            const incCatMatch = path.match(/^\/v1\/web\/income-categories\/([^/]+)$/);
+            if (incCatMatch && request.method === "PUT") return handleWebIncomeCategoriesUpdate(request, env, incCatMatch[1]);
             if (path === "/v1/web/incomes" && request.method === "GET") return handleWebIncomesList(request, env, url);
             if (path === "/v1/web/incomes" && request.method === "POST") return handleWebIncomesCreate(request, env);
             const incMatch = path.match(/^\/v1\/web\/incomes\/([0-9a-fA-F-]+)$/);
@@ -352,12 +367,60 @@ async function handleWebSnapshotsDelete(request: Request, env: Env, id: string):
     return json({ ok: true, ...r }, 200, request, env);
 }
 
-// ── Web Admin · incomes ───────────────────────────────────────────────────
-async function handleWebIncomeCategories(request: Request, env: Env): Promise<Response> {
+// ── Web Admin · category management (SPEC-017) ────────────────────────────
+async function handleWebCategoriesList(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const categories = await listIncomeCategories(env);
-    return json({ categories }, 200, request, env);
+    const includeInactive = url.searchParams.get("include_inactive") === "1";
+    return json({ categories: await listExpenseCategories(env, includeInactive) }, 200, request, env);
+}
+
+async function handleWebCategoriesCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createExpenseCategory(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json(r, 200, request, env);
+}
+
+async function handleWebCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await updateExpenseCategory(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json(r, 200, request, env);
+}
+
+// ── Web Admin · incomes ───────────────────────────────────────────────────
+async function handleWebIncomeCategories(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const includeInactive = url.searchParams.get("include_inactive") === "1";
+    return json({ categories: await listIncomeCategories(env, includeInactive) }, 200, request, env);
+}
+
+async function handleWebIncomeCategoriesCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await createIncomeCategory(env, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json(r, 200, request, env);
+}
+
+async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const body = await request.json<any>().catch(() => null);
+    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
+    const r = await updateIncomeCategory(env, id, body);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json(r, 200, request, env);
 }
 
 async function handleWebIncomesList(request: Request, env: Env, url: URL): Promise<Response> {
