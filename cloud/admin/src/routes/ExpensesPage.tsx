@@ -175,7 +175,7 @@ export function ExpensesPage() {
                 </div>
                 <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} aria-label="Категория">
                     <option value="">Все категории</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.emoji ?? ""} {c.name}</option>)}
+                    {categories.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.emoji ?? ""} {c.name}</option>)}
                 </Select>
                 <Select value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)} aria-label="Валюта">
                     <option value="">Все валюты</option>

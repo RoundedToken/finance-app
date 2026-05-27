@@ -161,6 +161,7 @@ CATEGORIES = [
     {"id": "cafe",          "name": "Кафе",         "type": "expense", "parent_id": None, "emoji": "☕", "color": "#D7B894", "sort_order": 30, "is_active": 1},
     {"id": "transport",     "name": "Транспорт",    "type": "expense", "parent_id": None, "emoji": "🚗", "color": "#A8C8F0", "sort_order": 40, "is_active": 1},
     {"id": "entertainment", "name": "Развлечения",  "type": "expense", "parent_id": None, "emoji": "🎬", "color": "#C9A8E8", "sort_order": 50, "is_active": 1},
+    {"id": "subscriptions", "name": "Подписки",     "type": "expense", "parent_id": None, "emoji": "📺", "color": "#B8C2D9", "sort_order": 60, "is_active": 0},
 ]
 
 CURRENCIES = [
@@ -503,6 +504,21 @@ async def scenario_full_page(page, base: str, route: str, fname: str, label: str
     print(f"  ✓ {out.name}")
 
 
+async def scenario_categories(page, base: str) -> None:
+    """/categories: список (active + inactive секции) + модал создания."""
+    await page.goto(f"{base}/categories", wait_until="networkidle")
+    await page.wait_for_selector("h1:has-text('Категории')", timeout=5000)
+    await page.wait_for_timeout(300)
+    out = OUT_DIR / "admin-categories.png"
+    await page.screenshot(path=str(out), full_page=True)
+    print(f"  ✓ {out.name}")
+    await page.click("text=Новая категория")
+    await page.wait_for_timeout(400)
+    out = OUT_DIR / "admin-categories-modal.png"
+    await page.screenshot(path=str(out))
+    print(f"  ✓ {out.name}")
+
+
 async def scenario_sidebar_navigation(page, base: str) -> None:
     """Sidebar active state: переключаемся по 4 пунктам, делаем 4 скриншота."""
     pages = [
@@ -578,7 +594,7 @@ async def run(headed: bool) -> int:
             await scenario_goals_list(page, base)
             await scenario_goal_detail(page, base)
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
-            await scenario_full_page(page, base, "/categories", "admin-categories.png", "Категории")
+            await scenario_categories(page, base)
             await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 
