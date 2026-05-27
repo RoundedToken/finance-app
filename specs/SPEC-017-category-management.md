@@ -1,7 +1,7 @@
 ---
 id: SPEC-017
 title: Управление категориями (расходы + доходы) в Web Admin + завершение canonical toEur
-status: in_progress
+status: done
 owner: stepan
 created: 2026-05-27
 updated: 2026-05-27
@@ -112,3 +112,4 @@ links:
 
 - 2026-05-27: создан в `draft`.
 - 2026-05-27: одобрен (scope: расход+доход, только Admin, мягкая деактивация), → `in_progress`.
+- 2026-05-27: реализовано, Phase 3 (solution-architect APPROVED_WITH_NICES, senior-qa PASS_WITH_NICES). Push feat+test (→1396ea8) + fix-commit must-fix подписи деактивированных категорий (223e211). Деплой worker 65c1de27 + admin. `done`.
