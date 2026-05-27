@@ -73,12 +73,12 @@ ACCOUNTS = [
 ACCOUNTS_SUMMARY = {"net_worth_eur": 47157.0, "targeted_eur": 38164.5, "free_eur": 8992.5, "missing_rates": 0, "rates_date": "2026-05-24"}
 
 INCOME_CATEGORIES = [
-    {"id": "salary",    "name": "Зарплата",                       "emoji": "💼", "color": "#a78bfa", "sort_order": 10},
-    {"id": "interest",  "name": "Проценты",                       "emoji": "📈", "color": "#34d399", "sort_order": 20},
-    {"id": "gifts",     "name": "Подарки",                        "emoji": "🎁", "color": "#f9a8d4", "sort_order": 30},
-    {"id": "cashback",  "name": "Выигрыши / Cashback / возвраты", "emoji": "🎟️", "color": "#fbbf24", "sort_order": 40},
-    {"id": "freelance", "name": "Freelance",                      "emoji": "💻", "color": "#22d3ee", "sort_order": 50},
-    {"id": "other",     "name": "Прочее",                         "emoji": "✨", "color": "#94a3b8", "sort_order": 60},
+    {"id": "salary",    "name": "Зарплата",                       "emoji": "💼", "color": "#a78bfa", "sort_order": 10, "is_active": 1},
+    {"id": "interest",  "name": "Проценты",                       "emoji": "📈", "color": "#34d399", "sort_order": 20, "is_active": 1},
+    {"id": "gifts",     "name": "Подарки",                        "emoji": "🎁", "color": "#f9a8d4", "sort_order": 30, "is_active": 1},
+    {"id": "cashback",  "name": "Выигрыши / Cashback / возвраты", "emoji": "🎟️", "color": "#fbbf24", "sort_order": 40, "is_active": 1},
+    {"id": "freelance", "name": "Freelance",                      "emoji": "💻", "color": "#22d3ee", "sort_order": 50, "is_active": 1},
+    {"id": "other",     "name": "Прочее",                         "emoji": "✨", "color": "#94a3b8", "sort_order": 60, "is_active": 0},
 ]
 
 INCOMES = [
@@ -108,17 +108,17 @@ GOALS = [
     {"id": "g1", "name": "Стартовый депозит на квартиру", "emoji": "🏠", "color": "#a78bfa",
      "target_amount": 5_000_000, "target_currency": "RUB", "deadline": "2027-06-01",
      "note": "Однушка в Белграде", "status": "active", "sort_order": 10,
-     "balance": 2_100_000, "balance_missing_rates": 0, "contribution_count": 3,
+     "balance": 2_100_000, "balance_eur": 25414.50, "target_amount_eur": 60510.71, "balance_missing_rates": 0, "contribution_count": 3,
      "created_at": "2026-01-15 10:00:00", "updated_at": "2026-05-15 14:00:00"},
     {"id": "g2", "name": "Отпуск 2026", "emoji": "✈️", "color": "#34d399",
      "target_amount": 5000, "target_currency": "EUR", "deadline": "2026-09-15",
      "note": None, "status": "active", "sort_order": 20,
-     "balance": 1250, "balance_missing_rates": 0, "contribution_count": 2,
+     "balance": 1250, "balance_eur": 1250.0, "target_amount_eur": 5000.0, "balance_missing_rates": 0, "contribution_count": 2,
      "created_at": "2026-03-01 09:00:00", "updated_at": "2026-04-12 12:00:00"},
     {"id": "g3", "name": "Финансовая подушка", "emoji": "🛡️", "color": "#fbbf24",
      "target_amount": 12500, "target_currency": "EUR", "deadline": None,
      "note": "6 месячных расходов · не трогать", "status": "active", "sort_order": 30,
-     "balance": 11500, "balance_missing_rates": 0, "contribution_count": 8,
+     "balance": 11500, "balance_eur": 11500.0, "target_amount_eur": 12500.0, "balance_missing_rates": 0, "contribution_count": 8,
      "created_at": "2025-09-01 10:00:00", "updated_at": "2026-05-20 11:00:00"},
 ]
 
@@ -285,7 +285,10 @@ async def setup_mocks(page, base: str) -> None:
         if "/v1/web/me" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"ok": True, "email": "test@example.com"}))
-        if "/v1/web/income-categories" in url:
+        if "/v1/web/categories" in url and method == "GET":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps({"categories": CATEGORIES}))
+        if "/v1/web/income-categories" in url and method == "GET":
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"categories": INCOME_CATEGORIES}))
         if "/v1/web/incomes" in url and method == "GET":
@@ -575,6 +578,7 @@ async def run(headed: bool) -> int:
             await scenario_goals_list(page, base)
             await scenario_goal_detail(page, base)
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
+            await scenario_full_page(page, base, "/categories", "admin-categories.png", "Категории")
             await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 
