@@ -49,22 +49,28 @@ def make_mock_jwt() -> str:
 
 
 # ── Mock data ──────────────────────────────────────────────────────────────
+# SPEC-011: balance = effective_balance (manual baseline + события); SPEC-016:
+# effective_balance_eur — worker считает по курсу на сегодня (RATES ниже).
 ACCOUNTS = [
     {"id": "rub-bank", "name": "RUB · банк", "type": "bank",   "currency": "RUB",  "is_active": 1, "color": "#a78bfa", "form": "digital", "sort_order": 10,
-     "latest_snapshot": {"id": "s1", "date": "2026-05-24", "amount": 250000}},
+     "manual_snapshot": {"id": "s1", "date": "2026-05-24", "amount": 2500000}, "effective_balance": 2500000, "effective_balance_eur": 30255.36, "events_count": 0},
     {"id": "rsd-bank", "name": "RSD · банк", "type": "bank",   "currency": "RSD",  "is_active": 1, "color": "#fdba74", "form": "digital", "sort_order": 20,
-     "latest_snapshot": {"id": "s2", "date": "2026-05-22", "amount": 12000}},
+     "manual_snapshot": {"id": "s2", "date": "2026-05-22", "amount": 790000}, "effective_balance": 800000, "effective_balance_eur": 6813.73, "events_count": 3},
     {"id": "acc_money_ok_rsd", "name": "RSD · нал", "type": "cash", "currency": "RSD", "is_active": 1, "color": "#fbbf24", "form": "cash", "sort_order": 30,
-     "latest_snapshot": {"id": "s3", "date": "2026-05-20", "amount": 8500}},
+     "manual_snapshot": {"id": "s3", "date": "2026-05-20", "amount": 145000}, "effective_balance": 150000, "effective_balance_eur": 1277.57, "events_count": 5},
     {"id": "eur-bank", "name": "EUR · банк", "type": "bank",   "currency": "EUR",  "is_active": 1, "color": "#34d399", "form": "digital", "sort_order": 40,
-     "latest_snapshot": None},
+     "manual_snapshot": {"id": "s5", "date": "2026-05-10", "amount": 3000}, "effective_balance": 3000, "effective_balance_eur": 3000.0, "events_count": 0},
     {"id": "eur-cash", "name": "EUR · нал",  "type": "cash",   "currency": "EUR",  "is_active": 1, "color": "#86efac", "form": "cash",    "sort_order": 50,
-     "latest_snapshot": None},
+     "manual_snapshot": {"id": "s6", "date": "2026-05-01", "amount": 1500}, "effective_balance": 1500, "effective_balance_eur": 1500.0, "events_count": 0},
     {"id": "usdt",     "name": "USDT",        "type": "crypto", "currency": "USDT", "is_active": 1, "color": "#22d3ee", "form": "digital", "sort_order": 60,
-     "latest_snapshot": {"id": "s4", "date": "2026-05-15", "amount": 420}},
+     "manual_snapshot": {"id": "s4", "date": "2026-05-15", "amount": 5000}, "effective_balance": 5000, "effective_balance_eur": 4310.34, "events_count": 0},
     {"id": "try-cash", "name": "TRY · нал",   "type": "cash",   "currency": "TRY",  "is_active": 1, "color": "#fb7185", "form": "cash",    "sort_order": 70,
-     "latest_snapshot": None},
+     "manual_snapshot": None, "effective_balance": 0, "effective_balance_eur": 0, "events_count": 0},
 ]
+
+# SPEC-016: summary считается на worker (net = Σ effective_balance_eur;
+# targeted = Σ goal.balance→EUR by today; free = net − targeted).
+ACCOUNTS_SUMMARY = {"net_worth_eur": 47157.0, "targeted_eur": 38164.5, "free_eur": 8992.5, "missing_rates": 0, "rates_date": "2026-05-24"}
 
 INCOME_CATEGORIES = [
     {"id": "salary",    "name": "Зарплата",                       "emoji": "💼", "color": "#a78bfa", "sort_order": 10},
@@ -76,25 +82,26 @@ INCOME_CATEGORIES = [
 ]
 
 INCOMES = [
-    {"id": "i1", "date": "2026-05-15", "account_id": "rub-bank", "amount": 100000, "currency_code": "RUB", "category_id": "salary",    "source": "Anthropic",   "note": "За первую половину мая", "created_at": "2026-05-15 10:11:12", "updated_at": "2026-05-15 10:11:12"},
-    {"id": "i2", "date": "2026-05-01", "account_id": "rub-bank", "amount": 110000, "currency_code": "RUB", "category_id": "salary",    "source": "Anthropic",   "note": "Зп за апрель",            "created_at": "2026-05-01 09:00:00", "updated_at": "2026-05-01 09:00:00"},
-    {"id": "i3", "date": "2026-05-10", "account_id": "usdt",     "amount": 3.40,   "currency_code": "USDT","category_id": "interest",  "source": "Bybit Save",  "note": None,                       "created_at": "2026-05-10 12:00:00", "updated_at": "2026-05-10 12:00:00"},
-    {"id": "i4", "date": "2026-04-20", "account_id": "eur-cash", "amount": 50,     "currency_code": "EUR", "category_id": "gifts",     "source": "Родители",    "note": "На день рождения",         "created_at": "2026-04-20 18:00:00", "updated_at": "2026-04-20 18:00:00"},
-    {"id": "i5", "date": "2026-04-15", "account_id": "rub-bank", "amount": 1200,   "currency_code": "RUB", "category_id": "cashback",  "source": "Tinkoff",     "note": "Cashback за март",         "created_at": "2026-04-15 11:00:00", "updated_at": "2026-04-15 11:00:00"},
-    {"id": "i6", "date": "2026-03-25", "account_id": "eur-bank", "amount": 800,    "currency_code": "EUR", "category_id": "freelance", "source": "Project X",   "note": "Доработки",                "created_at": "2026-03-25 14:00:00", "updated_at": "2026-03-25 14:00:00"},
+    {"id": "i1", "date": "2026-05-15", "account_id": "rub-bank", "amount": 100000, "currency_code": "RUB", "amount_eur": 1210.21, "category_id": "salary",    "source": "Anthropic",   "note": "За первую половину мая", "created_at": "2026-05-15 10:11:12", "updated_at": "2026-05-15 10:11:12"},
+    {"id": "i2", "date": "2026-05-01", "account_id": "rub-bank", "amount": 110000, "currency_code": "RUB", "amount_eur": 1331.23, "category_id": "salary",    "source": "Anthropic",   "note": "Зп за апрель",            "created_at": "2026-05-01 09:00:00", "updated_at": "2026-05-01 09:00:00"},
+    {"id": "i3", "date": "2026-05-10", "account_id": "usdt",     "amount": 3.40,   "currency_code": "USDT","amount_eur": 2.93,    "category_id": "interest",  "source": "Bybit Save",  "note": None,                       "created_at": "2026-05-10 12:00:00", "updated_at": "2026-05-10 12:00:00"},
+    {"id": "i4", "date": "2026-04-20", "account_id": "eur-cash", "amount": 50,     "currency_code": "EUR", "amount_eur": 50.0,    "category_id": "gifts",     "source": "Родители",    "note": "На день рождения",         "created_at": "2026-04-20 18:00:00", "updated_at": "2026-04-20 18:00:00"},
+    {"id": "i5", "date": "2026-04-15", "account_id": "rub-bank", "amount": 1200,   "currency_code": "RUB", "amount_eur": 14.52,   "category_id": "cashback",  "source": "Tinkoff",     "note": "Cashback за март",         "created_at": "2026-04-15 11:00:00", "updated_at": "2026-04-15 11:00:00"},
+    {"id": "i6", "date": "2026-03-25", "account_id": "eur-bank", "amount": 800,    "currency_code": "EUR", "amount_eur": 800.0,   "category_id": "freelance", "source": "Project X",   "note": "Доработки",                "created_at": "2026-03-25 14:00:00", "updated_at": "2026-03-25 14:00:00"},
 ]
 
 RATES = {"date": "2026-05-24", "base": "EUR", "quotes": {"USD": 1.16, "RSD": 117.41, "RUB": 82.63, "USDT": 1.16, "EUR": 1.0, "TRY": 39.5}}
 
+# SPEC-016: amount_eur date-aware (по курсу даты траты) — приходит с worker.
 EXPENSES = [
-    {"id": "e1", "user_id": "u", "date": "2026-05-25", "account_id": "acc_money_ok_rsd", "amount": 450,  "currency": "RSD",  "category_id": "groceries", "note": "Maxi",      "source": "mini_app", "created_at": "2026-05-25 10:00:00", "updated_at": "2026-05-25 10:00:00"},
-    {"id": "e2", "user_id": "u", "date": "2026-05-24", "account_id": "acc_money_ok_rsd", "amount": 1200, "currency": "RSD",  "category_id": "cafe",      "note": "Lavazza",   "source": "mini_app", "created_at": "2026-05-24 14:00:00", "updated_at": "2026-05-24 14:00:00"},
-    {"id": "e3", "user_id": "u", "date": "2026-05-22", "account_id": "acc_money_ok_rsd", "amount": 280,  "currency": "RSD",  "category_id": "transport","note": "Метро",      "source": "mini_app", "created_at": "2026-05-22 09:00:00", "updated_at": "2026-05-22 09:00:00"},
-    {"id": "e4", "user_id": "u", "date": "2026-05-20", "account_id": "acc_money_ok_rsd", "amount": 2800, "currency": "RSD",  "category_id": "food",      "note": "Ужин",       "source": "mini_app", "created_at": "2026-05-20 19:00:00", "updated_at": "2026-05-20 19:00:00"},
-    {"id": "e5", "user_id": "u", "date": "2026-05-18", "account_id": "acc_money_ok_rsd", "amount": 850,  "currency": "RSD",  "category_id": "groceries", "note": "Idea",      "source": "mini_app", "created_at": "2026-05-18 11:00:00", "updated_at": "2026-05-18 11:00:00"},
-    {"id": "e6", "user_id": "u", "date": "2026-05-10", "account_id": "acc_money_ok_rsd", "amount": 4500, "currency": "RSD",  "category_id": "entertainment","note": "Кино",  "source": "mini_app", "created_at": "2026-05-10 20:00:00", "updated_at": "2026-05-10 20:00:00"},
-    {"id": "e7", "user_id": "u", "date": "2026-04-28", "account_id": "acc_money_ok_rsd", "amount": 1100, "currency": "RSD",  "category_id": "food",      "note": "Доставка",   "source": "mini_app", "created_at": "2026-04-28 13:00:00", "updated_at": "2026-04-28 13:00:00"},
-    {"id": "e8", "user_id": "u", "date": "2026-04-15", "account_id": "acc_money_ok_rsd", "amount": 600,  "currency": "RSD",  "category_id": "transport","note": "Такси",     "source": "mini_app", "created_at": "2026-04-15 22:00:00", "updated_at": "2026-04-15 22:00:00"},
+    {"id": "e1", "user_id": "u", "date": "2026-05-25", "account_id": "acc_money_ok_rsd", "amount": 450,  "currency": "RSD", "amount_eur": 3.83,  "category_id": "groceries", "note": "Maxi",      "source": "mini_app", "created_at": "2026-05-25 10:00:00", "updated_at": "2026-05-25 10:00:00"},
+    {"id": "e2", "user_id": "u", "date": "2026-05-24", "account_id": "acc_money_ok_rsd", "amount": 1200, "currency": "RSD", "amount_eur": 10.22, "category_id": "cafe",      "note": "Lavazza",   "source": "mini_app", "created_at": "2026-05-24 14:00:00", "updated_at": "2026-05-24 14:00:00"},
+    {"id": "e3", "user_id": "u", "date": "2026-05-22", "account_id": "acc_money_ok_rsd", "amount": 280,  "currency": "RSD", "amount_eur": 2.38,  "category_id": "transport","note": "Метро",      "source": "mini_app", "created_at": "2026-05-22 09:00:00", "updated_at": "2026-05-22 09:00:00"},
+    {"id": "e4", "user_id": "u", "date": "2026-05-20", "account_id": "acc_money_ok_rsd", "amount": 2800, "currency": "RSD", "amount_eur": 23.85, "category_id": "food",      "note": "Ужин",       "source": "mini_app", "created_at": "2026-05-20 19:00:00", "updated_at": "2026-05-20 19:00:00"},
+    {"id": "e5", "user_id": "u", "date": "2026-05-18", "account_id": "acc_money_ok_rsd", "amount": 850,  "currency": "RSD", "amount_eur": 7.24,  "category_id": "groceries", "note": "Idea",      "source": "mini_app", "created_at": "2026-05-18 11:00:00", "updated_at": "2026-05-18 11:00:00"},
+    {"id": "e6", "user_id": "u", "date": "2026-05-10", "account_id": "acc_money_ok_rsd", "amount": 4500, "currency": "RSD", "amount_eur": 38.33, "category_id": "entertainment","note": "Кино",  "source": "mini_app", "created_at": "2026-05-10 20:00:00", "updated_at": "2026-05-10 20:00:00"},
+    {"id": "e7", "user_id": "u", "date": "2026-04-28", "account_id": "acc_money_ok_rsd", "amount": 1100, "currency": "RSD", "amount_eur": 9.37,  "category_id": "food",      "note": "Доставка",   "source": "mini_app", "created_at": "2026-04-28 13:00:00", "updated_at": "2026-04-28 13:00:00"},
+    {"id": "e8", "user_id": "u", "date": "2026-04-15", "account_id": "acc_money_ok_rsd", "amount": 600,  "currency": "RSD", "amount_eur": 5.11,  "category_id": "transport","note": "Такси",     "source": "mini_app", "created_at": "2026-04-15 22:00:00", "updated_at": "2026-04-15 22:00:00"},
 ]
 
 GOALS = [
@@ -286,7 +293,7 @@ async def setup_mocks(page, base: str) -> None:
                                        body=json.dumps({"incomes": INCOMES}))
         if "/v1/web/accounts" in url:
             return await route.fulfill(status=200, content_type="application/json",
-                                       body=json.dumps({"accounts": ACCOUNTS}))
+                                       body=json.dumps({"accounts": ACCOUNTS, "summary": ACCOUNTS_SUMMARY}))
         if "/v1/web/snapshots" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"snapshots": []}))
