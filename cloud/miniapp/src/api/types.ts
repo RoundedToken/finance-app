@@ -42,6 +42,7 @@ export interface Expense {
     account_id: string | null;
     amount: number;
     currency: string;
+    amount_eur?: number | null;   // date-aware EUR-эквивалент (курс даты траты, SPEC-016)
     category_id: string | null;
     note: string | null;
     source: string | null;

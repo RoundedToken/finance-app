@@ -8,6 +8,7 @@ export interface Expense {
     account_id: string | null;
     amount: number;
     currency: string;
+    amount_eur?: number | null;       // date-aware EUR-эквивалент (по курсу даты траты, SPEC-016)
     category_id: string | null;
     note: string | null;
     source: string | null;
@@ -38,6 +39,7 @@ export interface Account {
     // SPEC-011: computed effective balance + manual baseline.
     manual_snapshot?: { id: string; date: string; amount: number } | null;
     effective_balance?: number;
+    effective_balance_eur?: number | null;   // SPEC-016: EUR по курсу на сегодня (worker-side, mark-to-market)
     events_count?: number;
     /** @deprecated SPEC-011: backend больше не возвращает latest_snapshot. */
     latest_snapshot?: { id: string; date: string; amount: number } | null;
@@ -85,8 +87,17 @@ export interface MeResponse {
     email: string;
 }
 
+export interface AccountsSummary {
+    net_worth_eur: number;
+    targeted_eur: number;
+    free_eur: number;
+    missing_rates: number;
+    rates_date: string | null;
+}
+
 export interface AccountsResponse {
     accounts: Account[];
+    summary?: AccountsSummary;
 }
 
 export interface SnapshotsResponse {

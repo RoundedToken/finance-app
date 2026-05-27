@@ -1,21 +1,20 @@
-import { useBootstrap } from "@/api/queries";
 import { Amount } from "./Amount";
-import { toBase } from "@/lib/money";
 import type { Expense } from "@/api/types";
 
 /**
  * Итог за день: оригинальные суммы по валютам + приблизительный эквивалент в
  * базовой валюте. Если день целиком в базовой валюте — показываем только её
  * (без «≈»). Пример: «3 200 🇷🇸 RSD ≈ 27 🇪🇺 EUR».
+ *
+ * SPEC-016: эквивалент = Σ amount_eur (date-aware, по курсу даты траты — расход
+ * это поток, ADR-014). Base = EUR (переключателя базовой валюты в UI нет).
+ * Клиент не конвертирует сам — amount_eur приходит с worker.
  */
 export function DayTotal({ rows, base }: { rows: Expense[]; base: string }) {
-    const { data } = useBootstrap();
-    const rates = data?.rates;
-
     const byCcy = new Map<string, number>();
     for (const e of rows) byCcy.set(e.currency, (byCcy.get(e.currency) ?? 0) + e.amount);
     const entries = [...byCcy.entries()];
-    const baseTotal = rates ? entries.reduce((sum, [ccy, n]) => sum + toBase(n, ccy, base, rates), 0) : 0;
+    const baseTotal = rows.reduce((sum, e) => sum + (e.amount_eur ?? 0), 0);
     const onlyBase = entries.length === 1 && entries[0][0] === base;
 
     return (

@@ -40,7 +40,7 @@ import {
     replaceReferences,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
-import { fetchLatestRatesEUR, saveRates, getLatestRates } from "./rates";
+import { fetchLatestRatesEUR, saveRates, getLatestRates, loadRatesIndex } from "./rates";
 import { handleGoogleStart, handleGoogleCallback, handleAdminMe, requireAdminSession } from "./auth-google";
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
@@ -264,20 +264,54 @@ async function handleWebReferences(request: Request, env: Env): Promise<Response
 async function handleWebAccounts(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    // SPEC-011: balance computed on-demand. Manual snapshot — отдельное
-    // поле (для drift indication и onboarding hint).
-    const [buckets, manual, effective] = await Promise.all([
+    // SPEC-011: balance computed on-demand. Manual snapshot — отдельное поле.
+    // SPEC-016: EUR-эквивалент (запас → курс НА СЕГОДНЯ, mark-to-market) считаем
+    // на worker через canonical RatesIndex per-quote — клиент не конвертирует.
+    // net/targeted/free зеркалят dashboard KPI «сейчас» (AC7).
+    const today = new Date().toISOString().slice(0, 10);
+    const [buckets, manual, effective, rates, goals] = await Promise.all([
         listBuckets(env),
         latestManualSnapshotPerAccount(env),
         effectiveBalancePerAccount(env),
+        loadRatesIndex(env),
+        listGoals(env, { status: "active" }),
     ]);
-    const enriched = buckets.map((b: any) => ({
-        ...b,
-        manual_snapshot: manual[b.id] ?? null,
-        effective_balance: effective[b.id]?.balance ?? 0,
-        events_count: effective[b.id]?.events_count ?? 0,
-    }));
-    return json({ accounts: enriched }, 200, request, env);
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+
+    let netWorthEur = 0, missingRates = 0;
+    const enriched = buckets.map((b: any) => {
+        const balance = effective[b.id]?.balance ?? 0;
+        const eur = rates.toEurAt(balance, b.currency, today);
+        if (eur == null) missingRates++; else netWorthEur += eur;
+        return {
+            ...b,
+            manual_snapshot: manual[b.id] ?? null,
+            effective_balance: balance,
+            effective_balance_eur: eur == null ? null : r2(eur),
+            events_count: effective[b.id]?.events_count ?? 0,
+        };
+    });
+
+    let targetedEur = 0;
+    for (const g of goals) {
+        if (g.target_currency) {
+            const eur = rates.toEurAt(g.balance, g.target_currency, today);
+            if (eur == null) missingRates++; else targetedEur += eur;
+        } else {
+            targetedEur += g.balance;   // legacy без target_currency — balance в EUR-нейтрале
+        }
+    }
+
+    return json({
+        accounts: enriched,
+        summary: {
+            net_worth_eur: r2(netWorthEur),
+            targeted_eur: r2(targetedEur),
+            free_eur: r2(netWorthEur - targetedEur),
+            missing_rates: missingRates,
+            rates_date: rates.latestDate(),
+        },
+    }, 200, request, env);
 }
 
 async function handleWebSnapshotsList(request: Request, env: Env, url: URL): Promise<Response> {

@@ -1,7 +1,6 @@
-import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle, Info } from "lucide-react";
-import { useAccounts, useGoals, useReferences } from "@/api/queries";
+import { useAccounts, useGoals } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
@@ -13,31 +12,19 @@ import type { Account } from "@/api/types";
  */
 export function AccountsPage() {
     const { data, isLoading } = useAccounts();
-    const { data: refs } = useReferences();
     const { data: goalsData } = useGoals("active");
 
-    const rates = refs?.rates?.quotes ?? {};
-    const ratesDate = refs?.rates?.date;
-
-    const toEur = (amount: number, ccy: string) => {
-        if (ccy === "EUR") return amount;
-        const r = rates[ccy];
-        return r ? amount / r : 0;
-    };
-
+    // SPEC-016: конверсия в EUR — на worker (mark-to-market, курс на сегодня,
+    // per-quote). Клиент рендерит готовые поля, сам ничего не делит на курс.
     const accounts = data?.accounts ?? [];
-    const totalEur = useMemo(
-        () => accounts.reduce((s, a) => s + toEur(a.effective_balance ?? 0, a.currency), 0),
-        [accounts, rates],
-    );
+    const summary = data?.summary;
+    const totalEur = summary?.net_worth_eur ?? 0;
+    const targetedEur = summary?.targeted_eur ?? 0;
+    const freeEur = summary?.free_eur ?? 0;        // может быть отрицательный — это сигнал
+    const ratesDate = summary?.rates_date ?? null;
+    const missingRates = summary?.missing_rates ?? 0;
 
-    const goals = goalsData?.goals ?? [];
-    const targetedEur = useMemo(
-        () => goals.reduce((s, g) => s + (g.target_currency ? toEur(g.balance, g.target_currency) : g.balance), 0),
-        [goals, rates],
-    );
-    const freeEur = totalEur - targetedEur;     // может быть отрицательный — это сигнал
-    const goalCount = goals.length;
+    const goalCount = goalsData?.goals?.length ?? 0;
 
     const withBaseline = accounts.filter(a => !!a.manual_snapshot).length;
     const negativeBuckets = accounts.filter(a => (a.effective_balance ?? 0) < 0);
@@ -96,6 +83,11 @@ export function AccountsPage() {
                             </div>
                         </div>
                     )}
+                    {missingRates > 0 && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400 mt-2 inline-flex items-center gap-1">
+                            <Info className="h-3 w-3" /> {missingRates} без курса
+                        </div>
+                    )}
                 </div>
                 <SummaryCard
                     label="Manual baseline"
@@ -114,7 +106,7 @@ export function AccountsPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {accounts.map(acc => (
-                        <BucketCard key={acc.id} acc={acc} eurEquiv={toEur(acc.effective_balance ?? 0, acc.currency)} />
+                        <BucketCard key={acc.id} acc={acc} eurEquiv={acc.effective_balance_eur ?? 0} />
                     ))}
                 </div>
             )}

@@ -3,6 +3,7 @@
  * для всех expenses. Mini App пишет напрямую через CRUD endpoints.
  */
 import type { Env, ExpensePayload } from "./types";
+import { loadRatesIndex } from "./rates";
 
 export async function isAuthorizedUser(env: Env, telegramId: string): Promise<boolean> {
     const row = await env.DB
@@ -87,7 +88,16 @@ export async function listExpenses(env: Env, options: { limit?: number; from?: s
     sql += " ORDER BY date DESC, created_at DESC LIMIT ?";
     params.push(limit);
     const r = await env.DB.prepare(sql).bind(...params).all();
-    return r.results as any[];
+    const rows = r.results as any[];
+
+    // EUR-эквивалент date-aware (по курсу на дату траты — расход это поток,
+    // ADR-014/SPEC-016). Покрывает Mini App day-total + Admin /expenses + bootstrap.
+    const rates = await loadRatesIndex(env);
+    for (const row of rows) {
+        const eur = rates.toEurAt(row.amount, row.currency, row.date);
+        row.amount_eur = eur == null ? null : Math.round(eur * 100) / 100;
+    }
+    return rows;
 }
 
 export async function bulkInsertExpenses(env: Env, expenses: any[]): Promise<number> {
@@ -178,10 +188,7 @@ export async function getBootstrapData(env: Env) {
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         env.DB.prepare("SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, name").all(),
         env.DB.prepare("SELECT * FROM currencies").all(),
-        env.DB.prepare(
-            "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at, updated_at " +
-            "FROM expenses WHERE deleted_at IS NULL ORDER BY date DESC, created_at DESC LIMIT 20000",
-        ).all(),
+        listExpenses(env, { limit: 20000 }),   // amount_eur date-aware (ADR-014/SPEC-016)
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
     ]);
     const date = ratesMaxDate?.d ?? null;
@@ -196,7 +203,7 @@ export async function getBootstrapData(env: Env) {
         accounts: accounts.results,
         categories: categories.results,
         currencies: currencies.results,
-        expenses: expenses.results,
+        expenses,
         rates: { date, base: "EUR", quotes: rates },
     };
 }

@@ -40,19 +40,16 @@ export function ExpensesPage() {
         if (!expensesData?.expenses || !refs) return [];
         const catById = new Map(refs.categories.map(c => [c.id, c]));
         const accById = new Map(refs.accounts.map(a => [a.id, a]));
-        const rates = refs.rates?.quotes ?? {};
         return expensesData.expenses.map(e => {
             const cat = e.category_id ? catById.get(e.category_id) : undefined;
             const acc = e.account_id ? accById.get(e.account_id) : undefined;
-            const eur = e.currency === "EUR"
-                ? e.amount
-                : rates[e.currency] ? e.amount / rates[e.currency] : 0;
+            // SPEC-016: EUR-эквивалент date-aware (по курсу даты траты) — с worker.
             return {
                 ...e,
                 category_name: cat?.name,
                 category_emoji: cat?.emoji ?? null,
                 account_name: acc?.name,
-                eur_equivalent: eur,
+                eur_equivalent: e.amount_eur ?? 0,
             };
         });
     }, [expensesData, refs]);
