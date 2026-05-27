@@ -110,6 +110,8 @@ interface GoalRow {
 
 export interface GoalWithBalance extends GoalRow {
     balance: number;
+    balance_eur?: number | null;          // SPEC-017: mark-to-market today (для dashboard forecast)
+    target_amount_eur?: number | null;
     balance_missing_rates: number;
     contribution_count: number;
 }
@@ -170,7 +172,15 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
 
     return goals.map(g => {
         const b = balances.get(g.id)!;
-        return { ...g, balance: b.sum, balance_missing_rates: b.missing, contribution_count: b.count };
+        // SPEC-017: EUR-эквивалент баланса/таргета (mark-to-market today, ADR-014) —
+        // чтобы dashboard goals-forecast не конвертировал на клиенте.
+        const balEur = g.target_currency ? rates.toEurAt(b.sum, g.target_currency, today) : b.sum;
+        const tgtEur = g.target_amount != null && g.target_currency ? rates.toEurAt(g.target_amount, g.target_currency, today) : null;
+        return {
+            ...g, balance: b.sum, balance_missing_rates: b.missing, contribution_count: b.count,
+            balance_eur: balEur == null ? null : Math.round(balEur * 100) / 100,
+            target_amount_eur: tgtEur == null ? null : Math.round(tgtEur * 100) / 100,
+        };
     });
 }
 

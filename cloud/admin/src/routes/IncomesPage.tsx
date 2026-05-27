@@ -6,7 +6,6 @@ import {
     useDeleteIncome,
     useIncomeCategories,
     useIncomes,
-    useReferences,
     useUpdateIncome,
 } from "@/api/queries";
 import { GoalSelector } from "@/components/GoalSelector";
@@ -35,7 +34,6 @@ export function IncomesPage() {
     const { data: incData, isLoading } = useIncomes();
     const { data: catData } = useIncomeCategories();
     const { data: accData } = useAccounts();
-    const { data: refs } = useReferences();
 
     const create = useCreateIncome();
     const update = useUpdateIncome();
@@ -48,13 +46,6 @@ export function IncomesPage() {
     const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
     const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
 
-    const rates = refs?.rates?.quotes ?? {};
-    const toEur = (amount: number, ccy: string) => {
-        if (ccy === "EUR") return amount;
-        const r = rates[ccy];
-        return r ? amount / r : 0;
-    };
-
     // KPI windows
     const startOfMonth = firstOfMonth();
     const start365 = minusDays(365);
@@ -62,7 +53,7 @@ export function IncomesPage() {
     const sums = useMemo(() => {
         const acc = { month: 0, year: 0, all: 0, monthCnt: 0, yearCnt: 0, allCnt: 0, missingRates: 0 };
         for (const inc of incomes) {
-            const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
+            const eur = (inc.amount_eur ?? 0);
             const hasRate = inc.amount_eur != null;
             if (!hasRate) acc.missingRates += 1;
             acc.all += eur; acc.allCnt += 1;
@@ -70,7 +61,7 @@ export function IncomesPage() {
             if (inc.date >= startOfMonth) { acc.month += eur; acc.monthCnt += 1; }
         }
         return acc;
-    }, [incomes, rates, startOfMonth, start365]);
+    }, [incomes, startOfMonth, start365]);
 
     // Период (PeriodPicker) управляет фильтрами таблицы и breakdown.
     // KPI остаются independent (этот месяц / 12 мес / всё) — они задают
@@ -85,7 +76,7 @@ export function IncomesPage() {
         const totals = new Map<string, number>();
         for (const inc of incomes) {
             if (!inRange(inc.date)) continue;
-            const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
+            const eur = (inc.amount_eur ?? 0);
             totals.set(inc.category_id, (totals.get(inc.category_id) ?? 0) + eur);
         }
         const total = Array.from(totals.values()).reduce((s, v) => s + v, 0);
@@ -94,7 +85,7 @@ export function IncomesPage() {
             .filter(x => x.eur > 0)
             .sort((a, b) => b.eur - a.eur)
             .map(x => ({ ...x, pct: total > 0 ? (x.eur / total) * 100 : 0 }));
-    }, [incomes, categories, rates, range.from, range.to]);
+    }, [incomes, categories, range.from, range.to]);
 
     // Поиск + фильтр категории
     const [search, setSearch] = useState("");
@@ -220,7 +211,7 @@ export function IncomesPage() {
                             {filtered.map(inc => {
                                 const cat = catById.get(inc.category_id);
                                 const acc = accById.get(inc.account_id);
-                                const eur = (inc.amount_eur ?? toEur(inc.amount, inc.currency_code));
+                                const eur = (inc.amount_eur ?? 0);
                                 return (
                                     <tr key={inc.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
                                         <td className="px-4 py-2.5 num text-muted-foreground whitespace-nowrap">{formatDate(inc.date)}</td>

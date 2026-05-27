@@ -3,7 +3,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { Link } from "@tanstack/react-router";
 import { Wallet, TrendingDown, TrendingUp, PiggyBank, Clock, AlertCircle, Info, RefreshCw } from "lucide-react";
-import { useDashboard, useGoals, useReferences } from "@/api/queries";
+import { useDashboard, useGoals } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, cn } from "@/lib/utils";
 import type { DashboardResponse, NetWorthPoint, DashboardBucket, Goal } from "@/api/types";
@@ -528,11 +528,8 @@ function Segmented({ options, value, onChange }: { options: [string, string][]; 
 
 function GoalsForecastSection({ monthlySavings }: { monthlySavings: number }) {
     const { data: goalsData } = useGoals("active");
-    const { data: refs } = useReferences();
     const goals = goalsData?.goals ?? [];
     if (goals.length === 0) return null;
-    const rates = refs?.rates?.quotes ?? {};
-    const toEur = (amt: number, ccy: string | null) => (!ccy || ccy === "EUR" ? amt : rates[ccy] ? amt / rates[ccy] : null);
     return (
         <section className="space-y-3">
             <SectionTitle>Цели — прогноз достижения</SectionTitle>
@@ -540,19 +537,21 @@ function GoalsForecastSection({ monthlySavings }: { monthlySavings: number }) {
                 Прогноз по текущему темпу свободных сбережений (доход − траты). Линейная оценка, не гарантия.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {goals.map(g => <GoalForecastCard key={g.id} goal={g} monthlySavings={monthlySavings} toEur={toEur} />)}
+                {goals.map(g => <GoalForecastCard key={g.id} goal={g} monthlySavings={monthlySavings} />)}
             </div>
         </section>
     );
 }
 
-function GoalForecastCard({ goal, monthlySavings, toEur }: { goal: Goal; monthlySavings: number; toEur: (a: number, c: string | null) => number | null }) {
+function GoalForecastCard({ goal, monthlySavings }: { goal: Goal; monthlySavings: number }) {
     const ccy = goal.target_currency;
     const hasTarget = goal.target_amount != null && goal.target_amount > 0;
     const reached = hasTarget && goal.balance >= goal.target_amount!;
-    const remaining = hasTarget ? Math.max(0, goal.target_amount! - goal.balance) : 0;
-    const remainingEur = hasTarget ? toEur(remaining, ccy) : null;
-    const months = hasTarget && remainingEur != null && monthlySavings > 0 ? remainingEur / monthlySavings : null;
+    // SPEC-017: остаток до цели в EUR — из worker-полей (mark-to-market today,
+    // ADR-014), без клиентской конверсии по latest-курсу.
+    const remainingEur = hasTarget && goal.target_amount_eur != null && goal.balance_eur != null
+        ? Math.max(0, goal.target_amount_eur - goal.balance_eur) : null;
+    const months = remainingEur != null && monthlySavings > 0 ? remainingEur / monthlySavings : null;
     const etaYm = months != null ? addMonthYm(todayIso().slice(0, 7), Math.ceil(months)) : null;
     const deadlineYm = goal.deadline ? goal.deadline.slice(0, 7) : null;
     const late = !!(etaYm && deadlineYm && etaYm > deadlineYm);

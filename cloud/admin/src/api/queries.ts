@@ -11,6 +11,9 @@ import type {
     GoalUpdatePayload,
     GoalsResponse,
     IncomeCategoriesResponse,
+    ManagedCategoriesResponse,
+    CategoryCreatePayload,
+    CategoryUpdatePayload,
     IncomeCreatePayload,
     IncomeUpdatePayload,
     IncomesResponse,
@@ -356,6 +359,48 @@ export function useDashboard(params?: { from?: string; to?: string }) {
         queryKey: ["dashboard", params?.from ?? null, params?.to ?? null],
         queryFn: () => apiFetch<DashboardResponse>(`/v1/web/dashboard${suffix}`),
         staleTime: 30_000,
+    });
+}
+
+// ── Category management (SPEC-017) ──────────────────────────────────────────
+
+type CategoryKind = "expense" | "income";
+const catPath = (kind: CategoryKind) => kind === "expense" ? "/v1/web/categories" : "/v1/web/income-categories";
+
+export function useManagedCategories(kind: CategoryKind) {
+    return useQuery({
+        queryKey: ["managed-categories", kind],
+        queryFn: () => apiFetch<ManagedCategoriesResponse>(`${catPath(kind)}?include_inactive=1`),
+        staleTime: 30_000,
+    });
+}
+
+function invalidateCategories(qc: ReturnType<typeof useQueryClient>, kind: CategoryKind) {
+    qc.invalidateQueries({ queryKey: ["managed-categories", kind] });
+    if (kind === "expense") {
+        qc.invalidateQueries({ queryKey: ["references"] });   // refs.categories — Expenses/Dashboard
+        qc.invalidateQueries({ queryKey: ["expenses"] });
+    } else {
+        qc.invalidateQueries({ queryKey: ["income-categories"] });
+        qc.invalidateQueries({ queryKey: ["incomes"] });
+    }
+}
+
+export function useCreateCategory(kind: CategoryKind) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: CategoryCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean }>(catPath(kind), { method: "POST", body: JSON.stringify(payload) }),
+        onSuccess: () => invalidateCategories(qc, kind),
+    });
+}
+
+export function useUpdateCategory(kind: CategoryKind) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: CategoryUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`${catPath(kind)}/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+        onSuccess: () => invalidateCategories(qc, kind),
     });
 }
 
