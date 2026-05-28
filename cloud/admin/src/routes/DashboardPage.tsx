@@ -198,18 +198,15 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const t = chartTheme();
     const hasGoals = k.targeted_eur > 0.005;
 
-    // Цвет spark согласован с логикой Δ-бейджа: тренд в «хорошую сторону» — зелёный,
-    // в «плохую» — красный, плоско — серый. goodUp=true: вверх хорошо (Net worth /
-    // Доход / Норма / Runway); goodUp=false: вниз хорошо (Траты).
-    const sparkTone = (values: number[], goodUp: boolean): string => {
-        if (values.length < 2) return t.muted;
-        const first = values.find(v => Number.isFinite(v));
-        const last = [...values].reverse().find(v => Number.isFinite(v));
-        if (first == null || last == null) return t.muted;
-        const diff = last - first;
-        const scale = Math.max(Math.abs(first), Math.abs(last), 1);
-        if (Math.abs(diff) / scale < 0.01) return t.muted;
-        const good = goodUp ? diff > 0 : diff < 0;
+    // Цвет spark = цвет Δ-бейджа: считается по тем же cur/prev (3-мес окно), чтобы KPI
+    // читался как ОДИН сигнал «хорошо/плохо» — нет конфликта между линией и бейджем.
+    // goodUp=true — вверх хорошо (Net worth / Доход / Норма / Runway);
+    // goodUp=false — вниз хорошо (Траты).
+    const sparkTone = (cur: number | null, prev: number | null | undefined, goodUp: boolean): string => {
+        if (cur == null || prev == null || !isFinite(prev) || Math.abs(prev) < 0.005) return t.muted;
+        const rel = (cur - prev) / Math.abs(prev);
+        if (Math.abs(rel) < 0.005) return t.muted;
+        const good = goodUp ? cur > prev : cur < prev;
         return good ? t.positive : t.negative;
     };
 
@@ -237,7 +234,7 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
             <KpiCard icon={Wallet} label="Net worth" value={eur(nw)} negative={nw < 0}
                 delta={<DeltaBadge cur={nw} prev={prevNw} />}
-                spark={<Sparkline values={nwSpark} color={sparkTone(nwSpark, true)} />}
+                spark={<Sparkline values={nwSpark} color={sparkTone(nw, prevNw, true)} />}
                 sub={free ? "свободно, без целевых фондов" : "всё, включая целевые фонды"}>
                 {hasGoals && (
                     <div className="mt-2 space-y-0.5 text-xs">
@@ -251,23 +248,23 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
 
             <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)}
                 delta={<DeltaBadge cur={k.monthly_burn_eur} prev={k.prev_monthly_burn_eur} goodUp={false} />}
-                spark={<Sparkline values={burnSpark} color={sparkTone(burnSpark, false)} />}
+                spark={<Sparkline values={burnSpark} color={sparkTone(k.monthly_burn_eur, k.prev_monthly_burn_eur, false)} />}
                 sub={`все траты, ср. за ${k.burn_window_months} мес`} />
 
             <KpiCard icon={TrendingUp} label="Доход / мес" value={eur(inc)}
                 delta={<DeltaBadge cur={inc} prev={prevInc} />}
-                spark={<Sparkline values={incSpark} color={sparkTone(incSpark, true)} />}
+                spark={<Sparkline values={incSpark} color={sparkTone(inc, prevInc, true)} />}
                 sub={free ? `свободный доход, ср. за ${k.burn_window_months} мес` : `весь доход, ср. за ${k.burn_window_months} мес`} />
 
             <KpiCard icon={PiggyBank} label="Норма сбережений" value={sr == null ? "—" : pct(sr)}
                 positive={(sr ?? 0) > 0} negative={(sr ?? 1) < 0}
                 delta={sr != null && prevSr != null ? <DeltaBadge cur={sr} prev={prevSr} unit="pp" /> : null}
-                spark={<Sparkline values={srSpark} color={sparkTone(srSpark, true)} />}
+                spark={<Sparkline values={srSpark} color={sparkTone(sr, prevSr, true)} />}
                 sub={free ? "из свободного дохода" : "из всего дохода"} />
 
             <KpiCard icon={Clock} label="Runway" value={rw == null ? "∞" : `${rw.toFixed(1)} мес`}
                 delta={rw != null && prevRw != null ? <DeltaBadge cur={rw} prev={prevRw} /> : null}
-                spark={<Sparkline values={nwSpark} color={sparkTone(nwSpark, true)} />}
+                spark={<Sparkline values={nwSpark} color={sparkTone(rw, prevRw, true)} />}
                 sub={free ? "без целевых фондов" : "со всеми фондами"} />
         </div>
     );
