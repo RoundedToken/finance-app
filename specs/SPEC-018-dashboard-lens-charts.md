@@ -1,7 +1,7 @@
 ---
 id: SPEC-018
 title: Линза «Свободные / Со всеми фондами» применяется и к графикам истории
-status: in_progress
+status: done
 owner: stepan
 created: 2026-05-28
 updated: 2026-05-28
@@ -83,3 +83,4 @@ links:
 ## 13. Changelog
 
 - 2026-05-28: создан, сразу в `in_progress` (одобрено устно).
+- 2026-05-28: реализовано, скриншоты подтвердили AC1/AC2 (разные кривые между линзами). Push f85af71 → deploy worker 68a02d89 + admin 35c5c691. `done`.
