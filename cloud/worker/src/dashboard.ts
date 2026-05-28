@@ -238,8 +238,8 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     });
 
     // ── Cashflow + expenses by category (за окно [fromDate, toDate]) ─────────
-    const cash = new Map<string, { income: number; expense: number }>();
-    for (const m of months) cash.set(m, { income: 0, expense: 0 });
+    const cash = new Map<string, { income: number; income_free: number; expense: number }>();
+    for (const m of months) cash.set(m, { income: 0, income_free: 0, expense: 0 });
     const catTotals = new Map<string, number>();
     let periodExpenseTotal = 0;
 
@@ -256,12 +256,13 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
         if (i.date < fromDate || i.date > toDate) continue;
         const v = toEurAt(i.amount, i.currency_code, i.date);
         if (v == null) { missingRates++; continue; }
-        const c = cash.get(monthKey(i.date)); if (c) c.income += v;
+        const c = cash.get(monthKey(i.date));
+        if (c) { c.income += v; if (i.goal_id == null) c.income_free += v; }   // SPEC-018: линза «Свободные» per month
     }
 
     const cashflow_series = months.map(m => {
         const c = cash.get(m)!;
-        return { month: m, income_eur: r2(c.income), expense_eur: r2(c.expense) };
+        return { month: m, income_eur: r2(c.income), income_free_eur: r2(c.income_free), expense_eur: r2(c.expense) };
     });
 
     const catMeta = new Map(catsR.results.map(c => [c.id, c]));

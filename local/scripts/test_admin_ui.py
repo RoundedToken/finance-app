@@ -187,7 +187,9 @@ def _build_dashboard() -> dict:
             "by_currency": {"EUR": round(total * 0.45, 2), "RUB": round(total * 0.30, 2),
                             "RSD": round(total * 0.10, 2), "USDT": round(total * 0.15, 2)},
         })
-        cashflow_series.append({"month": m, "income_eur": round(1300 + (i % 3) * 220, 2),
+        income = round(1300 + (i % 3) * 220, 2)
+        cashflow_series.append({"month": m, "income_eur": income,
+                                "income_free_eur": round(income * 0.8, 2),   # SPEC-018: ~20% дохода помечены целью
                                 "expense_eur": round(900 + (i % 4) * 130, 2)})
     return {
         "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24",

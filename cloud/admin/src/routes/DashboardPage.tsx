@@ -153,15 +153,15 @@ export function DashboardPage() {
                                     {nwMode !== "currency" && (
                                         <FormFilter buckets={data.buckets} forms={forms} setForms={setForms} />
                                     )}
-                                    <NetWorthChart data={data} mode={nwMode} forms={forms}
-                                        project projectRate={data.kpi.monthly_income_free_eur - data.kpi.monthly_burn_eur} />
+                                    <NetWorthChart data={data} mode={nwMode} forms={forms} lens={lens}
+                                        project projectRate={(lens === "free" ? data.kpi.monthly_income_free_eur : data.kpi.monthly_income_eur) - data.kpi.monthly_burn_eur} />
                                 </div>
 
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                     {/* Income vs expenses */}
                                     <div className="card p-5">
                                         <h3 className="font-medium mb-3">Доходы vs Расходы</h3>
-                                        <CashflowChart data={data} />
+                                        <CashflowChart data={data} lens={lens} />
                                     </div>
                                     {/* Expenses by category */}
                                     <div className="card p-5">
@@ -210,10 +210,13 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
 
     // Спарклайны из существующих series. free net worth ≈ total − текущее
     // targeted (форма тренда сохраняется; историч. goal balance не реконструируем).
-    const nwSpark = data.net_worth_series.map(p => (free ? p.total_eur - k.targeted_eur : p.total_eur));
-    const incSpark = data.cashflow_series.map(p => p.income_eur);
+    const nwSpark = data.net_worth_series.map(p => (free ? Math.max(0, p.total_eur - k.targeted_eur) : p.total_eur));
+    const incSpark = data.cashflow_series.map(p => (free ? p.income_free_eur : p.income_eur));
     const burnSpark = data.cashflow_series.map(p => p.expense_eur);
-    const srSpark = data.cashflow_series.map(p => (p.income_eur > 0 ? (p.income_eur - p.expense_eur) / p.income_eur : 0));
+    const srSpark = data.cashflow_series.map(p => {
+        const i = free ? p.income_free_eur : p.income_eur;
+        return i > 0 ? (i - p.expense_eur) / i : 0;
+    });
 
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
@@ -323,8 +326,8 @@ function LensToggle({ lens, setLens }: { lens: Lens; setLens: (l: Lens) => void 
 
 const sumBuckets = (p: NetWorthPoint, ids: string[]) => ids.reduce((s, id) => s + (p.by_bucket[id] ?? 0), 0);
 
-function NetWorthChart({ data, mode, forms, project = false, projectRate = 0 }: {
-    data: DashboardResponse; mode: "total" | "form" | "currency"; forms: Set<string>;
+function NetWorthChart({ data, mode, forms, lens, project = false, projectRate = 0 }: {
+    data: DashboardResponse; mode: "total" | "form" | "currency"; forms: Set<string>; lens: Lens;
     project?: boolean; projectRate?: number;
 }) {
     const t = chartTheme();
@@ -351,7 +354,11 @@ function NetWorthChart({ data, mode, forms, project = false, projectRate = 0 }: 
     let series: EChartsOption["series"];
     if (mode === "total") {
         const ids = selected.map(b => b.id);
-        const hist = data.net_worth_series.map(p => Math.round(sumBuckets(p, ids)));
+        // SPEC-018: линза «Свободные» вычитает текущее targeted_eur (аппроксимация —
+        // историч. goal balance не реконструируем). Применяется только когда форма-
+        // фильтр не активен — иначе сдвиг искажает разбивку по выбранным вёдрам.
+        const shift = lens === "free" && forms.size === 0 ? data.kpi.targeted_eur : 0;
+        const hist = data.net_worth_series.map(p => Math.max(0, Math.round(sumBuckets(p, ids) - shift)));
         series = [{
             name: "Net worth", type: "line", smooth: true, showSymbol: false,
             areaStyle: { opacity: 0.18 }, lineStyle: { width: 2 }, color: t.positive,
@@ -400,8 +407,9 @@ function NetWorthChart({ data, mode, forms, project = false, projectRate = 0 }: 
     return <ReactECharts option={option} style={{ height: 320 }} notMerge />;
 }
 
-function CashflowChart({ data }: { data: DashboardResponse }) {
+function CashflowChart({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const t = chartTheme();
+    const free = lens === "free";
     const months = data.cashflow_series.map(p => p.month);
     if (!data.cashflow_series.some(p => p.income_eur > 0 || p.expense_eur > 0)) return <EmptyChart />;
     const option: EChartsOption = {
@@ -412,7 +420,8 @@ function CashflowChart({ data }: { data: DashboardResponse }) {
         xAxis: { type: "category", data: months, axisLabel: { color: t.muted, formatter: monthLabel }, axisLine: { lineStyle: { color: t.border } }, axisTick: { show: false } },
         yAxis: { type: "value", axisLabel: { color: t.muted, formatter: (v: number) => compact(v) }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: [
-            { name: "Доход", type: "bar", color: t.positive, data: data.cashflow_series.map(p => Math.round(p.income_eur)) },
+            { name: free ? "Свободный доход" : "Доход", type: "bar", color: t.positive,
+              data: data.cashflow_series.map(p => Math.round(free ? p.income_free_eur : p.income_eur)) },
             { name: "Расход", type: "bar", color: t.negative, data: data.cashflow_series.map(p => Math.round(p.expense_eur)) },
         ],
     };
