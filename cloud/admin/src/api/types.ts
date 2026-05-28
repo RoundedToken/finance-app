@@ -375,6 +375,7 @@ export interface NetWorthPoint {
 export interface CashflowPoint {
     month: string;
     income_eur: number;
+    income_free_eur: number;          // SPEC-018: линза «Свободные» — доход без goal-помеченного per month
     expense_eur: number;
 }
 
