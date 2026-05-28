@@ -248,18 +248,18 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
 
             <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)}
                 delta={<DeltaBadge cur={k.monthly_burn_eur} prev={k.prev_monthly_burn_eur} goodUp={false} />}
-                spark={<Sparkline values={burnSpark} color={sparkTone(k.monthly_burn_eur, k.prev_monthly_burn_eur, false)} />}
+                spark={<Sparkline values={burnSpark} color={sparkTone(k.monthly_burn_eur, k.prev_monthly_burn_eur, false)} inProgressTail={1} />}
                 sub={`все траты, ср. за ${k.burn_window_months} полных мес`} />
 
             <KpiCard icon={TrendingUp} label="Доход / мес" value={eur(inc)}
                 delta={<DeltaBadge cur={inc} prev={prevInc} />}
-                spark={<Sparkline values={incSpark} color={sparkTone(inc, prevInc, true)} />}
+                spark={<Sparkline values={incSpark} color={sparkTone(inc, prevInc, true)} inProgressTail={1} />}
                 sub={free ? `свободный доход, ср. за ${k.burn_window_months} полных мес` : `весь доход, ср. за ${k.burn_window_months} полных мес`} />
 
             <KpiCard icon={PiggyBank} label="Норма сбережений" value={sr == null ? "—" : pct(sr)}
                 positive={(sr ?? 0) > 0} negative={(sr ?? 1) < 0}
                 delta={sr != null && prevSr != null ? <DeltaBadge cur={sr} prev={prevSr} unit="pp" /> : null}
-                spark={<Sparkline values={srSpark} color={sparkTone(sr, prevSr, true)} />}
+                spark={<Sparkline values={srSpark} color={sparkTone(sr, prevSr, true)} inProgressTail={1} />}
                 sub={free ? "из свободного дохода" : "из всего дохода"} />
 
             <KpiCard icon={Clock} label="Runway" value={rw == null ? "∞" : `${rw.toFixed(1)} мес`}
@@ -299,21 +299,34 @@ function Row({ label, value, danger }: { label: string; value: string; danger?: 
 }
 
 /** Мини-тренд в KPI-карточке — без осей, из существующих series. */
-function Sparkline({ values, color }: { values: number[]; color: string }) {
+function Sparkline({ values, color, inProgressTail = 0 }: { values: number[]; color: string; inProgressTail?: number }) {
     if (values.length < 2) return null;
     // values без Math.round — дробные KPI (норма) иначе теряют вариацию (0.27 → 0).
-    // Пунктир для «текущий неполный месяц» не используем — он коллидирует с пунктиром
-    // «прогноз» на большом графике Net worth и читается как предсказание.
+    // inProgressTail — сколько последних точек считать «неполными» (для потоков
+    // Траты / Доход / Норма последний месяц = текущий, в Δ-бейдж не входит).
+    // Пунктир здесь означает «происходит сейчас, к этому идём; через месяц
+    // отразится в Δ» — согласовано с пользователем 2026-05-28. На большом
+    // графике Net worth пунктир по-прежнему означает forecast — разные
+    // контексты, не путать.
+    const last = values.length - 1;
+    const cut = Math.max(0, last - inProgressTail);
+    const fullData = values.map((v, i) => (i <= cut ? v : null));
+    const tailData = values.map((v, i) => (i >= cut ? v : null));
     const option: EChartsOption = {
         backgroundColor: "transparent",
         grid: { left: 2, right: 2, top: 3, bottom: 3 },
         xAxis: { type: "category", show: false, data: values.map((_, i) => i) },
         yAxis: { type: "value", show: false, scale: true },
         tooltip: { show: false },
-        series: [{
-            type: "line", data: values, showSymbol: false, smooth: true,
-            lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color },
-        }],
+        series: inProgressTail > 0 ? [
+            { type: "line", data: fullData, showSymbol: false, smooth: true,
+              lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color } },
+            { type: "line", data: tailData, showSymbol: false, smooth: true,
+              lineStyle: { width: 1.5, color, type: "dashed" }, areaStyle: { opacity: 0.04, color } },
+        ] : [
+            { type: "line", data: values, showSymbol: false, smooth: true,
+              lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color } },
+        ],
     };
     return <ReactECharts option={option} style={{ height: 34, width: "100%" }} notMerge />;
 }
