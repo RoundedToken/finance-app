@@ -296,7 +296,10 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
         yAxis: { type: "value", show: false, scale: true },
         tooltip: { show: false },
         series: [{
-            type: "line", data: values.map(v => Math.round(v)), showSymbol: false, smooth: true,
+            // values без округления — для дробных KPI вроде нормы сбережений
+            // (0.27, 0.29 …) Math.round убивал вариацию в 0; для крупных чисел
+            // (net worth/доход) разница в пиксель.
+            type: "line", data: values, showSymbol: false, smooth: true,
             lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color },
         }],
     };
