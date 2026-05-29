@@ -84,7 +84,7 @@ D1-схема **не меняется**. Stage 4 — read-only поверх та
 ```toml
 # cloud/worker/wrangler.toml — env vars (НЕ секреты)
 [vars]
-ADMIN_ALLOWED_EMAILS  = "<owner-email>"
+ADMIN_ALLOWED_EMAILS  = "owner@example.com"
 ADMIN_ALLOWED_ORIGINS = "https://finances-admin.pages.dev"
 ADMIN_DEFAULT_RETURN_URL = "https://finances-admin.pages.dev/"
 GOOGLE_REDIRECT_URI   = "https://finances-worker.<account>.workers.dev/v1/auth/google/callback"
@@ -132,7 +132,7 @@ interface JwtPayload {
 
 ### `GET /v1/web/me`
 - Auth: Bearer JWT.
-- Response 200: `{ "ok": true, "email": "<owner-email>" }`.
+- Response 200: `{ "ok": true, "email": "owner@example.com" }`.
 - Response 401: `{ "error": "unauthorized", "reason": "expired"|"bad signature"|"empty"|... }`.
 - Response 403: `{ "error": "forbidden" }` — JWT валиден, но email больше не в allowlist (revocation-by-config).
 

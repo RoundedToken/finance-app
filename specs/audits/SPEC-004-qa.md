@@ -43,7 +43,7 @@ if (!isAllowedEmail(email, env)) {
     return text("forbidden", 403);
 }
 ```
-Без живого «не-allowlisted» Google-аккаунта в зоне досягаемости тестера, прокручиваю flow по коду + наблюдаю текущее значение `ADMIN_ALLOWED_EMAILS = "<owner-email>"` в `wrangler.toml:32`. Comparison case-insensitive (`isAllowedEmail` делает `toLowerCase()` обеих сторон) — `STEPAN.MIKHALEV.99@gmail.com` тоже прошёл бы.
+Без живого «не-allowlisted» Google-аккаунта в зоне досягаемости тестера, прокручиваю flow по коду + наблюдаю текущее значение `ADMIN_ALLOWED_EMAILS = "owner@example.com"` в `wrangler.toml:32`. Comparison case-insensitive (`isAllowedEmail` делает `toLowerCase()` обеих сторон) — `OWNER@example.com` тоже прошёл бы.
 
 ### AC5 — После входа /v1/web/me возвращает email
 **PASS (по коду).** `handleAdminMe` в `auth-google.ts:107-111` — после `requireAdminSession` возвращает `{ ok: true, email }`. Без живого JWT не проверить напрямую, но 401-ответы на отсутствие/порченный токен подтверждают, что endpoint существует и принимает корректную форму запроса (см. AC9). Sidebar в `AppLayout.tsx:76` рендерит `me?.email` через `useMe()` query.
