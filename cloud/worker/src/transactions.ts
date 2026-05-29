@@ -12,6 +12,7 @@
 
 import type { Env } from "./types";
 import { getEffectiveBalance } from "./snapshots";
+import { roundMoney } from "./ledger";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -75,7 +76,7 @@ async function checkOverdraft(
             }
         }
     }
-    if (available - deductAmount < 0) {
+    if (roundMoney(available - deductAmount) < 0) {   // округление как в createExpense (ADR-015) — без float-дребезга на границе
         return { ok: false, error: `недостаточно средств в ведре (доступно: ${available.toFixed(2)}, нужно: ${deductAmount.toFixed(2)})` };
     }
     return { ok: true };

@@ -1,7 +1,7 @@
 ---
 id: SPEC-014
 title: Mini App → React (переписывание + выбор счёта)
-status: draft
+status: done
 owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
