@@ -3,6 +3,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { Link } from "@tanstack/react-router";
 import { Wallet, TrendingDown, TrendingUp, PiggyBank, Clock, AlertCircle, Info, RefreshCw } from "lucide-react";
+import { ErrorState } from "@/components/ErrorState";
 import { useDashboard, useGoals } from "@/api/queries";
 import { Currency } from "@/components/Currency";
 import { formatAmount, cn } from "@/lib/utils";
@@ -107,7 +108,7 @@ export function DashboardPage() {
             </div>
 
             {isError ? (
-                <ErrorState onRetry={() => refetch()} />
+                <ErrorState onRetry={() => refetch()} label="Не удалось загрузить дашборд" />
             ) : (
                 <>
                     {/* Баннеры */}
@@ -659,16 +660,6 @@ function NoBaselineBanner({ n }: { n: number }) {
                     Net worth может быть неполным. Внеси начальные снимки по выписке — <Link to="/snapshots" className="underline">/snapshots</Link>.
                 </div>
             </div>
-        </div>
-    );
-}
-
-function ErrorState({ onRetry }: { onRetry: () => void }) {
-    return (
-        <div className="card p-8 text-center space-y-3">
-            <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
-            <div className="font-medium">Не удалось загрузить дашборд</div>
-            <button onClick={onRetry} className="btn-primary mx-auto"><RefreshCw className="h-4 w-4" /> Повторить</button>
         </div>
     );
 }
