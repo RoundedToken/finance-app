@@ -5,13 +5,13 @@
 ## TL;DR для агента (актуальная архитектура — см. ADR-011, ADR-012)
 - **D1 (Cloudflare SQLite)** — **единственный источник правды**. Не локальный SQLite.
 - **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` (Mini App), `/v1/admin/*` (Web Admin), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates/*`.
-- **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone + аналитика расходов. **Закрытый scope, дальше не растёт.** Auth: Telegram `initData` HMAC.
-- **Web Admin** (`cloud/admin/`, в работе с stage 4) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`.
+- **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone. **Закрытый scope: только ввод, дальше не растёт** (аналитика расходов — в Web Admin). Auth: Telegram `initData` HMAC.
+- **Web Admin** (`cloud/admin/`) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля **и аналитики расходов**. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`.
 - **MacBook** — только daily backup D1 через `wrangler d1 export`. Может быть выключен неделями.
 - Всё на Cloudflare Pages + Workers + D1 — **бесплатно**, без VPS.
 
 ## Текущий этап
-**Stage 4 — Web Admin Bootstrap.** Mini App в режиме «полировка по запросу». См. `docs/roadmap.md`.
+Единственный источник истины о стадии — `docs/roadmap.md` (не дублируем номер здесь, чтобы не дрейфил). Кратко: базовые потоки закрыты, идёт **Стадия 2 — глубокий рефакторинг перед закрытием MVP** (план: `docs/review-mvp-stage1.md`). Mini App — «полировка по запросу».
 
 ## Структура репозитория
 
@@ -96,7 +96,7 @@ excel/                            # имя корня — historical; см. ADR-
 
 10. **Web Admin allowlist — хардкод-проверка email через `ADMIN_ALLOWED_EMAILS`.** Не добавлять «открытую» регистрацию. CSV-список разрешённых email задаётся в wrangler vars (см. `wrangler.example.toml`). См. ADR-012.
 
-11. **Mini App scope зафиксирован.** Не расширять Mini App новыми разделами (снапшоты/доходы/обмены). Эти фичи живут только в Web Admin. В Mini App — только ввод расходов + аналитика расходов.
+11. **Mini App scope зафиксирован — ТОЛЬКО ввод расходов.** Не расширять Mini App новыми разделами (снапшоты/доходы/обмены). Аналитика расходов тоже живёт **только в Web Admin** (vanilla-аналитика была снята при React-rewrite SPEC-014 и в React не воссоздана — это осознанное решение, не баг; быстрая аналитика на телефоне = план post-MVP).
 
 12. **Не редактировать `data/legacy/Finances.xlsx` напрямую.** Соблюдать правила из `tools/CLAUDE.md` (atomic save, backup, roundtrip-check).
 
