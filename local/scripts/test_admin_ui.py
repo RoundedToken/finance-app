@@ -577,6 +577,25 @@ async def scenario_dashboard(page, base: str) -> None:
     print("  ✓ admin-dashboard-6m.png (период 6 мес, адаптивная проекция)")
 
 
+async def scenario_toast_error(page, base: str) -> None:
+    # Фаза 1.1: принудительный 400 на мутацию (деактивация категории) — проверяем,
+    # что глобальный MutationCache.onError показывает тост с server-message.
+    async def err(route):
+        return await route.fulfill(status=400, content_type="application/json",
+                                   body=json.dumps({"error": "сервер вернул ошибку (демо обработки ошибок)"}))
+    await page.route("**/v1/web/categories/*", err)
+    try:
+        await page.goto(f"{base}/categories", wait_until="networkidle")
+        await page.wait_for_selector("text=Категории", timeout=5000)
+        await page.get_by_role("button", name="Деактивировать").first.click()
+        await page.wait_for_selector("[role=status]", timeout=3000)
+        await page.wait_for_timeout(150)
+        await page.screenshot(path=str(OUT_DIR / "admin-toast-error.png"), full_page=True)
+        print("  ✓ admin-toast-error.png (тост ошибки мутации)")
+    finally:
+        await page.unroute("**/v1/web/categories/*", err)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 async def run(headed: bool) -> int:
     from playwright.async_api import async_playwright
@@ -608,6 +627,7 @@ async def run(headed: bool) -> int:
             await scenario_goal_detail(page, base)
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
             await scenario_categories(page, base)
+            await scenario_toast_error(page, base)
             await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 
