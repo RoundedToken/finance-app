@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import sqlite3
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +24,38 @@ from _common import BACKUPS_DIR, ROOT  # noqa: E402
 
 WRANGLER = "/opt/homebrew/bin/wrangler"
 ICLOUD_DIR = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/finances-backups"
+KEY_TABLES = ("expenses", "snapshots", "incomes", "transactions", "rates", "accounts")
+
+
+def verify_dump(path: Path) -> tuple[bool, str]:
+    """Фаза 1.7: импортирует дамп в temp-sqlite и проверяет, что ключевые таблицы
+    есть и непусты. D1 — единственная живая копия; «успешный» экспорт пустого/
+    обрезанного дампа иначе прошёл бы молча и вскрылся лишь в момент катастрофы."""
+    try:
+        sql = path.read_text()
+    except Exception as e:
+        return False, f"не прочитать дамп: {e}"
+    counts: dict[str, "int | None"] = {}
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            conn = sqlite3.connect(str(Path(td) / "verify.db"))
+            try:
+                conn.executescript(sql)
+                for t in KEY_TABLES:
+                    try:
+                        counts[t] = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                    except sqlite3.OperationalError:
+                        counts[t] = None
+            finally:
+                conn.close()
+    except Exception as e:
+        return False, f"импорт дампа упал: {e}"
+    missing = [t for t, c in counts.items() if c is None]
+    if missing:
+        return False, f"таблицы отсутствуют: {missing} (counts={counts})"
+    if (counts.get("expenses") or 0) == 0 or (counts.get("rates") or 0) == 0:
+        return False, f"подозрительно пустой дамп: {counts}"
+    return True, f"ok {counts}"
 
 
 def main() -> int:
@@ -42,6 +76,18 @@ def main() -> int:
         sys.stderr.write(r.stdout + "\n" + r.stderr + "\n")
         return r.returncode
     print(f"✓ wrote {out} ({out.stat().st_size:,} bytes)")
+
+    # Фаза 1.7: проверка восстановимости ДО распространения в iCloud.
+    ok, detail = verify_dump(out)
+    if not ok:
+        sys.stderr.write(f"BACKUP VERIFY FAILED: {detail}\n")
+        return 2
+    print(f"✓ verify: {detail}")
+
+    # size-drop sanity: предупреждаем, если дамп резко меньше предыдущего.
+    prev = [b for b in sorted(BACKUPS_DIR.glob(f"d1-{args.db_name}.*.sql")) if b != out]
+    if prev and out.stat().st_size < prev[-1].stat().st_size * 0.5:
+        sys.stderr.write(f"WARN: дамп вдвое меньше предыдущего ({out.stat().st_size:,} < {prev[-1].stat().st_size:,}) — проверь экспорт\n")
 
     # iCloud копия — если папка существует.
     if ICLOUD_DIR.exists():
