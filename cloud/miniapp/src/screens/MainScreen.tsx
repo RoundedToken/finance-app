@@ -30,7 +30,7 @@ export function MainScreen() {
             { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null, created_at: new Date().toISOString() },
             {
                 onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
-                onError: () => { haptic("error"); toast("Ошибка сохранения", "err"); },
+                onError: (e) => { haptic("error"); toast(e instanceof Error ? e.message : "Ошибка сохранения", "err"); },
             },
         );
     };

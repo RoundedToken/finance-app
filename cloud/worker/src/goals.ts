@@ -12,6 +12,7 @@
 
 import type { Env } from "./types";
 import { loadRatesIndex } from "./rates";
+import { roundMoney } from "./ledger";
 
 export type GoalStatus = "active" | "achieved" | "archived";
 
@@ -52,9 +53,11 @@ async function currencyExists(env: Env, code: string): Promise<boolean> {
     return r !== null;
 }
 
-async function accountExists(env: Env, id: string): Promise<boolean> {
-    const r = await env.DB.prepare("SELECT 1 FROM accounts WHERE id = ? AND deleted_at IS NULL").bind(id).first();
-    return r !== null;
+/** Валюта ведра — взнос всегда в native-валюте ведра (G11), деривится отсюда
+ *  (также подтверждает существование account). */
+async function accountCurrency(env: Env, id: string): Promise<string | null> {
+    const r = await env.DB.prepare("SELECT currency FROM accounts WHERE id = ? AND deleted_at IS NULL").bind(id).first<{ currency: string }>();
+    return r?.currency ?? null;
 }
 
 async function goalExists(env: Env, id: string): Promise<boolean> {
@@ -177,7 +180,7 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
         const balEur = g.target_currency ? rates.toEurAt(b.sum, g.target_currency, today) : b.sum;
         const tgtEur = g.target_amount != null && g.target_currency ? rates.toEurAt(g.target_amount, g.target_currency, today) : null;
         return {
-            ...g, balance: b.sum, balance_missing_rates: b.missing, contribution_count: b.count,
+            ...g, balance: roundMoney(b.sum), balance_missing_rates: b.missing, contribution_count: b.count,
             balance_eur: balEur == null ? null : Math.round(balEur * 100) / 100,
             target_amount_eur: tgtEur == null ? null : Math.round(tgtEur * 100) / 100,
         };
@@ -228,7 +231,7 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
     );
 
     return {
-        goal: { ...goalRow, balance: sum, balance_missing_rates: missing, contribution_count: incomes.results.length + manual.results.length },
+        goal: { ...goalRow, balance: roundMoney(sum), balance_missing_rates: missing, contribution_count: incomes.results.length + manual.results.length },
         contributions: allRows,
     };
 }
@@ -339,8 +342,15 @@ export async function deleteGoal(env: Env, id: string): Promise<{ deleted: boole
 export async function createContribution(env: Env, payload: ContributionPayload): Promise<Result<{ id: string; inserted: boolean }>> {
     if (!payload.goal_id || !(await goalExists(env, payload.goal_id))) return { ok: false, error: "unknown goal_id" };
     if (typeof payload.amount !== "number" || payload.amount <= 0) return { ok: false, error: "amount must be positive" };
-    if (!payload.currency_code || !(await currencyExists(env, payload.currency_code))) return { ok: false, error: "unknown currency_code" };
-    if (payload.account_id && !(await accountExists(env, payload.account_id))) return { ok: false, error: "unknown account_id" };
+    // L4/G11: account_id обязателен — взнос лежит в реальном ведре, иначе targeted
+    // раздувается без покрытия в net (инвариант free = net − targeted).
+    if (!payload.account_id) return { ok: false, error: "account_id обязателен: взнос привязывается к ведру" };
+    // currency_code деривится ИЗ ведра (как incomes): взнос прибавляется к балансу
+    // ведра в native-валюте (SUM amount), поэтому его валюта = валюта ведра — иначе
+    // net (native) и targeted (convertAt) разъезжаются (G11). Клиентский currency_code
+    // игнорируется.
+    const currencyCode = await accountCurrency(env, payload.account_id);
+    if (!currencyCode) return { ok: false, error: "unknown account_id" };
     if (!payload.date || !ISO_DATE.test(payload.date)) return { ok: false, error: "date must be YYYY-MM-DD" };
 
     const id = payload.id ?? crypto.randomUUID();
@@ -353,8 +363,8 @@ export async function createContribution(env: Env, payload: ContributionPayload)
         payload.goal_id,
         payload.date,
         payload.amount,
-        payload.currency_code,
-        payload.account_id ?? null,
+        currencyCode,
+        payload.account_id,
         payload.note ?? null,
     ).run();
     return { ok: true, id, inserted: (r.meta.changes ?? 0) > 0 };
@@ -364,11 +374,13 @@ export async function updateContribution(env: Env, id: string, patch: Partial<Co
     if (patch.amount !== undefined && (typeof patch.amount !== "number" || patch.amount <= 0)) {
         return { ok: false, error: "amount must be positive" };
     }
-    if (patch.currency_code !== undefined && !(await currencyExists(env, patch.currency_code))) {
-        return { ok: false, error: "unknown currency_code" };
-    }
-    if (patch.account_id !== undefined && patch.account_id !== null && !(await accountExists(env, patch.account_id))) {
-        return { ok: false, error: "unknown account_id" };
+    // L4/G11: account_id обязателен; currency_code деривится из ведра (нельзя
+    // прислать рассинхрон валюты взноса и ведра — иначе net/targeted разъезжаются).
+    let newCurrency: string | null = null;
+    if (patch.account_id !== undefined) {
+        if (patch.account_id === null) return { ok: false, error: "account_id обязателен: взнос привязан к ведру" };
+        newCurrency = await accountCurrency(env, patch.account_id);
+        if (!newCurrency) return { ok: false, error: "unknown account_id" };
     }
     if (patch.goal_id !== undefined && !(await goalExists(env, patch.goal_id))) {
         return { ok: false, error: "unknown goal_id" };
@@ -391,7 +403,7 @@ export async function updateContribution(env: Env, id: string, patch: Partial<Co
         patch.goal_id ?? null,
         patch.date ?? null,
         patch.amount ?? null,
-        patch.currency_code ?? null,
+        newCurrency,
         ...(hasAccount ? [patch.account_id ?? null] : []),
         ...(hasNote    ? [patch.note       ?? null] : []),
         id,

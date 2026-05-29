@@ -57,13 +57,22 @@ async function checkOverdraft(
     const eff = await getEffectiveBalance(env, bucketId, asOfDate);
     let available = eff.balance;
     if (excludeTxId) {
+        // Откатываем эффект старой версии tx из баланса (включая fee-leg, который
+        // getEffectiveBalance уже вычел из ведра-плательщика — L2/G10).
         const old = await env.DB.prepare(
-            `SELECT from_account_id, to_account_id, from_amount, to_amount
+            `SELECT from_account_id, to_account_id, from_amount, to_amount,
+                    from_currency, to_currency, fee_amount, fee_currency
              FROM transactions WHERE id = ? AND deleted_at IS NULL`,
-        ).bind(excludeTxId).first<{ from_account_id: string; to_account_id: string; from_amount: number; to_amount: number }>();
+        ).bind(excludeTxId).first<{ from_account_id: string; to_account_id: string; from_amount: number; to_amount: number; from_currency: string; to_currency: string; fee_amount: number | null; fee_currency: string | null }>();
         if (old) {
-            if (old.from_account_id === bucketId) available += old.from_amount;
-            if (old.to_account_id === bucketId)   available -= old.to_amount;
+            if (old.from_account_id === bucketId) {
+                available += old.from_amount;
+                if (old.fee_amount && old.fee_currency === old.from_currency) available += old.fee_amount;
+            }
+            if (old.to_account_id === bucketId) {
+                available -= old.to_amount;
+                if (old.fee_amount && old.fee_currency === old.to_currency && old.fee_currency !== old.from_currency) available += old.fee_amount;
+            }
         }
     }
     if (available - deductAmount < 0) {
@@ -180,7 +189,10 @@ function buildTransactionInsert(
 export async function createTransaction(env: Env, payload: TransactionPayload): Promise<Result<{ id: string; inserted: boolean }>> {
     const v = await validateStep(env, payload);
     if (!v.ok) return v;
-    const od = await checkOverdraft(env, payload.from_account_id, payload.from_amount, payload.date);
+    // fee, оплачиваемая из from-ведра (валюта совпадает), тоже уменьшает баланс (L2) —
+    // учитываем в overdraft, иначе ведро уйдёт в минус на величину fee.
+    const feeFrom = (payload.fee_amount && payload.fee_currency === v.from.currency) ? payload.fee_amount : 0;
+    const od = await checkOverdraft(env, payload.from_account_id, payload.from_amount + feeFrom, payload.date);
     if (!od.ok) return od;
     const { id, stmt } = buildTransactionInsert(env, payload, v.from, v.to);
     const r = await stmt.run();
@@ -260,8 +272,10 @@ export async function updateTransaction(
         id,
     );
 
-    if (wantsStructural) {
-        const od = await checkOverdraft(env, merged.from_account_id, merged.from_amount, merged.date, id);
+    if (wantsStructural || hasFeeAmt) {
+        // overdraft при изменении сумм ИЛИ fee (fee тоже уменьшает баланс — L2).
+        const feeFrom = (merged.fee_amount && merged.fee_currency === from.currency) ? merged.fee_amount : 0;
+        const od = await checkOverdraft(env, merged.from_account_id, merged.from_amount + feeFrom, merged.date, id);
         if (!od.ok) return od;
     }
     const r = await updateStmt.run();

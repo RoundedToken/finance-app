@@ -228,7 +228,8 @@ async function handleCreateExpense(request: Request, env: Env): Promise<Response
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
     const r = await createExpense(env, auth.userId!, body as any);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, inserted: r.inserted }, 200, request, env);
 }
 
 async function handleUpdateExpense(request: Request, env: Env, id: string): Promise<Response> {
@@ -287,7 +288,7 @@ async function handleWebAccounts(request: Request, env: Env): Promise<Response> 
     const [buckets, manual, effective, rates, goals] = await Promise.all([
         listBuckets(env),
         latestManualSnapshotPerAccount(env),
-        effectiveBalancePerAccount(env),
+        effectiveBalancePerAccount(env, today),   // asOf=today → зеркалит dashboard KPI (AC7), без будущих событий
         loadRatesIndex(env),
         listGoals(env, { status: "active" }),
     ]);

@@ -4,6 +4,8 @@
  */
 import type { Env, ExpensePayload } from "./types";
 import { loadRatesIndex } from "./rates";
+import { getEffectiveBalance } from "./snapshots";
+import { roundMoney } from "./ledger";
 
 export async function isAuthorizedUser(env: Env, telegramId: string): Promise<boolean> {
     const row = await env.DB
@@ -15,7 +17,16 @@ export async function isAuthorizedUser(env: Env, telegramId: string): Promise<bo
 
 // ─── Expenses CRUD ──────────────────────────────────────────────────────────
 
-export async function createExpense(env: Env, userId: string, e: ExpensePayload): Promise<{ inserted: boolean }> {
+export async function createExpense(env: Env, userId: string, e: ExpensePayload): Promise<{ ok: true; inserted: boolean } | { ok: false; error: string }> {
+    // Overdraft (L1, SPEC-011 §G6): не даём ведру уйти в минус — но ТОЛЬКО если у
+    // ведра есть manual baseline (без него нет ground truth, чтобы судить о минусе;
+    // первичный flow Mini App без снапшота не ломаем). asOf = дата траты.
+    if (e.account_id && e.date && typeof e.amount === "number" && e.amount > 0) {
+        const eff = await getEffectiveBalance(env, e.account_id, e.date);
+        if (eff.manual_baseline && roundMoney(eff.balance - e.amount) < 0) {
+            return { ok: false, error: `недостаточно средств в ведре (доступно: ${eff.balance.toFixed(2)}, нужно: ${e.amount.toFixed(2)})` };
+        }
+    }
     const r = await env.DB.prepare(
         `INSERT OR IGNORE INTO expenses
            (id, date, account_id, amount, currency, category_id, note, source, source_record_id, user_id, created_at, updated_at)
@@ -35,7 +46,7 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
             e.created_at ?? new Date().toISOString(),   // fallback: created_at NOT NULL, клиент мог не прислать
         )
         .run();
-    return { inserted: (r.meta.changes ?? 0) > 0 };
+    return { ok: true, inserted: (r.meta.changes ?? 0) > 0 };
 }
 
 export async function updateExpense(env: Env, id: string, userId: string, patch: any): Promise<{ updated: boolean }> {
