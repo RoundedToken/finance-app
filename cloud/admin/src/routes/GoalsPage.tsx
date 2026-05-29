@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Plus, Target, AlertCircle, Calendar } from "lucide-react";
 import { useCreateGoal, useGoals, useReferences, useUpdateGoal } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
@@ -23,7 +24,7 @@ export const EMOJI_SUGGESTIONS = ["🎯", "🏠", "✈️", "🛡️", "💍", "
 
 export function GoalsPage() {
     const [status, setStatus] = useState<GoalStatus>("active");
-    const { data, isLoading } = useGoals(status);
+    const { data, isLoading, isError, refetch } = useGoals(status);
     const goals = data?.goals ?? [];
     const [modalOpen, setModalOpen] = useState(false);
 
@@ -63,7 +64,9 @@ export function GoalsPage() {
                 })}
             </div>
 
-            {isLoading ? (
+            {isError ? (
+                <ErrorState onRetry={() => refetch()} label="Не удалось загрузить цели" />
+            ) : isLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {Array.from({ length: 3 }).map((_, i) => (
                         <div key={i} className="card p-6 h-48 animate-pulse bg-muted/40"></div>

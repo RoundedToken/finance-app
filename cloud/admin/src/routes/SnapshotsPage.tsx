@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Banknote, Coins, Search } from "lucide-react";
 import { useAccounts, useCreateSnapshot, useDeleteSnapshot, useSnapshots, useUpdateSnapshot } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
@@ -10,7 +11,7 @@ import type { Account, Snapshot } from "@/api/types";
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export function SnapshotsPage() {
-    const { data: snapData, isLoading } = useSnapshots();
+    const { data: snapData, isLoading, isError, refetch } = useSnapshots();
     const { data: accData } = useAccounts();
     const create = useCreateSnapshot();
     const update = useUpdateSnapshot();
@@ -100,7 +101,10 @@ export function SnapshotsPage() {
                             {isLoading && (
                                 <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
                             )}
-                            {!isLoading && filtered.length === 0 && (
+                            {isError && (
+                                <tr><td colSpan={5} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить снапшоты" /></td></tr>
+                            )}
+                            {!isLoading && !isError && filtered.length === 0 && (
                                 <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
                                     Снапшотов пока нет. Заведи первый — кнопкой выше.
                                 </td></tr>

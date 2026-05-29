@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle, Info } from "lucide-react";
 import { useAccounts, useGoals } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
@@ -11,7 +12,7 @@ import type { Account } from "@/api/types";
  * между manual baseline и computed (но только если manual есть).
  */
 export function AccountsPage() {
-    const { data, isLoading } = useAccounts();
+    const { data, isLoading, isError, refetch } = useAccounts();
     const { data: goalsData } = useGoals("active");
 
     // SPEC-016: конверсия в EUR — на worker (mark-to-market, курс на сегодня,
@@ -97,7 +98,9 @@ export function AccountsPage() {
                 <SummaryCard label="Курсы от даты" value={ratesDate ?? "—"} sub="Источник: GOOGLEFINANCE" />
             </div>
 
-            {isLoading ? (
+            {isError ? (
+                <ErrorState onRetry={() => refetch()} label="Не удалось загрузить счета" />
+            ) : isLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="card p-6 h-36 animate-pulse bg-muted/40"></div>

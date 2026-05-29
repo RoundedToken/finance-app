@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useExpenses, useReferences } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
@@ -26,7 +27,7 @@ interface Row extends Expense {
 const columnHelper = createColumnHelper<Row>();
 
 export function ExpensesPage() {
-    const { data: expensesData, isLoading } = useExpenses();
+    const { data: expensesData, isLoading, isError, refetch } = useExpenses();
     const { data: refs } = useReferences();
 
     const [sorting, setSorting] = useState<SortingState>([{ id: "date", desc: true }]);
@@ -234,7 +235,10 @@ export function ExpensesPage() {
                             {isLoading && (
                                 <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
                             )}
-                            {!isLoading && table.getRowModel().rows.length === 0 && (
+                            {isError && (
+                                <tr><td colSpan={6} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить расходы" /></td></tr>
+                            )}
+                            {!isLoading && !isError && table.getRowModel().rows.length === 0 && (
                                 <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Нет записей под текущие фильтры.</td></tr>
                             )}
                             {table.getRowModel().rows.map(r => (

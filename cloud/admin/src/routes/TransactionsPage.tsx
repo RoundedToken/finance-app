@@ -7,6 +7,7 @@ import {
     useTransactions,
     useUpdateTransaction,
 } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
@@ -17,7 +18,7 @@ import type { Account, Transaction, TransactionCreatePayload, TransactionType, T
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export function TransactionsPage() {
-    const { data, isLoading } = useTransactions();
+    const { data, isLoading, isError, refetch } = useTransactions();
     const { data: accData } = useAccounts();
 
     const accounts = accData?.accounts ?? [];
@@ -117,7 +118,10 @@ export function TransactionsPage() {
                             {isLoading && (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
                             )}
-                            {!isLoading && filtered.length === 0 && txs.length === 0 && (
+                            {isError && (
+                                <tr><td colSpan={7} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить обмены" /></td></tr>
+                            )}
+                            {!isLoading && !isError && filtered.length === 0 && txs.length === 0 && (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                                     Обменов пока нет. Создай первый — кнопками выше.
                                 </td></tr>

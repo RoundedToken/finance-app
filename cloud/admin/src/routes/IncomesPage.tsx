@@ -8,6 +8,7 @@ import {
     useIncomes,
     useUpdateIncome,
 } from "@/api/queries";
+import { ErrorState } from "@/components/ErrorState";
 import { GoalSelector } from "@/components/GoalSelector";
 import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
@@ -31,7 +32,7 @@ function minusDays(days: number): string {
 }
 
 export function IncomesPage() {
-    const { data: incData, isLoading } = useIncomes();
+    const { data: incData, isLoading, isError, refetch } = useIncomes();
     // managed = все категории (вкл. неактивные) — чтобы подпись в истории/breakdown
     // сохранялась после деактивации (SPEC-017 AC4). Выбор фильтрует is_active.
     const { data: catData } = useManagedCategories("income");
@@ -200,7 +201,10 @@ export function IncomesPage() {
                             {isLoading && (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
                             )}
-                            {!isLoading && filtered.length === 0 && incomes.length === 0 && (
+                            {isError && (
+                                <tr><td colSpan={7} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить доходы" /></td></tr>
+                            )}
+                            {!isLoading && !isError && filtered.length === 0 && incomes.length === 0 && (
                                 <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                                     Доходов пока нет. Заведи первый — кнопкой выше.
                                 </td></tr>

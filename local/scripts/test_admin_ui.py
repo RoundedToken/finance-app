@@ -596,6 +596,23 @@ async def scenario_toast_error(page, base: str) -> None:
         await page.unroute("**/v1/web/categories/*", err)
 
 
+async def scenario_list_error(page, base: str) -> None:
+    # Фаза 1.2: список при 5xx показывает ErrorState с «Повторить», а не маскирует
+    # ошибку под empty-state «данных пока нет».
+    async def err(route):
+        return await route.fulfill(status=500, content_type="application/json",
+                                   body=json.dumps({"error": "internal"}))
+    await page.route("**/v1/web/snapshots**", err)
+    try:
+        await page.goto(f"{base}/snapshots", wait_until="networkidle")
+        await page.wait_for_selector("text=Не удалось загрузить", timeout=6000)
+        await page.wait_for_timeout(150)
+        await page.screenshot(path=str(OUT_DIR / "admin-list-error.png"), full_page=True)
+        print("  ✓ admin-list-error.png (ErrorState на 5xx)")
+    finally:
+        await page.unroute("**/v1/web/snapshots**", err)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 async def run(headed: bool) -> int:
     from playwright.async_api import async_playwright
@@ -628,6 +645,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
             await scenario_categories(page, base)
             await scenario_toast_error(page, base)
+            await scenario_list_error(page, base)
             await scenario_short_viewport_modal(page, base)
             await scenario_sidebar_navigation(page, base)
 
