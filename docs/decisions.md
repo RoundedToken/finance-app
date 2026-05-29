@@ -294,7 +294,7 @@
 - Dinero.js v2 для денежной арифметики, date-fns для дат, Zod для валидации.
 - Deploy: отдельный Cloudflare Pages project (`finances-admin`), тот же Worker API.
 
-> **Фактический стек (уточнение Стадии 2).** Реализовано: React 19 + Vite + TanStack Router/Query/Table (**без** Form) + Tailwind + class-variance-authority/clsx/tailwind-merge (UI hand-rolled, **без** Radix/shadcn) + ECharts (**без** Tremor). Деньги — `REAL`/number с округлением на отображении (ADR-015): Dinero.js был установлен, но не использовался → удалён. Zod внедряется как серверная валидация payload + shared-контракт. date-fns не используется (даты — нативные ISO-строки).
+> **Фактический стек (уточнение Стадии 2).** Реализовано: React 19 + Vite + TanStack Router/Query/Table (**без** Form) + Tailwind + class-variance-authority/clsx/tailwind-merge (UI hand-rolled, **без** Radix/shadcn) + ECharts (**без** Tremor). Деньги — `REAL`/number с округлением на отображении (ADR-015): Dinero.js был установлен, но не использовался → удалён. Zod внедрён как серверная валидация payload на worker (SPEC-019); shared-контракт с admin — post-MVP. date-fns не используется (даты — нативные ISO-строки).
 
 **Auth:** Google OAuth 2.0, allowlist email через `ADMIN_ALLOWED_EMAILS` wrangler var (CSV-список).
 - Worker: `/v1/auth/google/start` → редирект на Google, `/v1/auth/google/callback` → exchange code → проверка email → выдача JWT HS256.

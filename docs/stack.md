@@ -17,7 +17,7 @@ D1 (единственный источник правды) ← один Cloudfl
 
 ## Cloud Worker (`cloud/worker/`)
 
-`package.json`: `wrangler ^3`, `@cloudflare/workers-types`, `typescript ^5`. **Без фреймворков** — vanilla `fetch` handler + ручной роутинг (никакого hono/express/orm). Серверная валидация payload — ручная (typeof/required-guards); Zod внедряется в Стадии 2 как валидация + shared-контракт с Admin.
+`package.json`: `wrangler ^3`, `@cloudflare/workers-types`, `typescript ^5`. **Без фреймворков** — vanilla `fetch` handler + ручной роутинг (никакого hono/express/orm). Серверная валидация payload — **Zod** (`schemas.ts` + `readBody`, SPEC-019): shape-валидация на мутирующих endpoint'ах, бизнес-правила (FK/кросс-поля) — в домене. Shared-контракт с Admin (admin импортирует схемы) — post-MVP.
 
 ## Mini App (`cloud/miniapp/`) — SPEC-014
 
