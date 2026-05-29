@@ -197,7 +197,7 @@ def _build_dashboard() -> dict:
                                 "income_free_eur": round(income * 0.9, 2),
                                 "expense_eur": round(2200 + (i % 4) * 180, 2)})
     return {
-        "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24",
+        "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24", "data_trust_from": "2024-01-15",
         "window": {"from": "2025-06-30", "to": "2026-05-31", "months": len(months)},
         "kpi": {
             "net_worth_eur": 10259.19, "free_net_worth_eur": 7834.38, "targeted_eur": 2424.81,

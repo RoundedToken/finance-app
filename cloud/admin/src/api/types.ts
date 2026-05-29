@@ -402,6 +402,7 @@ export interface DashboardResponse {
     as_of: string;
     base: "EUR";
     rates_date: string | null;
+    data_trust_from: string | null;
     window: { from: string; to: string; months: number };
     kpi: DashboardKpi;
     net_worth_series: NetWorthPoint[];
