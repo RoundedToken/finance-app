@@ -572,6 +572,7 @@ function GoalsForecastSection({ monthlySavings }: { monthlySavings: number }) {
             <SectionTitle>Цели — прогноз достижения</SectionTitle>
             <p className="text-xs text-muted-foreground -mt-1">
                 Прогноз по текущему темпу свободных сбережений (доход − траты). Линейная оценка, не гарантия.
+                {goals.length > 1 && " ETA каждой цели — при условии, что весь свободный поток идёт в неё; несколько активных целей делят один поток, реальные сроки дальше."}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {goals.map(g => <GoalForecastCard key={g.id} goal={g} monthlySavings={monthlySavings} />)}

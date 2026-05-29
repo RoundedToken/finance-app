@@ -189,6 +189,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     // «свободные деньги»). missing считаем в net worth/period (overlap), не здесь.
     const curMonth = monthKey(today);
     const WIN = 3;
+    const earliestMonth = monthKey(earliest);
     const windowSums = (shift: number) => {
         const start = addMonths(curMonth, -(WIN + shift)) + "-01";
         const end = endOfMonth(addMonths(curMonth, -(1 + shift)));
@@ -205,7 +206,13 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
             income += v;
             if (i.goal_id == null) incomeFree += v;   // свободный доход — не отложенный в цель
         }
-        return { burn: burn / WIN, income: income / WIN, incomeFree: incomeFree / WIN };
+        // M2: знаменатель = число месяцев окна, попадающих в историю данных
+        // (>= первого месяца с данными). Деление на фикс. WIN при неполной истории
+        // занижало бы средние (и завышало runway) в первые недели ведения.
+        let monthsCovered = 0;
+        for (let i = 1; i <= WIN; i++) if (addMonths(curMonth, -(i + shift)) >= earliestMonth) monthsCovered++;
+        const denom = Math.max(1, monthsCovered);
+        return { burn: burn / denom, income: income / denom, incomeFree: incomeFree / denom, months: denom };
     };
     const cur = windowSums(0);
     const prev = windowSums(WIN);
@@ -218,8 +225,12 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     const runwayTotal = monthlyBurn > 0 ? round(Math.max(0, netNow) / monthlyBurn, 1) : null;
 
     // Net worth «WIN месяцев назад» (для Δ): тот же in-memory balanceAt на конец
-    // месяца WIN назад. prev_free ≈ prevNet − targeted (текущее targeted —
-    // историч. goal balance не реконструируем; для Δ-сигнала достаточно).
+    // месяца WIN назад, по курсу НА ТУ дату. prev_free ≈ prevNet − targeted (текущее
+    // targeted — историч. goal balance не реконструируем; для Δ-сигнала достаточно).
+    // M1 (осознанно): Δ = netNow − prevNet включает валютную переоценку (FX) — это
+    // реальное изменение капитала в EUR, не «чистые сбережения». При мультивалютном
+    // портфеле часть Δ — движение курса, а не отложенные деньги. Формулу не меняем
+    // (иначе Δ разойдётся с net-worth-series на графике); семантику фиксируем здесь.
     const prevAsOf = endOfMonth(addMonths(curMonth, -WIN));
     let prevNet = 0;
     for (const b of buckets) {
@@ -301,7 +312,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
             savings_rate: savingsRate,
             runway_months: runway,
             runway_months_total: runwayTotal,
-            burn_window_months: WIN,
+            burn_window_months: cur.months,   // M2: фактически покрытых месяцев (≤ WIN при неполной истории)
             buckets_without_baseline: bucketsWithoutBaseline,
             missing_rates: missingRates,
             // SPEC-015: линза «свободные деньги» + Δ к предыдущему окну
