@@ -188,8 +188,10 @@ export default {
 
             return json({ error: "not found" }, 404, request, env);
         } catch (err) {
+            // S1: детали ошибки (SQL-фрагменты, пути) — только в лог, не в тело
+            // публичного ответа. Зеркалит обработку в handleWebDashboard.
             console.error("unhandled", err);
-            return json({ error: String(err) }, 500, request, env);
+            return json({ error: "internal" }, 500, request, env);
         }
     },
 };
