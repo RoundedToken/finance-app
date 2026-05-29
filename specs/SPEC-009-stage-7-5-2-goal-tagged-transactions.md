@@ -1,7 +1,8 @@
 ---
 id: SPEC-009
 title: Stage 7.5.2 — Goal-tagged transactions + saga workflow
-status: done
+status: cancelled
+superseded_by: SPEC-012
 owner: stepan
 created: 2026-05-25
 updated: 2026-05-25

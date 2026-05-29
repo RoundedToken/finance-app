@@ -4,6 +4,8 @@
 
 ## ADR-001: SQLite как локальный источник правды (а не сам .xlsx)
 
+> ⚠️ **SUPERSEDED by ADR-011.** Локальный SQLite больше **не** источник правды — им стал Cloudflare D1. Запись сохранена для истории решения.
+
 **Контекст.** Изначально пользователь вёл финансы в одном `.xlsx`. С добавлением Telegram-канала ввода `.xlsx` перестал подходить: не транзакционный, не индексируемый, плохо переживает concurrent access, файл может быть открыт в Excel когда бот пишет.
 
 **Варианты.**
@@ -89,6 +91,8 @@
 
 ## ADR-004: D1 — транзитный буфер, не архив
 
+> ⚠️ **SUPERSEDED by ADR-011.** D1 — **не** транзитный outbox, а единственный источник правды. Никакого 7-дневного cleanup, `confirmed_at` или `expenses_outbox` в системе нет. **НЕ реализовывать удаление по окну** — это уничтожит единственную копию данных. Запись сохранена для истории.
+
 **Контекст.** D1 в Cloudflare бесплатен до 5 GB. Хочется ли хранить всю историю в облаке для удобства бэкапа?
 
 **Варианты.**
@@ -173,6 +177,27 @@
 **Следствия.**
 - На MacBook два рантайма: Python + Node (для wrangler).
 - Worker на TS, локально на Python — нет code sharing, но интерфейс REST.
+
+## ADR-015: Денежные суммы — REAL (float) с округлением на отображении, без integer-cents
+
+**Контекст.** Все денежные поля в D1 — `REAL` (SQLite не имеет DECIMAL). Это классический анти-паттерн (накопление float-ошибок, `0.1 + 0.2`). Стоял вопрос: мигрировать на integer minor units (центы/сатоши) + Dinero.js или оставить `REAL`.
+
+**Варианты.**
+- A) Оставить `REAL`, систематически округлять на границах (выдача, сравнения).
+- B) Мигрировать все суммы на integer minor units + Dinero.js.
+
+**Решение.** A — `REAL` + округление.
+
+**Почему.**
+- Single-user, ~2000 операций, малые суммы: накопление ошибок `double` (15 значащих цифр) практически незаметно (< 0.01 на реальных объёмах).
+- Округление native-балансов на выдаче (`getEffectiveBalance` / `balanceAt` → 8 знаков) убирает float-дребезг в overdraft-сравнениях (`387320.0000001`); EUR-эквиваленты округляются до 2 знаков.
+- Миграция на integer-cents + Dinero — заметная сложность ради нулевого практического выигрыша на этом масштабе.
+- Dinero.js был заявлен в ADR-012, но не использовался → удалён (Стадия 2).
+
+**Следствия.**
+- `snapshots.ts:getEffectiveBalance` и `dashboard.ts:balanceAt` округляют native-баланс до 8 знаков перед возвратом/сравнением.
+- Конверсия в EUR — единственный слой (ADR-014, `RatesIndex`), округление до 2 знаков на выдаче.
+- Если появятся крипто-балансы с 8 знаками (BTC) и крупные суммы — пересмотреть в сторону integer-satoshi для крипто-вёдер.
 
 ## ADR-014: Единый слой конвертации валют — запас (mark-to-market) vs поток (date-aware)
 
@@ -269,6 +294,8 @@
 - Dinero.js v2 для денежной арифметики, date-fns для дат, Zod для валидации.
 - Deploy: отдельный Cloudflare Pages project (`finances-admin`), тот же Worker API.
 
+> **Фактический стек (уточнение Стадии 2).** Реализовано: React 19 + Vite + TanStack Router/Query/Table (**без** Form) + Tailwind + class-variance-authority/clsx/tailwind-merge (UI hand-rolled, **без** Radix/shadcn) + ECharts (**без** Tremor). Деньги — `REAL`/number с округлением на отображении (ADR-015): Dinero.js был установлен, но не использовался → удалён. Zod внедряется как серверная валидация payload + shared-контракт. date-fns не используется (даты — нативные ISO-строки).
+
 **Auth:** Google OAuth 2.0, allowlist email через `ADMIN_ALLOWED_EMAILS` wrangler var (CSV-список).
 - Worker: `/v1/auth/google/start` → редирект на Google, `/v1/auth/google/callback` → exchange code → проверка email → выдача JWT HS256.
 - JWT возвращается через URL fragment (`#token=<jwt>`), SPA сохраняет в `localStorage`, шлёт как `Authorization: Bearer <jwt>` на все `/v1/web/*`.
@@ -339,6 +366,8 @@
 - Excel перестаёт быть частью основного flow.
 - MacBook больше не sync-зависимый — может быть выключен неделями, всё работает.
 
+**Уточнение (после ADR-011).** Cron Trigger и Google Sheets-прокси, помеченные здесь как «удалённые», относились к `sync`/`heartbeat`/`cleanup`. Позже cron (`0 6 * * *`) и Google Sheets-CSV были переиспользованы для ежедневного авто-апдейта **курсов** (ADR-006, `rates.ts`) — это отдельная функция, не возврат outbox-механики.
+
 ## ADR-010: Структура — data/ для source, reports/ для generated, tools/ для xlsx-утилит
 
 **Контекст.** На раннем этапе всё лежало в одной папке `finances/`: и Legacy xlsx, и скрипты, и regenerated файлы. После того как появился Mini App + CSV-импорт + скрины — стало тесно и путано.
@@ -385,6 +414,8 @@
 - Тестирование: если bot не отвечает — первая проверка `wrangler d1 execute --command="SELECT * FROM authorized_users"`.
 
 ## ADR-008: Excel остаётся как «human-friendly view»
+
+> ⚠️ **SUPERSEDED by ADR-011 / ADR-012.** Excel вне основного потока: дашборды и аналитика — в Web Admin (ADR-012), `regenerate_xlsx.py` удалён. `tools/excel/` остаётся только ручной legacy-линзой к `data/legacy/Finances.xlsx`. Запись сохранена для истории.
 
 **Контекст.** SQLite ground truth — но смотреть на цифры приятнее в Excel.
 

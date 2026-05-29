@@ -3,7 +3,7 @@
 ## Цель
 Personal finance system для одного пользователя, без VPS/подписок, под полным контролем разработчика-владельца. **D1 (Cloudflare SQLite) — единственный источник правды**, MacBook — только daily backup. Два клиентских канала:
 
-- **Mini App в Telegram** — ввод расходов с iPhone + быстрая аналитика (закрытый scope).
+- **Mini App в Telegram** — ввод расходов с iPhone (закрытый scope: только ввод; аналитика расходов — в Web Admin, см. CLAUDE.md правило 11).
 - **Web Admin (React SPA)** — снапшоты, доходы, обмены, дашборды, портфель (растущий scope).
 
 См. ADR-011 (D1-centric pivot) и ADR-012 (Web Admin как второй канал).
@@ -128,21 +128,21 @@ Personal finance system для одного пользователя, без VPS
    - В облаке — `wrangler secret put TELEGRAM_BOT_TOKEN`, `GOOGLE_CLIENT_SECRET`, `ADMIN_JWT_SECRET`.
    - Локально — `.env` (в `.gitignore`).
    - GCP Service Account JSON для Sheets — `~/.config/finances-gsheets/key.json`, никогда в репо.
-7. **Token storage в SPA**: JWT в `localStorage`. Защищено CSP (`default-src 'self'`), нет user-generated content, нет внешних inline-скриптов.
-8. **Rate limiting**: на уровне Worker — простой counter в D1 (max 60 req/min per user).
+7. **Token storage в SPA**: JWT в `localStorage` Web Admin. Защищено CSP (`cloud/admin/public/_headers`: `default-src 'self'`, нет inline/eval). Mini App JWT не хранит (auth — `initData` HMAC в header).
+8. **Rate limiting**: не реализован — осознанный non-goal для single-user (атаковать некому, оба канала за auth-проверкой). Не вводить без реальной потребности.
 
 ## Отказоустойчивость
 
+**Источник правды — Cloudflare D1** (ADR-011). Других полных копий «в живую» нет; локального SQLite-ground-truth не существует. Защита — ежедневный экспорт D1.
+
 | Что может сломаться | Что происходит |
 |---|---|
-| iPhone офлайн при вводе | Mini App кэширует в `localStorage`, повторяет при сети |
-| MacBook офлайн неделями | D1 хранит 7 дней — рискуем потерять старше. Расширить cleanup до 30 дней. |
-| Cloudflare Worker лёг | Mini App кэширует, повторяет |
-| D1 лёг (редко) | Mini App вернёт ошибку, попросит повторить позже |
-| Локальный SQLite поломан | Восстанавливаем из `local/backups/finances.<ts>.db` |
-| Excel-файл повреждён | Регенерируем из SQLite — это автогенерируемый артефакт |
+| iPhone офлайн при вводе | Mini App кэширует в `localStorage`, повторяет при сети (UUID → идемпотентно) |
+| Cloudflare Worker лёг | Mini App кэширует и повторяет; Web Admin покажет ошибку |
+| D1 деградировал (редко) | клиент вернёт ошибку, попросит повторить позже |
+| Аккаунт Cloudflare / D1 потерян | восстановление из последнего daily-дампа (потеря ≤ 1 день) |
 
-**Единственное, что нельзя восстановить, — это локальный SQLite, если потеряются и он, и D1.** Поэтому: ежедневный backup `finances.db` в `~/Library/Mobile Documents/com~apple~CloudDocs/finances-backups/` (iCloud Drive) через `cron` или launchd.
+**Модель восстановления.** Единственная защита истории — `local/scripts/backup_d1.py` (launchd, раз в день): `wrangler d1 export` → `local/backups/d1-<ts>.sql` + копия в iCloud Drive. Восстановление: пересоздать D1 (`schema.sql`) + импортировать последний `.sql`-дамп. Максимальная потеря — операции за неполные сутки с последнего бэкапа.
 
 ## Что НЕ делает архитектура (и не должна)
 - Не агрегирует данные нескольких пользователей.
@@ -150,6 +150,7 @@ Personal finance system для одного пользователя, без VPS
 - Не интегрируется с банковскими API.
 - Не считает налоги.
 - Не присылает SMS-уведомления.
+- **Не позволяет вводить доход / снапшот / обмен с телефона** — это только Web Admin (десктоп). Осознанный текущий non-goal; лёгкий путь через text-команду бота — план post-MVP (см. roadmap).
 
 ## Эволюция
 

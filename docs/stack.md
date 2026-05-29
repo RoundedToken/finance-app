@@ -1,138 +1,63 @@
 # Технологический стек
 
-Все технологии с версиями, ролями и обоснованием.
+> Актуально на Стадию 2 (после ADR-011 D1-pivot + SPEC-014 React-rewrite). До-pivot стек (Python local SQLite ground truth, outbox, vanilla Mini App, Excel-регенерация) — снят; Python остался только для backup и разовых импортов.
+
+## Архитектура в одну строку
+
+D1 (единственный источник правды) ← один Cloudflare Worker (TypeScript, REST + Telegram webhook + cron) → два React-SPA на Cloudflare Pages (Mini App + Web Admin). Всё на free tier, без VPS.
 
 ## Языки и рантаймы
 
-| Компонент | Версия | Где используется |
+| Компонент | Версия | Где |
 |---|---|---|
-| Python | 3.13 | Локальные скрипты (sync, regenerate, init_db), CLI-инструменты |
-| TypeScript | ~5.6 | Cloudflare Worker |
-| Node.js | 20+ | Деплой воркера через wrangler |
-| HTML/CSS/JS (ES2023) | — | Telegram Mini App |
-| SQL (SQLite dialect) | — | local/migrations/, cloud/worker/schema.sql |
+| TypeScript | ~5.4–5.6 | Worker + оба фронта |
+| Node.js | 20+ | сборка (Vite) + деплой (wrangler) |
+| Python | 3.13 (`.venv/`) | **только** backup D1 + разовые импорты + UI тест-харнесы. Системный 3.9.6 — не использовать |
+| SQL (SQLite dialect) | — | `cloud/worker/migrations/`, `schema.sql` |
 
-**Системный Python 3.9.6 — не использовать.** Только Python 3.13 из brew.
+## Cloud Worker (`cloud/worker/`)
 
-## Python-зависимости (`requirements.txt`)
+`package.json`: `wrangler ^3`, `@cloudflare/workers-types`, `typescript ^5`. **Без фреймворков** — vanilla `fetch` handler + ручной роутинг (никакого hono/express/orm). Серверная валидация payload — ручная (typeof/required-guards); Zod внедряется в Стадии 2 как валидация + shared-контракт с Admin.
 
-| Пакет | Версия | Зачем |
+## Mini App (`cloud/miniapp/`) — SPEC-014
+
+React 19 + Vite 5 + TypeScript. TanStack Query. Tailwind + class-variance-authority + clsx + tailwind-merge. Telegram WebApp JS API (`telegram-web-app.js`), auth через `initData` HMAC. Scope: **только ввод расходов** (аналитика расходов — в Web Admin; см. CLAUDE.md правило 11). Деплой: `vite build` → `wrangler pages deploy dist`.
+
+## Web Admin (`cloud/admin/`)
+
+React 19 + Vite + TypeScript. TanStack Router / Query / Table (**без** Form). Tailwind + CVA/clsx/tailwind-merge — UI hand-rolled (**без** Radix/shadcn/Tremor, вопреки исходному ADR-012; см. уточнение там). Графики/KPI — ECharts + echarts-for-react (vendored через `manualChunks`). Lucide-иконки. Деньги — `number` + `Intl`-форматирование (ADR-015), конверсия — на worker. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`.
+
+> Установлены, но **не используются** и удаляются/выносятся в Стадии 2: `dinero.js` (деньги — REAL, ADR-015), `date-fns` (даты — нативные ISO). `zod` — будет использован (валидация + контракт).
+
+## Облачные сервисы (Cloudflare free tier)
+
+| Сервис | Лимит | Реальная нагрузка |
 |---|---|---|
-| `openpyxl` | `>=3.1.5,<4` | Чтение/правка существующих .xlsx (Legacy + Excel-tools) |
-| `xlsxwriter` | `>=3.2.9,<4` | Генерация дашборда `Finances.xlsx` с нуля (форматирование, графики) |
-| `python-calamine` | `>=0.2` | Быстрый ридер xlsx для миграций |
-| `xlcalculator` | `>=0.5` | Верификация формул без LibreOffice |
-| `lxml` | `>=5` | XML-парсинг внутренностей .xlsx |
-| `pandas` | `>=2.2` | Аналитика, агрегации, миграция Legacy |
-| `requests` | `>=2.31` | REST-вызовы к Cloudflare Worker |
-| `httpx` | `>=0.27` | Альтернатива requests, async когда понадобится |
-| `click` | `>=8.1` | CLI-фреймворк для add_*.py скриптов |
-| `rich` | `>=13` | Цветной вывод, прогресс-бары |
-| `python-dotenv` | `>=1.0` | Загрузка `.env` |
+| Workers | 100k req/day, 10ms CPU | ~50/день |
+| D1 | 5 GB, 5M reads/day, 100k writes/day | ~30 writes, ~2000 трат ≈ 250 KB |
+| Pages | unlimited bandwidth, 500 deploys/мес | 1-2 deploy/мес (×2 проекта) |
+| Cron Triggers | 1000/day | 1/день (курсы, `0 6 * * *`) |
+| Telegram Bot API + Mini Apps | без лимитов для personal | — |
+| Google Sheets (GOOGLEFINANCE → CSV) | — | прокси для курсов (ADR-006) |
 
-Стандартная библиотека: `sqlite3`, `uuid`, `json`, `csv`, `zipfile`, `xml.etree`, `datetime`, `subprocess`.
+Узкое место — только CPU 10ms на тяжёлых dashboard-агрегациях при многолетнем росте данных (осознанный отдалённый лимит, см. roadmap).
 
-## TypeScript / Node зависимости
+## Тестирование
 
-`cloud/worker/package.json`:
+- `local/scripts/test_admin_ui.py` — Playwright Web Admin (mock JWT + mock `/v1/**`, скриншоты light/dark).
+- `local/scripts/test_miniapp_react.py` — Playwright Mini App React.
+- `local/scripts/test_miniapp_ios.py` — Appium + iOS Simulator (реальная клавиатура iOS).
+- Worker: `tsc --noEmit` + **vitest** (Стадия 2) на денежно-критичной логике (`RatesIndex`, реконструкция баланса).
 
-| Пакет | Версия | Зачем |
-|---|---|---|
-| `wrangler` | ^3 | Cloudflare deploy tool |
-| `@cloudflare/workers-types` | latest | TS-типы для Workers API |
-| `typescript` | ^5 | компилятор |
-| `hono` | ^4 | (опционально) lightweight router для Worker — без него тоже можно |
-| `@cloudflare/d1` | — | D1 client встроен в Workers API |
+## Локально (MacBook)
 
-В Mini App пока без бандлера — обычный HTML + ES modules. Если код вырастет — добавим Vite или esbuild.
-
-## Облачные сервисы
-
-| Сервис | Тариф | Лимит | Реальная нагрузка |
-|---|---|---|---|
-| Cloudflare Workers | Free | 100k req/day | ~50/день |
-| Cloudflare D1 | Free | 5 GB storage, 5M reads/day, 100k writes/day | ~30 writes/день, ~5 reads/день |
-| Cloudflare Pages | Free | unlimited bandwidth, 500 deploys/мес | 1-2 deploy/мес |
-| Cloudflare Cron Triggers | Free | 1000 invocations/day | 1/день |
-| Telegram Bot API | Free | без лимитов для personal | ~50 msg/день |
-| Telegram Mini Apps | Free | без лимитов | — |
-| Google Sheets | Free | 5M cells per sheet | ~10 ячеек |
-
-## Локальные сервисы
-
-| Сервис | Назначение |
+| Что | Назначение |
 |---|---|
-| SQLite (через `sqlite3` модуль) | Локальный ground truth |
-| launchd | Запуск sync по расписанию / при login |
-| iCloud Drive | Бэкап `finances.db` |
-| LibreOffice (опционально) | Пересчёт формул в Legacy .xlsx через `soffice --headless` |
-| visidata, miller, csvkit (опционально) | TUI просмотр и обработка CSV |
+| `wrangler` | деплой Worker/Pages, `wrangler tail`, `wrangler d1 execute` |
+| `local/scripts/backup_d1.py` | daily `wrangler d1 export` → iCloud (launchd) |
+| `python` + `playwright`/`appium` | UI тест-харнесы |
+| `gitleaks` | pre-commit secret-gate (`.githooks/pre-commit`) |
 
-## Структура зависимостей между компонентами
+## Сознательно НЕ используется
 
-```
-                       Telegram
-                          │
-            ┌─────────────┼─────────────┐
-            ▼             ▼             ▼
-   Mini App (HTML/JS) <- Bot <- @BotFather config
-            │             │
-            └──────┬──────┘
-                   ▼
-            Cloudflare Worker (TS)
-                   ▼
-            Cloudflare D1 (SQLite)
-                   ▼
-   ┌───────────────┼───────────────┐
-   │               │               │
-   ▼               ▼               ▼
-sync.py     regenerate_xlsx.py  fetch_rates.py
-   │               │               │
-   ▼               ▼               ▼
-finances.db <─── reads ──── Google Sheets (CSV)
-   │
-   ▼
-Finances.xlsx
-```
-
-## Инструменты разработки
-
-| Инструмент | Назначение |
-|---|---|
-| `git` | Версионирование (репозиторий локальный, опционально GitHub) |
-| `wrangler` | Деплой и dev-сервер Worker'а |
-| `wrangler tail` | Live-логи Worker'а |
-| `wrangler d1 execute` | SQL в D1 для дебага |
-| `sqlite3` CLI | Просмотр локальной БД |
-| `python -i` | Интерактивный REPL для отладки |
-| `gh` | GitHub CLI (если когда-то запушим репо) |
-
-## Что НЕ используется
-
-Список технологий, которые сознательно отвергнуты — для прозрачности и чтобы не возвращаться к этим спорам:
-
-- **PostgreSQL / MySQL** — overkill для personal scale.
-- **Redis / Memcached** — нет потребности в кэше.
-- **Docker** — деплой через wrangler, локально venv хватает.
-- **Kubernetes** — нонсенс для personal.
-- **GraphQL** — REST хватает с лихвой.
-- **React / Vue / Angular** для Mini App — пока хватает vanilla. Vite + Preact если UI вырастет.
-- **gRPC** — нет.
-- **FastAPI / Flask на MacBook** — MacBook не сервер.
-- **Firebase** — vendor lock-in, политически рискованно для RU-данных.
-- **Supabase** — оверкилл (full Postgres + auth + storage), мы только outbox-буфер.
-- **AWS / GCP / Azure** — платно и сложно для personal.
-- **VPS любые** — категорическое НЕТ от пользователя.
-- **iCloud KVS / CloudKit** — требует native iOS app (App Store).
-- **Apple Shortcuts как ввод** — UI ограничен.
-- **PWA на iOS** — IndexedDB ненадёжен на iOS, отсутствие нативного feel.
-
-## Версии — заморозка
-
-Версии в `requirements.txt` и `package.json` зафиксированы диапазонами `>=X.Y,<X+1`. Обновляться по необходимости через:
-```bash
-pip install --upgrade -r requirements.txt
-npm update
-```
-
-После major-обновления — прогнать smoke-test (`docs/setup.md → Проверочный smoke-test`).
+PostgreSQL/MySQL, Redis, Docker/K8s, GraphQL, gRPC, Firebase/Supabase, AWS/GCP/Azure, любые VPS, PWA на iOS, native iOS (App Store). Обоснования — ADR-002/003/011/012. Vanilla JS для Mini App снят в пользу React (SPEC-014).

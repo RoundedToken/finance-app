@@ -138,17 +138,15 @@ Before push — обязательно:
 - `git status` — нет лишнего.
 - См. `docs/security.md` → чеклист «Перед каждым push».
 
-## Двухфазный переход на этот процесс
+## Двухфазный переход на этот процесс (исторически)
 
-**Phase A — Retrospective (один раз, сейчас):**
-- Закрытые stages (1-5a) проходят retro-pipeline:
-  1. Пишутся spec'и постфактум (на основе текущего кода и git history).
-  2. Запускаются `senior-qa` + `solution-architect` параллельно.
-  3. Findings → must-fix commits + nice-to-have в backlog.
-  4. Initial push в GitHub.
+Ретроспективный переход завершён к ~SPEC-006: закрытые stages 1-5a получили spec'и постфактум + retro-audit (`specs/audits/SPEC-001…008`), сделан initial push в публичный GitHub. Далее — forward pipeline на каждую новую фичу. Раздел оставлен как историческая заметка.
 
-**Phase B — Forward (с stage 6):**
-- Каждая новая фича — с самого начала по полному pipeline.
+## Где фиксируется вердикт Phase 3 (единое место)
+
+Вердикты двойного gate (`senior-qa` + `solution-architect`) фиксируются **строкой в changelog соответствующего SPEC-файла** в формате `Phase 3: qa=<verdict>, arch=<verdict>` (отдельные файлы `specs/audits/` — только для ретро-стадий 1-8, новые не заводим). Если вердикта нет — gate не пройден, это надо явно отметить.
+
+**Недоступность subagent'а ≠ pass.** Если `senior-qa`/`solution-architect` недоступен (например 529 Overloaded), вердикт помечается `DEFERRED`, а не `PASS`-by-self. Self-audit (та же сессия, что писала код) допустим как смоук, но не закрывает gate — независимость взгляда при этом не достигнута.
 
 ## Что НЕ работает в этом процессе
 
