@@ -177,33 +177,38 @@ CURRENCIES = [
 def _build_dashboard() -> dict:
     months = [f"2025-{m:02d}" for m in range(6, 13)] + [f"2026-{m:02d}" for m in range(1, 6)]
     net_worth_series, cashflow_series = [], []
+    TARGETED = 2424.81
+    # Реалистичная форма net worth: рост с дипом, ДАЛЕКО от нуля — чтобы UI-харнес
+    # ловил легибельность графиков (zero-baseline жмёт вариацию; см. обсуждение
+    # naglyadnost дашборда). free-view = total − targeted.
+    nw_free = [8600, 8730, 8980, 9320, 9600, 9660, 9500, 9180, 8680, 8300, 8010, 7834]
     for i, m in enumerate(months):
-        total = 3000.0 + i * 115.0
+        total = round(nw_free[i] + TARGETED, 2)
         net_worth_series.append({
-            "month": m, "total_eur": round(total, 2),
+            "month": m, "total_eur": total,
             "by_bucket": {"rub-bank": round(total * 0.40, 2), "rsd-bank": round(total * 0.20, 2),
                           "eur-bank": round(total * 0.25, 2), "usdt": round(total * 0.15, 2)},
             "by_form": {"digital": round(total * 0.70, 2), "cash": round(total * 0.15, 2), "crypto": round(total * 0.15, 2)},
             "by_currency": {"EUR": round(total * 0.45, 2), "RUB": round(total * 0.30, 2),
                             "RSD": round(total * 0.10, 2), "USDT": round(total * 0.15, 2)},
         })
-        income = round(1300 + (i % 3) * 220, 2)
+        income = round(3300 + (i % 3) * 250, 2)
         cashflow_series.append({"month": m, "income_eur": income,
-                                "income_free_eur": round(income * 0.8, 2),   # SPEC-018: ~20% дохода помечены целью
-                                "expense_eur": round(900 + (i % 4) * 130, 2)})
+                                "income_free_eur": round(income * 0.9, 2),
+                                "expense_eur": round(2200 + (i % 4) * 180, 2)})
     return {
         "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24",
         "window": {"from": "2025-06-30", "to": "2026-05-31", "months": len(months)},
         "kpi": {
-            "net_worth_eur": 4303.0, "free_net_worth_eur": 2100.0, "targeted_eur": 2203.0,
-            "monthly_burn_eur": 1080.0, "monthly_income_eur": 1500.0,
-            "savings_rate": 0.28, "runway_months": 1.9, "runway_months_total": 4.0,
+            "net_worth_eur": 10259.19, "free_net_worth_eur": 7834.38, "targeted_eur": 2424.81,
+            "monthly_burn_eur": 2566.71, "monthly_income_eur": 3629.93,
+            "savings_rate": 0.29, "runway_months": 3.1, "runway_months_total": 4.0,
             "burn_window_months": 3, "buckets_without_baseline": 2, "missing_rates": 0,
-            # SPEC-015: линза «свободные» + Δ к предыдущему окну
-            "monthly_income_free_eur": 1500.0, "savings_rate_free": 0.28,
-            "prev_monthly_burn_eur": 1150.0, "prev_monthly_income_eur": 1400.0,
-            "prev_monthly_income_free_eur": 1400.0,
-            "prev_net_worth_eur": 4000.0, "prev_free_net_worth_eur": 1850.0,
+            # SPEC-015: линза «свободные» + Δ к предыдущему окну (под реальный скрин: free −12%, траты −31%, доход +10%)
+            "monthly_income_free_eur": 3629.93, "savings_rate_free": 0.29,
+            "prev_monthly_burn_eur": 3720.0, "prev_monthly_income_eur": 3300.0,
+            "prev_monthly_income_free_eur": 3300.0,
+            "prev_net_worth_eur": 11327.5, "prev_free_net_worth_eur": 8902.7,
         },
         "net_worth_series": net_worth_series,
         "cashflow_series": cashflow_series,

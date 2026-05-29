@@ -368,10 +368,9 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
 
     // Проекция — только для линии total: пунктир на projectMonths вперёд по темпу.
     const doProject = mode === "total" && project && histMonths.length > 0;
-    // Длина проекции адаптируется к выбранному периоду: ~половина истории,
-    // в пределах [3..12] мес. Иначе на «6 мес» пунктир (фикс. 12) вдвое
-    // длиннее факта, а на «Всё» — наоборот теряется.
-    const projMonths = Math.min(12, Math.max(3, Math.round(histMonths.length / 2)));
+    // Длина проекции — ~четверть истории, [2..6] мес (вдвое короче прежнего:
+    // длинный пунктир тянул верх оси вверх и поджимал наглядность истории net worth).
+    const projMonths = Math.min(6, Math.max(2, Math.round(histMonths.length / 4)));
     const futureMonths: string[] = [];
     if (doProject) {
         let ym = histMonths[histMonths.length - 1];
@@ -389,7 +388,7 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
         const hist = data.net_worth_series.map(p => Math.max(0, Math.round(sumBuckets(p, ids) - shift)));
         series = [{
             name: "Net worth", type: "line", smooth: true, showSymbol: false,
-            areaStyle: { opacity: 0.18 }, lineStyle: { width: 2 }, color: t.positive,
+            lineStyle: { width: 2.5 }, color: t.positive,   // линия без заливки: с non-zero базой заливка-от-нуля врёт о магнитуде
             data: [...hist, ...Array(futureMonths.length).fill(null)],
         }];
         if (doProject && hist.length > 0) {
@@ -429,7 +428,10 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
         legend: showLegend ? { top: 0, textStyle: { color: t.muted }, icon: "roundRect" } : undefined,
         tooltip: { trigger: "axis", valueFormatter: (v) => (v == null ? "—" : eur(Number(v))) },
         xAxis: { type: "category", data: months, axisLabel: { color: t.muted, formatter: monthLabel }, axisLine: { lineStyle: { color: t.border } }, axisTick: { show: false } },
-        yAxis: { type: "value", axisLabel: { color: t.muted, formatter: (v: number) => compact(v) }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        // total — линия значения-во-времени: scale=true (база не от нуля, автозум к
+        // данным, как в KPI-спарклайне) → перепад net worth читается. Стэк-режимы
+        // (форма/валюта) — zero-baseline, иначе стэк-площади врут о магнитуде.
+        yAxis: { type: "value", scale: mode === "total", axisLabel: { color: t.muted, formatter: (v: number) => compact(v) }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series,
     };
     return <ReactECharts option={option} style={{ height: 320 }} notMerge />;
