@@ -32,7 +32,7 @@ export interface ContributionPayload {
     goal_id: string;
     date: string;
     amount: number;
-    currency_code: string;
+    currency_code?: string;       // L4/G11: деривится из ведра (account.currency), клиентское игнорируется
     account_id?: string | null;
     note?: string | null;
 }

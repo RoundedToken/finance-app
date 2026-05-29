@@ -84,6 +84,13 @@ import {
     deleteTransaction,
 } from "./transactions";
 import { getDashboard } from "./dashboard";
+import {
+    expenseCreateSchema, expenseUpdateSchema, incomeCreateSchema, incomeUpdateSchema,
+    snapshotCreateSchema, snapshotUpdateSchema, transactionCreateSchema, transactionUpdateSchema,
+    goalCreateSchema, goalUpdateSchema, goalStatusSchema, contributionCreateSchema,
+    contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema, zodMessage,
+} from "./schemas";
+import type { z } from "zod";
 
 export default {
     /** Cron Trigger — ежедневно тянет курсы. */
@@ -227,9 +234,9 @@ async function handleListExpenses(request: Request, env: Env, url: URL): Promise
 async function handleCreateExpense(request: Request, env: Env): Promise<Response> {
     const auth = await authenticateMiniApp(request, env);
     if (!auth.ok) return auth.response;
-    const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createExpense(env, auth.userId!, body as any);
+    const parsed = await readBody(request, env, expenseCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createExpense(env, auth.userId!, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, inserted: r.inserted }, 200, request, env);
 }
@@ -237,9 +244,9 @@ async function handleCreateExpense(request: Request, env: Env): Promise<Response
 async function handleUpdateExpense(request: Request, env: Env, id: string): Promise<Response> {
     const auth = await authenticateMiniApp(request, env);
     if (!auth.ok) return auth.response;
-    const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateExpense(env, id, auth.userId!, body);
+    const parsed = await readBody(request, env, expenseUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateExpense(env, id, auth.userId!, parsed.data);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
@@ -345,21 +352,18 @@ async function handleWebSnapshotsList(request: Request, env: Env, url: URL): Pro
 async function handleWebSnapshotsCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    if (!body.date || !body.account_id || typeof body.amount !== "number") {
-        return json({ error: "date, account_id, amount are required" }, 400, request, env);
-    }
-    const r = await createSnapshot(env, body);
+    const parsed = await readBody(request, env, snapshotCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createSnapshot(env, parsed.data);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateSnapshot(env, id, body);
+    const parsed = await readBody(request, env, snapshotUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateSnapshot(env, id, parsed.data);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
@@ -381,9 +385,9 @@ async function handleWebCategoriesList(request: Request, env: Env, url: URL): Pr
 async function handleWebCategoriesCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createExpenseCategory(env, body);
+    const parsed = await readBody(request, env, categoryCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createExpenseCategory(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json(r, 200, request, env);
 }
@@ -391,9 +395,9 @@ async function handleWebCategoriesCreate(request: Request, env: Env): Promise<Re
 async function handleWebCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateExpenseCategory(env, id, body);
+    const parsed = await readBody(request, env, categoryUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateExpenseCategory(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json(r, 200, request, env);
 }
@@ -409,9 +413,9 @@ async function handleWebIncomeCategories(request: Request, env: Env, url: URL): 
 async function handleWebIncomeCategoriesCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createIncomeCategory(env, body);
+    const parsed = await readBody(request, env, categoryCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createIncomeCategory(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json(r, 200, request, env);
 }
@@ -419,9 +423,9 @@ async function handleWebIncomeCategoriesCreate(request: Request, env: Env): Prom
 async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateIncomeCategory(env, id, body);
+    const parsed = await readBody(request, env, categoryUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateIncomeCategory(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json(r, 200, request, env);
 }
@@ -442,13 +446,9 @@ async function handleWebIncomesList(request: Request, env: Env, url: URL): Promi
 async function handleWebIncomesCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    if (!body.date || !body.account_id || !body.category_id || typeof body.amount !== "number") {
-        return json({ error: "date, account_id, amount, category_id are required" }, 400, request, env);
-    }
-    if (body.amount <= 0) return json({ error: "amount must be positive" }, 400, request, env);
-    const r = await createIncome(env, body);
+    const parsed = await readBody(request, env, incomeCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createIncome(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
@@ -456,13 +456,9 @@ async function handleWebIncomesCreate(request: Request, env: Env): Promise<Respo
 async function handleWebIncomesUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    if (body.amount !== undefined) {
-        if (typeof body.amount !== "number") return json({ error: "amount must be a number" }, 400, request, env);
-        if (body.amount <= 0) return json({ error: "amount must be positive" }, 400, request, env);
-    }
-    const r = await updateIncome(env, id, body);
+    const parsed = await readBody(request, env, incomeUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateIncome(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, updated: r.updated }, 200, request, env);
 }
@@ -498,9 +494,9 @@ async function handleWebGoalsDetail(request: Request, env: Env, id: string): Pro
 async function handleWebGoalsCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createGoal(env, body);
+    const parsed = await readBody(request, env, goalCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createGoal(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
@@ -508,9 +504,9 @@ async function handleWebGoalsCreate(request: Request, env: Env): Promise<Respons
 async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateGoal(env, id, body);
+    const parsed = await readBody(request, env, goalUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateGoal(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, updated: r.updated }, 200, request, env);
 }
@@ -518,9 +514,9 @@ async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Pro
 async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body.status !== "string") return json({ error: "status required" }, 400, request, env);
-    const r = await setGoalStatus(env, id, body.status);
+    const parsed = await readBody(request, env, goalStatusSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await setGoalStatus(env, id, parsed.data.status);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, updated: r.updated }, 200, request, env);
 }
@@ -535,9 +531,9 @@ async function handleWebGoalsDelete(request: Request, env: Env, id: string): Pro
 async function handleWebContributionsCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createContribution(env, body);
+    const parsed = await readBody(request, env, contributionCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createContribution(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
@@ -545,9 +541,9 @@ async function handleWebContributionsCreate(request: Request, env: Env): Promise
 async function handleWebContributionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateContribution(env, id, body);
+    const parsed = await readBody(request, env, contributionUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateContribution(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, updated: r.updated }, 200, request, env);
 }
@@ -577,9 +573,9 @@ async function handleWebTransactionsList(request: Request, env: Env, url: URL): 
 async function handleWebTransactionsCreate(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await createTransaction(env, body);
+    const parsed = await readBody(request, env, transactionCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createTransaction(env, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
@@ -587,9 +583,9 @@ async function handleWebTransactionsCreate(request: Request, env: Env): Promise<
 async function handleWebTransactionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const body = await request.json<any>().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "bad json" }, 400, request, env);
-    const r = await updateTransaction(env, id, body);
+    const parsed = await readBody(request, env, transactionUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateTransaction(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
     return json({ ok: true, updated: r.updated }, 200, request, env);
 }
@@ -679,6 +675,18 @@ async function authenticateMiniApp(
     if (!a.ok || !a.user_id) return { ok: false, response: json({ error: "unauthorized" }, 401, request, env) };
     if (!(await isAuthorizedUser(env, a.user_id))) return { ok: false, response: json({ error: "forbidden" }, 403, request, env) };
     return { ok: true, userId: a.user_id };
+}
+
+// SPEC-019: shape-валидация payload через Zod. Парсит тело, safeParse по схеме,
+// при ошибке — 400 с человекочитаемым сообщением (без stack-trace). Бизнес-правила
+// (FK, кросс-поля) остаются в доменных функциях.
+async function readBody<S extends z.ZodTypeAny>(
+    request: Request, env: Env, schema: S,
+): Promise<{ ok: true; data: z.infer<S> } | { ok: false; response: Response }> {
+    const raw = await request.json().catch(() => undefined);
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) return { ok: false, response: json({ error: zodMessage(parsed.error) }, 400, request, env) };
+    return { ok: true, data: parsed.data };
 }
 
 // CORS + jsonResponse централизованы в ./cors.ts чтобы избежать расхождений
