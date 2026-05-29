@@ -11,7 +11,7 @@
  */
 
 import type { Env } from "./types";
-import { loadRatesIndex } from "./rates";
+import { loadRatesIndex, RatesIndex } from "./rates";
 import { roundMoney } from "./ledger";
 
 export type GoalStatus = "active" | "achieved" | "archived";
@@ -119,7 +119,7 @@ export interface GoalWithBalance extends GoalRow {
     contribution_count: number;
 }
 
-export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } = {}): Promise<GoalWithBalance[]> {
+export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } = {}, ratesArg?: RatesIndex): Promise<GoalWithBalance[]> {
     const status = opts.status ?? "active";
     let sql = `SELECT id, name, emoji, color, target_amount, target_currency, deadline, note,
                       status, sort_order, created_at, updated_at
@@ -132,7 +132,9 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
     const goals = r.results;
     if (!goals.length) return [];
 
-    const rates = await loadRatesIndex(env);
+    // Фаза 1.8: переиспользуем готовый индекс, если передан (на /accounts и
+    // /dashboard rates уже загружены) — без двойной загрузки.
+    const rates = ratesArg ?? await loadRatesIndex(env);
     const today = todayUtc();
     const ids = goals.map(g => g.id);
     const placeholders = ids.map(() => "?").join(",");

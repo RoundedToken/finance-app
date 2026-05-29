@@ -194,14 +194,15 @@ export async function replaceReferences(env: Env, payload: ReferencePayload): Pr
 
 // ─── Bootstrap (для Mini App при старте) ────────────────────────────────────
 
-export async function getBootstrapData(env: Env) {
+export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean } = {}) {
+    const withExpenses = opts.withExpenses ?? true;
     const [accounts, categories, currencies, expenses, ratesMaxDate] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         // Все категории (вкл. неактивные) — чтобы история сохраняла подпись после
         // деактивации (SPEC-017 AC4); выбор фильтрует is_active на клиенте.
         env.DB.prepare("SELECT * FROM categories ORDER BY sort_order, name").all(),
         env.DB.prepare("SELECT * FROM currencies").all(),
-        listExpenses(env, { limit: 20000 }),   // amount_eur date-aware (ADR-014/SPEC-016)
+        withExpenses ? listExpenses(env, { limit: 20000 }) : Promise.resolve([] as any[]),   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
     ]);
     const date = ratesMaxDate?.d ?? null;

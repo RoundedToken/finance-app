@@ -103,7 +103,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     ]);
     // Активные цели — для targeted net worth. Инкапсулирует конверсию goal balance
     // в target_currency (по latest rate), не дублируем логику.
-    const goals = await listGoals(env, { status: "active" });
+    const goals = await listGoals(env, { status: "active" }, rates);   // Фаза 1.8: rates уже загружен выше
 
     const buckets = bucketsR.results;
     const bucketCcy = new Map(buckets.map(b => [b.id, b.currency] as const));
@@ -119,6 +119,9 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
 
     // ── Date-aware конверсия (rates index загружен батчем выше, shared с incomes) ─
     const ratesDate = rates.latestDate();
+    // Фаза 1.9: история до первого manual snapshot — реконструкция «0 + события»
+    // (приблизительно). snapsR упорядочен по date,created_at → [0] = самый ранний.
+    const dataTrustFrom = snapsR.results.length ? snapsR.results[0].date : null;
     const toEurAt = (amount: number, quote: string, date: string): number | null =>
         rates.toEurAt(amount, quote, date);
 
@@ -302,6 +305,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
         as_of: today,
         base: "EUR",
         rates_date: ratesDate,
+        data_trust_from: dataTrustFrom,
         window: { from: fromDate, to: toDate, months: months.length },
         kpi: {
             net_worth_eur: r2(netNow),

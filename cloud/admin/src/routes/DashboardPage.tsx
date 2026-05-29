@@ -100,6 +100,7 @@ export function DashboardPage() {
                     <p className="text-muted-foreground mt-1">
                         Сводка в EUR-эквиваленте. Курсы date-aware (по дате операции).
                         {data?.rates_date && <span className="ml-1">Последний курс: {data.rates_date}.</span>}
+                        {data?.data_trust_from && <span className="ml-1">Данные достоверны с {data.data_trust_from.slice(0, 7)} (раньше — реконструкция).</span>}
                     </p>
                 </div>
                 <button onClick={() => refetch()} className="btn-ghost self-start" title="Обновить" aria-label="Обновить">

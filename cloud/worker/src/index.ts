@@ -277,7 +277,7 @@ async function handleWebExpenses(request: Request, env: Env, url: URL): Promise<
 async function handleWebReferences(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const bootstrap = await getBootstrapData(env);
+    const bootstrap = await getBootstrapData(env, { withExpenses: false });   // refs не используют expenses (Фаза 1.8)
     return json({
         accounts: bootstrap.accounts,
         categories: bootstrap.categories,
@@ -294,12 +294,14 @@ async function handleWebAccounts(request: Request, env: Env): Promise<Response> 
     // на worker через canonical RatesIndex per-quote — клиент не конвертирует.
     // net/targeted/free зеркалят dashboard KPI «сейчас» (AC7).
     const today = new Date().toISOString().slice(0, 10);
-    const [buckets, manual, effective, rates, goals] = await Promise.all([
+    // Фаза 1.8: rates грузим один раз и передаём в listGoals (раньше listGoals
+    // грузил их повторно — двойная загрузка на каждом /accounts).
+    const rates = await loadRatesIndex(env);
+    const [buckets, manual, effective, goals] = await Promise.all([
         listBuckets(env),
         latestManualSnapshotPerAccount(env),
         effectiveBalancePerAccount(env, today),   // asOf=today → зеркалит dashboard KPI (AC7), без будущих событий
-        loadRatesIndex(env),
-        listGoals(env, { status: "active" }),
+        listGoals(env, { status: "active" }, rates),
     ]);
     const r2 = (x: number) => Math.round(x * 100) / 100;
 
