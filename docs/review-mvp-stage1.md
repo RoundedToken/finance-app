@@ -25,11 +25,17 @@
 
 ## Прогресс Стадии 2
 
-- **Batch A (доки) — ✅ сделано** (не закоммичено): ADR superseded-маркеры + ADR-015, переписаны data-model/stack/architecture, CLAUDE.md, process.md, SPEC-009→cancelled, email→placeholder.
-- **Batch B (мёртвый код) — ✅ сделано**: удалён vanilla Mini App, Dinero+date-fns, READMEs, legacy-миграции задокументированы.
-- **Batch C (финмодель + тесты) — ✅ сделано**: L1–L5 закрыты; новый `cloud/worker/src/ledger.ts` + vitest (`cloud/worker/test/`, 28 тестов). Adversarial-верификация закрыла 2 доп. high (валюта взноса = валюта ведра G11; `/accounts`↔`/dashboard` net worth asOf=today) + low (overdraft учитывает fee-leg, округление goal balance). typecheck (worker/admin/miniapp) + тесты зелёные.
-- **Чекпоинт:** ждёт ревью перед Batch D (метрики) / E (Zod, качество) / F (процесс).
+Ветка `refactor/mvp-stage2`, 7 коммитов (A→F), не смержено в main → не задеплоено.
+
+- **Batch A (доки) — ✅**: ADR superseded-маркеры + ADR-015, переписаны data-model/stack/architecture, CLAUDE.md, process.md, SPEC-009→cancelled, email→placeholder.
+- **Batch B (мёртвый код) — ✅**: удалён vanilla Mini App, Dinero+date-fns, READMEs, legacy-миграции задокументированы.
+- **Batch C (финмодель + тесты) — ✅**: L1–L5 закрыты; `cloud/worker/src/ledger.ts` + vitest (`cloud/worker/test/`, 28 тестов). Adversarial-верификация закрыла 2 доп. high (валюта взноса = валюта ведра G11; `/accounts`↔`/dashboard` net worth asOf=today) + low (overdraft учитывает fee-leg, округление goal balance).
+- **Batch D (метрики) — ✅**: M2 burn/income ÷ покрытых месяцев (не фикс. WIN); M1 Δ-FX зафиксирован комментарием; M3 подпись goal-ETA при >1 цели. M4/M5 — backlog.
+- **Batch E (качество) — ⚠️ частично**: ✅ S1 (500→generic), ✅ sync currency decimals. **ОТЛОЖЕНО отдельным фокусным рефактором:** Zod-слой валидации + shared-контракт worker↔admin, `withAdminSession`/`parseJsonBody` обёртки (~40 хендлеров), aggregator против двойного `loadRatesIndex`. Причина — DX/качество без correctness-выигрыша, безопаснее не мешать в хвост большой сессии.
+- **Batch F (процесс) — ✅**: lёгкий tier для микро-фич; правило DEFERRED — в Batch A.
 - **Известные low-ограничения (не блокеры):** fee в третьей валюте не атрибутируется; fee-разбивка может разойтись на soft-deleted ведре-контрагенте; бот не задаёт account_id → его траты не overdraft-проверяются.
+
+Перед деплоем: `git checkout main && git merge refactor/mvp-stage2`, затем деплой worker + оба Pages (поведение overdraft/fee/asOf вступает в силу только после деплоя worker).
 
 ## Сильные стороны (НЕ трогать на Стадии 2)
 
