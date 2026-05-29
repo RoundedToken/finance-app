@@ -6,6 +6,7 @@
  */
 
 import type { Env } from "./types";
+import { roundMoney } from "./ledger";
 
 export interface SnapshotPayload {
     id?: string;
@@ -130,16 +131,34 @@ export async function getEffectiveBalance(env: Env, accountId: string, asOfDate?
     balance += gc?.s ?? 0;
     events  += gc?.c ?? 0;
 
-    return { balance, manual_baseline: baseline, events_count: events };
+    // Transaction fee (−fee_amount) — комиссия как отток из ведра-плательщика (L2).
+    // Платит ведро, чья валюта = fee_currency, приоритет from (см. ledger.feePayerBucket):
+    //   • bucket == from И fee_currency == from.currency, ИЛИ
+    //   • bucket == to   И fee_currency == to.currency И fee_currency != from.currency.
+    const fee = await env.DB.prepare(
+        `SELECT COALESCE(SUM(t.fee_amount), 0) AS s
+         FROM transactions t
+         JOIN accounts fa ON fa.id = t.from_account_id
+         JOIN accounts ta ON ta.id = t.to_account_id
+         WHERE t.deleted_at IS NULL AND t.fee_amount IS NOT NULL
+           AND t.date > ? AND t.date <= ?
+           AND ( (t.from_account_id = ? AND t.fee_currency = fa.currency)
+              OR (t.to_account_id = ? AND t.fee_currency = ta.currency AND t.fee_currency <> fa.currency) )`,
+    ).bind(fromDate, upTo, accountId, accountId).first<{ s: number }>();
+    balance -= fee?.s ?? 0;
+
+    return { balance: roundMoney(balance), manual_baseline: baseline, events_count: events };
 }
 
-/** Effective balance для всех active buckets. */
-export async function effectiveBalancePerAccount(env: Env): Promise<Record<string, { balance: number; manual_baseline: { id: string; date: string; amount: number } | null; events_count: number }>> {
+/** Effective balance для всех active buckets. asOf по умолчанию — все события
+ *  (9999); передавай today, чтобы /accounts зеркалил dashboard KPI «сейчас» и не
+ *  учитывал события с будущей датой (AC7). */
+export async function effectiveBalancePerAccount(env: Env, asOf?: string): Promise<Record<string, { balance: number; manual_baseline: { id: string; date: string; amount: number } | null; events_count: number }>> {
     const buckets = await listBuckets(env);
     const out: Record<string, { balance: number; manual_baseline: any; events_count: number }> = {};
     // N+1 queries но buckets всего 7 — приемлемо.
     for (const b of buckets) {
-        out[b.id] = await getEffectiveBalance(env, b.id);
+        out[b.id] = await getEffectiveBalance(env, b.id, asOf);
     }
     return out;
 }

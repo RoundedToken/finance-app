@@ -75,7 +75,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     const now = new Date().toISOString();
     const date = now.slice(0, 10);
 
-    await createExpense(env, userId, {
+    const res = await createExpense(env, userId, {
         id,
         date,
         amount: parsed.amount,
@@ -85,6 +85,11 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         created_at: now,
         source: "telegram_bot",
     });
+
+    if (!res.ok) {
+        await sendMessage(env, chatId, `⚠️ ${escapeHtml(res.error)}`);
+        return;
+    }
 
     await sendMessage(
         env,

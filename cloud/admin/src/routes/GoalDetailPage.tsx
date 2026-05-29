@@ -282,21 +282,22 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
 
     const [date, setDate] = useState(todayISO());
     const [amount, setAmount] = useState("");
-    const [currency, setCurrency] = useState(defaultCurrency);
     const [accountId, setAccountId] = useState("");
     const [note, setNote] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!open) return;
-        setDate(todayISO()); setAmount(""); setCurrency(defaultCurrency);
+        setDate(todayISO()); setAmount("");
         setAccountId(""); setNote(""); setSubmitting(false);
     }, [open, defaultCurrency]);
 
-    const currencies = refs?.currencies ?? [];
     const accounts = accountsData?.accounts ?? [];
     const numAmount = parseFloat(amount);
-    const valid = !!date && Number.isFinite(numAmount) && numAmount > 0 && !!currency;
+    // Валюта взноса = валюта выбранного ведра (G11): взнос физически лежит в ведре,
+    // сервер деривит currency_code из account — рассинхрон валют невозможен.
+    const currency = accounts.find(a => a.id === accountId)?.currency ?? defaultCurrency;
+    const valid = !!date && Number.isFinite(numAmount) && numAmount > 0 && !!currency && !!accountId;
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -308,7 +309,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
                 date,
                 amount: numAmount,
                 currency_code: currency,
-                account_id: accountId || null,
+                account_id: accountId,
                 note: note.trim() || null,
             };
             await create.mutateAsync(payload);
@@ -344,15 +345,15 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
                         />
                     </Field>
                     <Field label="Валюта">
-                        <Select value={currency} onChange={e => setCurrency(e.target.value)}>
-                            {currencies.map(c => <option key={c.code} value={c.code}>{c.emoji ?? ""} {c.code}</option>)}
-                        </Select>
+                        <div className="px-3 py-2 rounded-lg border bg-muted/40 text-sm tabular-nums min-w-[4.5rem] text-center" title="= валюта выбранного ведра">
+                            {accountId ? currency : "—"}
+                        </div>
                     </Field>
                 </div>
 
-                <Field label="Из ведра (опц.)">
+                <Field label="Из ведра">
                     <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
-                        <option value="">— не указано —</option>
+                        <option value="">— выбери ведро —</option>
                         {accounts.map(a => <AccountOption key={a.id} account={a} />)}
                     </Select>
                 </Field>

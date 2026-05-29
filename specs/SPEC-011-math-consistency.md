@@ -69,11 +69,26 @@ effective_balance(bucket, asOf?) =
   }
   ```
   Net worth = Σ `effective_balance(bucket) / rate(bucket.currency → EUR)`.
-- G6: Validation на write tx/income/expense/contribution:
-  - Если событие уменьшает bucket и `effective_balance(bucket) < amount` —
-    400 «недостаточно средств в `<bucket>` (доступно: X, нужно: Y)».
-  - Не запрещаем без manual baseline — просто посчитанный balance
-    стартует с 0; если уход в минус — блок.
+- G6: Overdraft validation на события, уменьшающие bucket (уточнено Стадией 2 §L1):
+  - **Transactions** (from-side): блок, если `effective_balance(from) < from_amount`
+    — даже без baseline (balance от 0). Create + edit (с откатом старых сумм).
+  - **Expenses** (create): блок, если `effective_balance < amount`, **но только при
+    наличии manual baseline ≤ даты И выбранного `account_id`**. Без baseline или без
+    выбранного ведра не блокируем (иначе Mini App без снапшота / без счёта был бы
+    нерабочим — см. NG3). На практике покрывает Mini App с выбранным ведром; бот не
+    задаёт `account_id` → его траты не проверяются. Сообщение — `400 {error}` /
+    `⚠️` в боте / toast в Mini App.
+  - Income / goal-contribution — это приходы (+), overdraft к ним не применяется.
+- G9 (Стадия 2 §L3): **семантика snapshot = «конец дня»**. События учитываются
+  строго `date > baseline.date` (операции дня снапшота уже отражены в нём). Чтобы
+  скорректировать день снапшота — поставь дату следующего дня или новый снапшот.
+  Формула едина в `getEffectiveBalance` и `dashboard.balanceAt` (`ledger.reconstructBalance`).
+- G10 (Стадия 2 §L2): **комиссия транзакции (`fee_amount`)** вычитается из ведра-
+  плательщика (валюта = `fee_currency`, приоритет `from_account`). Комиссия в третьей
+  валюте (≠ from/to) не атрибутируется (редко). См. `ledger.feePayerBucket`.
+- G11 (Стадия 2 §L4): **goal_contribution.account_id обязателен** — каждый взнос лежит
+  в реальном ведре, иначе `targeted` раздувается без покрытия в `net` (инвариант
+  `free = net − targeted`). `income.goal_id` и взнос на одни деньги — взаимоисключающие.
 - G7: Admin SPA:
   - **`/accounts` bucket card**: показывает `effective_balance` крупно.
     Если есть manual snapshot — небольшая подпись «manual: X от dd.mm»

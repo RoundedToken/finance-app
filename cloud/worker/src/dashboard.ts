@@ -17,6 +17,7 @@
 import type { Env } from "./types";
 import { listGoals } from "./goals";
 import { loadRatesIndex } from "./rates";
+import { reconstructBalance, feePayerBucket } from "./ledger";
 
 // ── Date helpers (UTC, строки YYYY-MM-DD / YYYY-MM) ────────────────────────
 
@@ -71,7 +72,7 @@ interface CatRow { id: string; name: string; emoji: string | null; color: string
 interface SnapRow { account_id: string; date: string; amount: number; }
 interface IncRow { account_id: string; date: string; amount: number; currency_code: string; goal_id: string | null; }
 interface ExpRow { account_id: string | null; date: string; amount: number; currency: string; category_id: string | null; }
-interface TxRow { from_account_id: string; to_account_id: string; date: string; from_amount: number; to_amount: number; }
+interface TxRow { from_account_id: string; to_account_id: string; date: string; from_amount: number; to_amount: number; fee_amount: number | null; fee_currency: string | null; }
 interface GcRow { account_id: string | null; date: string; amount: number; }
 
 interface NativeEvent { date: string; delta: number; }  // в валюте ведра
@@ -97,7 +98,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
                         WHERE source = 'manual' AND deleted_at IS NULL ORDER BY date, created_at`).all<SnapRow>(),
         env.DB.prepare(`SELECT account_id, date, amount, currency_code, goal_id FROM incomes WHERE deleted_at IS NULL`).all<IncRow>(),
         env.DB.prepare(`SELECT account_id, date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL`).all<ExpRow>(),
-        env.DB.prepare(`SELECT from_account_id, to_account_id, date, from_amount, to_amount FROM transactions WHERE deleted_at IS NULL`).all<TxRow>(),
+        env.DB.prepare(`SELECT from_account_id, to_account_id, date, from_amount, to_amount, fee_amount, fee_currency FROM transactions WHERE deleted_at IS NULL`).all<TxRow>(),
         env.DB.prepare(`SELECT account_id, date, amount FROM goal_contributions WHERE deleted_at IS NULL`).all<GcRow>(),
     ]);
     // Активные цели — для targeted net worth. Инкапсулирует конверсию goal balance
@@ -105,6 +106,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     const goals = await listGoals(env, { status: "active" });
 
     const buckets = bucketsR.results;
+    const bucketCcy = new Map(buckets.map(b => [b.id, b.currency] as const));
 
     // Окно не уходит раньше первых реальных данных — иначе график начинается
     // длинным пустым нулевым хвостом (особенно пресет «Всё» = from 2000-01).
@@ -131,6 +133,14 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     for (const t of txR.results) {
         evtByBucket.get(t.from_account_id)?.push({ date: t.date, delta: -t.from_amount });
         evtByBucket.get(t.to_account_id)?.push({ date: t.date, delta: +t.to_amount });
+        // Комиссия (L2) — отток из ведра-плательщика (валюта = fee_currency, приоритет from).
+        const feePayer = feePayerBucket({
+            from_account_id: t.from_account_id, to_account_id: t.to_account_id,
+            from_currency: bucketCcy.get(t.from_account_id) ?? "",
+            to_currency: bucketCcy.get(t.to_account_id) ?? "",
+            fee_currency: t.fee_currency, fee_amount: t.fee_amount,
+        });
+        if (feePayer) evtByBucket.get(feePayer)?.push({ date: t.date, delta: -(t.fee_amount as number) });
     }
     for (const g of gcR.results) if (g.account_id) evtByBucket.get(g.account_id)?.push({ date: g.date, delta: +g.amount });
     for (const arr of evtByBucket.values()) arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -146,11 +156,8 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
         for (let i = snaps.length - 1; i >= 0; i--) {       // последний по date,created_at
             if (snaps[i].date <= asOf) { base = snaps[i].amount; baseDate = snaps[i].date; break; }
         }
-        let bal = base;
-        for (const e of evtByBucket.get(bucketId) ?? []) {
-            if (e.date > baseDate && e.date <= asOf) bal += e.delta;
-        }
-        return bal;
+        // Единая формула с snapshots.ts:getEffectiveBalance (SPEC-011, ledger.ts).
+        return reconstructBalance(base, baseDate, evtByBucket.get(bucketId) ?? [], asOf);
     };
 
     // ── KPI «сейчас» (asOf = today, latest rate) ─────────────────────────────
