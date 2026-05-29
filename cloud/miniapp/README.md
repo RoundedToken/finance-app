@@ -1,56 +1,52 @@
 # miniapp — Telegram Mini App
 
-Frontend для ввода трат с iPhone. Открывается внутри Telegram. UI стилизован под «Расходы ОК».
+Frontend для ввода трат с iPhone. Открывается внутри Telegram. **Scope: только ввод расходов** (аналитика — в Web Admin, см. корневой `CLAUDE.md` правило 11).
 
-## Стек
+## Стек (после SPEC-014 React-rewrite)
 
-- Чистый HTML + ES2023 + CSS (без бандлера).
-- Telegram WebApp JS API: https://core.telegram.org/bots/webapps
-- Кэш в `localStorage` для офлайн-ввода.
+- React 19 + Vite 5 + TypeScript.
+- TanStack Query (server-state).
+- Tailwind + class-variance-authority + clsx + tailwind-merge.
+- Telegram WebApp JS API: https://core.telegram.org/bots/webapps — auth через `initData` HMAC.
+- Кэш в `localStorage` для офлайн-ввода (UUID на клиенте → идемпотентно).
+
+> Vanilla-версия (`public/app.js` + `styles.css`) снята в Стадии 2 — была заменена React-кодом в `src/`. История в git.
 
 ## Структура
 
 ```
 miniapp/
-├── public/
-│   ├── index.html         — оболочка, импорт telegram-web-app.js
-│   ├── app.js             — основная логика (state, UI, network, outbox)
-│   └── styles.css         — UI: сетка категорий, num pad
-└── README.md
+├── index.html             — корневой entry (грузит /src/main.tsx + telegram-web-app.js)
+├── src/
+│   ├── main.tsx, App.tsx, store.tsx
+│   ├── screens/           — MainScreen, HistoryScreen, EditScreen, NoteScreen
+│   ├── components/        — Numpad, Modal, SwipeRow, Currency, DayTotal, Toast, …
+│   ├── api/               — client.ts, queries.ts, types.ts
+│   └── lib/               — telegram.ts, utils.ts
+├── vite.config.ts
+└── tailwind.config.ts
 ```
 
 ## Локальная разработка
 
-Mini App требует HTTPS endpoint для работы внутри Telegram, поэтому локально полноценно не запустить. Варианты:
+Mini App требует HTTPS endpoint внутри Telegram, локально полноценно не запустить:
+1. `npm run dev` — Vite dev-сервер (:5175) для верстки в браузере (без Telegram-контекста).
+2. Деплой на Pages staging + тест через staging-bot в `@BotFather`.
+3. `ngrok` для проброса dev-сервера.
 
-1. **`wrangler pages dev public --local`** — локальный HTTPS на :8788, но Telegram не сможет к нему прийти.
-2. **Деплой на Pages staging** (отдельный проект `finances-miniapp-staging`), тестировать в `@BotFather` через staging-bot.
-3. **`ngrok http 8788`** для проброса локального dev-сервера.
+UI-тесты: `local/scripts/test_miniapp_react.py` (Playwright) + `test_miniapp_ios.py` (Appium + iOS Simulator, реальная клавиатура).
 
 ## Деплой
 
 ```bash
 cd cloud/miniapp
-wrangler pages deploy public --project-name=finances-miniapp
+npm run deploy        # vite build → wrangler pages deploy dist --project-name=finances-miniapp
 ```
 
-Mini App URL отдать в @BotFather:
-- `/setmenubutton` → `Open` → URL
-- `/setdomain` → URL домена
+Mini App URL в @BotFather: `/setmenubutton` → `Open` → URL; `/setdomain` → домен.
 
 ## Telegram API, которое используем
 
-- `Telegram.WebApp.initData` — для отправки в `X-Telegram-Init-Data` header.
-- `Telegram.WebApp.HapticFeedback` — тактильный отклик при тапе категории.
-- `Telegram.WebApp.MainButton` / `BackButton` — нативные кнопки внизу.
-- `Telegram.WebApp.themeParams` — подхватить цвета из темы пользователя.
-
-## UX, к которому стремимся (как в «Расходы ОК»)
-
-- Большая сетка категорий с эмодзи на главном экране.
-- Тап → числовая клавиатура поверх.
-- Подтверждение → toast «✓ записано» → возврат к категориям.
-- История трат — отдельная вкладка.
-- Графики (pie по категориям, bar по дням) — третья вкладка.
-
-Полный UI — после Этапа 1 (минимальный текстовый flow для smoke-теста).
+- `Telegram.WebApp.initData` — в `X-Telegram-Init-Data` header.
+- `Telegram.WebApp.HapticFeedback` — тактильный отклик.
+- `Telegram.WebApp.themeParams` — цвета из темы пользователя.

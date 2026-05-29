@@ -16,8 +16,6 @@
     "@tanstack/react-table": "^8.20.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "dinero.js": "^2.0.0-alpha.14",
     "echarts": "^5.5.1",
     "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.453.0",
