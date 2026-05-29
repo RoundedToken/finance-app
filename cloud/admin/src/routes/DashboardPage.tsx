@@ -245,6 +245,16 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
                         <Row label="Целевые фонды" value={eur(k.targeted_eur)} />
                     </div>
                 )}
+                {(k.missing_rates > 0 || k.buckets_without_baseline > 0) && (
+                    <div className="mt-2 flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-400"
+                        title="позиции без курса исключены из суммы; вёдра без baseline считаются от 0 — net worth может быть неполным">
+                        <Info className="h-3 w-3 shrink-0 mt-0.5" />
+                        <span>{[
+                            k.missing_rates > 0 ? `${k.missing_rates} без курса` : null,
+                            k.buckets_without_baseline > 0 ? `${k.buckets_without_baseline} без baseline` : null,
+                        ].filter(Boolean).join(" · ")} → net worth неполный</span>
+                    </div>
+                )}
             </KpiCard>
 
             <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)}
