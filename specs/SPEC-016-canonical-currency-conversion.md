@@ -1,7 +1,7 @@
 ---
 id: SPEC-016
 title: Канонический слой конвертации валют — запас (mark-to-market) vs поток (date-aware)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-05-27
 updated: 2026-05-27
@@ -119,3 +119,4 @@ Auth — без изменений (JWT для `/web/*`, initData для Mini Ap
 
 - 2026-05-27: создан в `draft`.
 - 2026-05-27: одобрен Stepan'ом, переведён в `in_progress`.
+- 2026-05-27: реализовано, Phase 3 (solution-architect APPROVED_WITH_NICES, senior-qa PASS_WITH_NICES), запушено (89f208a + a242d1c), `done`.
