@@ -245,17 +245,20 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     const netSeries = months.map(m => {
         const T = endOfMonth(m) <= today ? endOfMonth(m) : today;   // текущий месяц — до today
         const by_bucket: Record<string, number> = {};
+        const by_bucket_native: Record<string, number> = {};   // SPEC-021: нативный ряд для спарклайнов /accounts
         const by_form: Record<string, number> = {};
         const by_currency: Record<string, number> = {};
         let total = 0;
         for (const b of buckets) {
-            const eur = toEurAt(balanceAt(b.id, T), b.currency, T) ?? 0;   // нет курса → 0 (rates backfill с 2024)
+            const native = balanceAt(b.id, T);                            // SPEC-021: баланс в валюте ведра (до конверсии)
+            const eur = toEurAt(native, b.currency, T) ?? 0;              // нет курса → 0 (rates backfill с 2024)
             by_bucket[b.id] = r2(eur);
+            by_bucket_native[b.id] = r2(native);
             by_form[b.form] = r2((by_form[b.form] ?? 0) + eur);
             by_currency[b.currency] = r2((by_currency[b.currency] ?? 0) + eur);
             total += eur;
         }
-        return { month: m, total_eur: r2(total), by_bucket, by_form, by_currency };
+        return { month: m, total_eur: r2(total), by_bucket, by_bucket_native, by_form, by_currency };
     });
 
     // ── Cashflow + expenses by category (за окно [fromDate, toDate]) ─────────
