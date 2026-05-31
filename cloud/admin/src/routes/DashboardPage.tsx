@@ -6,6 +6,8 @@ import { Wallet, TrendingDown, TrendingUp, PiggyBank, Clock, AlertCircle, Info, 
 import { ErrorState } from "@/components/ErrorState";
 import { useDashboard, useGoals } from "@/api/queries";
 import { Currency } from "@/components/Currency";
+import { Sparkline } from "@/components/Sparkline";
+import { chartTheme } from "@/lib/chart-theme";
 import { formatAmount, cn } from "@/lib/utils";
 import type { DashboardResponse, NetWorthPoint, DashboardBucket, Goal } from "@/api/types";
 
@@ -57,19 +59,6 @@ const monthDiff = (fromYm: string, toYm: string) => { const [fy, fm] = fromYm.sp
 const PALETTE = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16"];
 const FORM_LABEL: Record<string, string> = { cash: "Наличные", digital: "Цифровые", crypto: "Крипто", external: "Внешние" };
 const FORM_COLOR: Record<string, string> = { cash: "#f59e0b", digital: "#3b82f6", crypto: "#8b5cf6", external: "#94a3b8" };
-
-/** Цвета из текущей темы (HSL-vars). Читаем на каждый рендер — переживает смену темы. */
-function chartTheme() {
-    const cs = getComputedStyle(document.documentElement);
-    const hsl = (name: string) => {
-        const parts = cs.getPropertyValue(name).trim().split(/\s+/);
-        return parts.length >= 3 ? `hsl(${parts[0]}, ${parts[1]}, ${parts[2]})` : parts.join(" ");
-    };
-    return {
-        fg: hsl("--foreground"), muted: hsl("--muted-foreground"), border: hsl("--border"),
-        positive: hsl("--positive"), negative: hsl("--negative"),
-    };
-}
 
 const eur = (v: number) => `${formatAmount(v, "EUR")} €`;
 const compact = (v: number) => {
@@ -308,39 +297,6 @@ function Row({ label, value, danger }: { label: string; value: string; danger?: 
             <span className={cn("num tabular-nums", danger && "text-destructive")}>{value}</span>
         </div>
     );
-}
-
-/** Мини-тренд в KPI-карточке — без осей, из существующих series. */
-function Sparkline({ values, color, inProgressTail = 0 }: { values: number[]; color: string; inProgressTail?: number }) {
-    if (values.length < 2) return null;
-    // values без Math.round — дробные KPI (норма) иначе теряют вариацию (0.27 → 0).
-    // inProgressTail — сколько последних точек считать «неполными» (для потоков
-    // Траты / Доход / Норма последний месяц = текущий, в Δ-бейдж не входит).
-    // Пунктир здесь означает «происходит сейчас, к этому идём; через месяц
-    // отразится в Δ» — согласовано с пользователем 2026-05-28. На большом
-    // графике Net worth пунктир по-прежнему означает forecast — разные
-    // контексты, не путать.
-    const last = values.length - 1;
-    const cut = Math.max(0, last - inProgressTail);
-    const fullData = values.map((v, i) => (i <= cut ? v : null));
-    const tailData = values.map((v, i) => (i >= cut ? v : null));
-    const option: EChartsOption = {
-        backgroundColor: "transparent",
-        grid: { left: 2, right: 2, top: 3, bottom: 3 },
-        xAxis: { type: "category", show: false, data: values.map((_, i) => i) },
-        yAxis: { type: "value", show: false, scale: true },
-        tooltip: { show: false },
-        series: inProgressTail > 0 ? [
-            { type: "line", data: fullData, showSymbol: false, smooth: true,
-              lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color } },
-            { type: "line", data: tailData, showSymbol: false, smooth: true,
-              lineStyle: { width: 1.5, color, type: "dashed" }, areaStyle: { opacity: 0.04, color } },
-        ] : [
-            { type: "line", data: values, showSymbol: false, smooth: true,
-              lineStyle: { width: 1.5, color }, areaStyle: { opacity: 0.1, color } },
-        ],
-    };
-    return <ReactECharts option={option} style={{ height: 34, width: "100%" }} notMerge />;
 }
 
 /** Δ к предыдущему окну. unit="rel" — относительный %, "pp" — процентные пункты (для нормы). */

@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { Banknote, Coins, ArrowUpRight, Plus, AlertCircle, Info } from "lucide-react";
-import { useAccounts, useGoals } from "@/api/queries";
+import { useAccounts, useGoals, useDashboard } from "@/api/queries";
 import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
+import { Sparkline } from "@/components/Sparkline";
+import { chartTheme } from "@/lib/chart-theme";
 import { formatAmount, formatDate, cn } from "@/lib/utils";
 import type { Account } from "@/api/types";
 
@@ -14,6 +16,9 @@ import type { Account } from "@/api/types";
 export function AccountsPage() {
     const { data, isLoading, isError, refetch } = useAccounts();
     const { data: goalsData } = useGoals("active");
+    // SPEC-021: помесячный ряд по ведру уже считается дашбордом (net_worth_series).
+    // Переиспользуем его для мини-трендов (тёплый кэш landing-дашборда, staleTime 30s).
+    const { data: dash } = useDashboard();
 
     // SPEC-016: конверсия в EUR — на worker (mark-to-market, курс на сегодня,
     // per-quote). Клиент рендерит готовые поля, сам ничего не делит на курс.
@@ -29,6 +34,13 @@ export function AccountsPage() {
 
     const withBaseline = accounts.filter(a => !!a.manual_snapshot).length;
     const negativeBuckets = accounts.filter(a => (a.effective_balance ?? 0) < 0);
+
+    // SPEC-021: нативный ряд по ведру + EUR-итог для спарклайнов. Рисуем только
+    // при реальной вариации (плоская линия сигнала не несёт — см. sparkSeries).
+    const nwSeries = dash?.net_worth_series;
+    const netWorthSpark = sparkSeries(nwSeries?.map(p => p.total_eur));
+    const bucketSpark = (id: string) => sparkSeries(nwSeries?.map(p => p.by_bucket_native[id] ?? 0));
+    const sparkMuted = chartTheme().muted;
 
     return (
         <div className="space-y-6">
@@ -89,6 +101,9 @@ export function AccountsPage() {
                             <Info className="h-3 w-3" /> {missingRates} без курса
                         </div>
                     )}
+                    {netWorthSpark && (
+                        <div className="mt-3"><Sparkline values={netWorthSpark} color={sparkMuted} height={32} /></div>
+                    )}
                 </div>
                 <SummaryCard
                     label="Manual baseline"
@@ -109,7 +124,7 @@ export function AccountsPage() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {accounts.map(acc => (
-                        <BucketCard key={acc.id} acc={acc} eurEquiv={acc.effective_balance_eur ?? 0} />
+                        <BucketCard key={acc.id} acc={acc} eurEquiv={acc.effective_balance_eur ?? 0} spark={bucketSpark(acc.id)} />
                     ))}
                 </div>
             )}
@@ -117,9 +132,9 @@ export function AccountsPage() {
     );
 }
 
-interface BucketCardProps { acc: Account; eurEquiv: number }
+interface BucketCardProps { acc: Account; eurEquiv: number; spark: number[] | null }
 
-function BucketCard({ acc, eurEquiv }: BucketCardProps) {
+function BucketCard({ acc, eurEquiv, spark }: BucketCardProps) {
     const isCash = acc.form === "cash";
     const Icon = isCash ? Banknote : Coins;
     const balance = acc.effective_balance ?? 0;
@@ -191,9 +206,24 @@ function BucketCard({ acc, eurEquiv }: BucketCardProps) {
                         </>
                     )}
                 </div>
+                {spark && (
+                    // pointer-events-none — клик по искре навигирует через карточку-Link (искра не интерактивна)
+                    <div className="mt-3 pointer-events-none">
+                        <Sparkline values={spark} color={acc.color ?? "#9ca3af"} height={28} />
+                    </div>
+                )}
             </div>
         </Link>
     );
+}
+
+/** Ряд для спарклайна: null если точек < 2 или нет вариации (плоская линия
+ *  сигнала не несёт — искру не рисуем). SPEC-021 edge cases E1/E3. */
+function sparkSeries(series: number[] | undefined): number[] | null {
+    if (!series || series.length < 2) return null;
+    const min = Math.min(...series), max = Math.max(...series);
+    if (max === min) return null;
+    return series;
 }
 
 function pluralizeGoals(n: number): string {

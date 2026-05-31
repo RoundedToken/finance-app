@@ -367,7 +367,8 @@ export interface DashboardKpi {
 export interface NetWorthPoint {
     month: string;                         // "YYYY-MM"
     total_eur: number;
-    by_bucket: Record<string, number>;     // account_id → EUR
+    by_bucket: Record<string, number>;        // account_id → EUR
+    by_bucket_native: Record<string, number>; // SPEC-021: account_id → native-валюта ведра (для спарклайнов /accounts)
     by_form: Record<string, number>;       // cash/digital/crypto → EUR
     by_currency: Record<string, number>;   // EUR/RSD/... → EUR
 }

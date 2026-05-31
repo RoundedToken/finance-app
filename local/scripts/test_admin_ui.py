@@ -182,12 +182,27 @@ def _build_dashboard() -> dict:
     # ловил легибельность графиков (zero-baseline жмёт вариацию; см. обсуждение
     # naglyadnost дашборда). free-view = total − targeted.
     nw_free = [8600, 8730, 8980, 9320, 9600, 9660, 9500, 9180, 8680, 8300, 8010, 7834]
+    # SPEC-021: нативный ряд по ведру (валюта ведра) — источник спарклайнов /accounts.
+    # Последняя точка (×1.00) ≈ effective_balance карточки. eur-cash плоско и
+    # try-cash пусто → их искра скрывается (проверка edge case E1 «нет вариации»).
+    NATIVE_END = {"rub-bank": 2_500_000, "rsd-bank": 800_000, "acc_money_ok_rsd": 150_000,
+                  "eur-bank": 3000, "eur-cash": 1500, "usdt": 5000, "try-cash": 0}
+    NATIVE_SHAPE = {
+        "rub-bank":         [0.62, 0.66, 0.70, 0.74, 0.78, 0.80, 0.84, 0.88, 0.91, 0.95, 0.98, 1.00],  # ровный рост
+        "rsd-bank":         [1.15, 1.10, 1.06, 1.20, 0.95, 1.08, 0.90, 1.02, 0.96, 1.05, 0.93, 1.00],  # колебания
+        "acc_money_ok_rsd": [0.70, 0.85, 0.78, 1.10, 0.95, 1.20, 0.88, 1.05, 0.92, 1.12, 0.97, 1.00],  # волатильно
+        "eur-bank":         [0.50, 0.50, 0.60, 0.60, 0.75, 0.75, 0.85, 0.85, 0.90, 1.00, 1.00, 1.00],  # ступеньки
+        "eur-cash":         [1.00] * 12,                                                                # плоско → скрыта
+        "usdt":             [0.80, 0.82, 0.85, 0.88, 0.86, 0.90, 0.93, 0.95, 0.97, 0.99, 0.98, 1.00],  # рост
+        "try-cash":         [0.0] * 12,                                                                 # пусто → скрыта
+    }
     for i, m in enumerate(months):
         total = round(nw_free[i] + TARGETED, 2)
         net_worth_series.append({
             "month": m, "total_eur": total,
             "by_bucket": {"rub-bank": round(total * 0.40, 2), "rsd-bank": round(total * 0.20, 2),
                           "eur-bank": round(total * 0.25, 2), "usdt": round(total * 0.15, 2)},
+            "by_bucket_native": {bid: round(NATIVE_END[bid] * NATIVE_SHAPE[bid][i], 2) for bid in NATIVE_END},
             "by_form": {"digital": round(total * 0.70, 2), "cash": round(total * 0.15, 2), "crypto": round(total * 0.15, 2)},
             "by_currency": {"EUR": round(total * 0.45, 2), "RUB": round(total * 0.30, 2),
                             "RSD": round(total * 0.10, 2), "USDT": round(total * 0.15, 2)},
@@ -529,6 +544,44 @@ async def scenario_full_page(page, base: str, route: str, fname: str, label: str
     print(f"  ✓ {out.name}")
 
 
+async def scenario_accounts(page, base: str) -> None:
+    """/accounts (SPEC-021): карточки вёдер со спарклайнами баланса (native, цвет
+    ведра) + искра net worth в сводке. Ждём ECharts canvas. Light + dark.
+    eur-cash (плоско) и try-cash (пусто) должны быть БЕЗ искры (edge case E1)."""
+    await page.goto(f"{base}/accounts", wait_until="networkidle")
+    await page.wait_for_selector("h1:has-text('Счета')", timeout=5000)
+    await page.wait_for_timeout(1500)  # echarts canvas (искры на карточках)
+    for scheme in ("light", "dark"):
+        if scheme == "dark":
+            await page.evaluate("document.documentElement.classList.add('dark')")
+        else:
+            await page.evaluate("document.documentElement.classList.remove('dark')")
+        await page.wait_for_timeout(450)
+        out = OUT_DIR / f"admin-accounts-{scheme}.png"
+        await page.screenshot(path=str(out), full_page=True)
+        print(f"  ✓ {out.name}")
+    await page.evaluate("document.documentElement.classList.remove('dark')")
+
+
+async def scenario_accounts_dash_error(page, base: str) -> None:
+    """SPEC-021 AC5/E2: при 5xx дашборда /accounts рендерит карточки БЕЗ искр,
+    без белого экрана (искра — enhancement в отдельном query useDashboard)."""
+    async def err(route):
+        return await route.fulfill(status=500, content_type="application/json",
+                                   body=json.dumps({"error": "internal"}))
+    await page.route("**/v1/web/dashboard**", err)
+    try:
+        await page.goto(f"{base}/accounts", wait_until="networkidle")
+        await page.wait_for_selector("h1:has-text('Счета')", timeout=5000)
+        await page.wait_for_selector("text=Manual baseline", timeout=5000)  # карточки на месте
+        await page.wait_for_timeout(400)
+        out = OUT_DIR / "admin-accounts-dash-error.png"
+        await page.screenshot(path=str(out), full_page=True)
+        print(f"  ✓ {out.name} (дашборд 5xx → карточки без искр, не белый экран)")
+    finally:
+        await page.unroute("**/v1/web/dashboard**", err)
+
+
 async def scenario_categories(page, base: str) -> None:
     """/categories: список (active + inactive секции) + модал создания."""
     await page.goto(f"{base}/categories", wait_until="networkidle")
@@ -683,7 +736,8 @@ async def run(headed: bool) -> int:
             await scenario_period_prev_month(page, base)
             await scenario_period_custom(page, base)
             await scenario_modal_open(page, base)
-            await scenario_full_page(page, base, "/accounts", "admin-accounts.png", "Счета")
+            await scenario_accounts(page, base)
+            await scenario_accounts_dash_error(page, base)
             await scenario_full_page(page, base, "/snapshots", "admin-snapshots.png", "Снапшоты")
             await scenario_full_page(page, base, "/expenses", "admin-expenses.png", "Расходы")
             await scenario_expenses_week(page, base)
