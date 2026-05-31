@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Cloudflare Worker for personal finance system: Telegram bot, REST API, D1 (источник правды), auth, cron rates",
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

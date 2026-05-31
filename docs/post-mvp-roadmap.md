@@ -43,7 +43,7 @@
 | 2.3 | **Мобильный ввод дохода/снапшота через бота** | M/M | `bot.ts` умеет parse+write расход → добавить `доход …` / `баланс …`. Закрывает дыру: доход/снапшот сейчас только с десктопа. Mini App scope не трогаем. |
 | 2.4 | **AI: детектор анти-данных** (cron, БЕЗ LLM) | H/S | Раз в день: гэп без трат / устаревший snapshot / ведро без baseline → один `sendMessage`. Переиспользует `scheduled()` + `sendMessage`. **Улучшает качество данных**, а не пересказывает. Мини-таблица `coach_state` (cooldown). |
 | 2.5 | **График прогресса цели на /goals/:id** (NG2) | M/M | Накопленный баланс цели по месяцам + линия target + дедлайн + ETA-пунктир. Сейчас там только таблица. |
-| 2.6 | **D1-mock тесты на getEffectiveBalance + dashboard** | H/M | Деньги-critical wiring (где net worth/runway получают итог) тестами не закрыт — только чистый `reconstructBalance`. In-memory мок `env.DB`. |
+| 2.6 | ✅ **D1-mock тесты на getEffectiveBalance + dashboard** (SPEC-022) | H/M | ~~Деньги-critical wiring тестами не закрыт.~~ Сделано: мок `env.DB` на `node:sqlite` (real SQLite, грузит schema.sql) + 14 тестов (getEffectiveBalance: baseline/окно/5 событий/fee-JOIN; getDashboard: гард `by_bucket_native`, net worth, targeted/free, помесячный ряд). Mutation-sanity пройден. |
 | 2.7 | **withAdminSession-обёртка + shared Zod-контракт worker↔admin** | M/M | 32 копии guard'а → инвариант (нельзя забыть). `admin/api/types.ts` ← `z.infer` из worker-схем (ловит drift на typecheck). Хвост Batch E. |
 | 2.8 | **Валидация `limit` + cap на list/bulk** | M/S | `?limit=abc` → `LIMIT NaN`; bulk-rates без cap. Один хелпер `parseLimit`. |
 
