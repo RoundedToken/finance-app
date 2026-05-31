@@ -1,4 +1,4 @@
--- D1 schema (текущий снапшот после миграций 0001-0009).
+-- D1 schema (текущий снапшот после миграций 0001-0011).
 -- Source of truth для всех финансовых данных (ADR-011).
 -- Для свежей базы — применить этот файл; для существующей — миграции из migrations/.
 
@@ -186,3 +186,23 @@ CREATE TABLE IF NOT EXISTS goal_contributions (
 CREATE INDEX IF NOT EXISTS idx_goal_contribs_goal   ON goal_contributions(goal_id);
 CREATE INDEX IF NOT EXISTS idx_goal_contribs_date   ON goal_contributions(date);
 CREATE INDEX IF NOT EXISTS idx_goal_contribs_active ON goal_contributions(goal_id, date) WHERE deleted_at IS NULL;
+
+-- ─── Бюджеты / лимиты по категориям (SPEC-020) ────────────────────────────
+-- scope='category' → месячный лимит на расходную категорию (category_id NOT NULL);
+-- scope='total'    → общий месячный потолок на все траты (category_id NULL).
+-- Лимит в EUR, recurring (без истории по месяцам). Факт трат derived, не хранится.
+CREATE TABLE IF NOT EXISTS budgets (
+    id           TEXT PRIMARY KEY,
+    scope        TEXT NOT NULL DEFAULT 'category' CHECK (scope IN ('category','total')),
+    category_id  TEXT REFERENCES categories(id),
+    limit_eur    REAL NOT NULL CHECK (limit_eur > 0),
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at   TEXT,
+    CHECK (
+        (scope = 'category' AND category_id IS NOT NULL) OR
+        (scope = 'total'    AND category_id IS NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id) WHERE deleted_at IS NULL AND category_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_total    ON budgets(scope)       WHERE deleted_at IS NULL AND scope = 'total';

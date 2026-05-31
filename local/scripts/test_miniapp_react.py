@@ -81,6 +81,19 @@ def gen_expenses(n_days=60, today=dt.date(2026, 5, 26)):
     return out
 
 
+# SPEC-020: read-only бюджет-подсказка остатка на плитке категории.
+# food=over (красный «−X €»), groceries=warn (амбер «≈X €»), transport=good (hint «≈X €»).
+BUDGETS = {
+    "month": "2026-05", "currency": "EUR",
+    "total": {"budget_id": "bt", "limit_eur": 1200, "spent_eur": 984.0, "remaining_eur": 216.0, "pct": 82, "status": "warn", "missing_rates": 0},
+    "categories": [
+        {"budget_id": "b1", "category_id": "food",      "name": "Еда",       "emoji": "🍔", "color": "#FFB199", "limit_eur": 300, "spent_eur": 342.0, "remaining_eur": -42.0, "pct": 114, "status": "over", "missing_rates": 0},
+        {"budget_id": "b2", "category_id": "groceries", "name": "Продукты",  "emoji": "🛒", "color": "#B5E3C5", "limit_eur": 450, "spent_eur": 392.0, "remaining_eur": 58.0,  "pct": 87,  "status": "warn", "missing_rates": 0},
+        {"budget_id": "b3", "category_id": "transport", "name": "Транспорт", "emoji": "🚗", "color": "#A8C8F0", "limit_eur": 120, "spent_eur": 54.0,  "remaining_eur": 66.0,  "pct": 45,  "status": "good", "missing_rates": 0},
+    ],
+}
+
+
 def build_payload():
     return {
         "accounts": ACCOUNTS,
@@ -88,6 +101,7 @@ def build_payload():
         "currencies": CURRENCIES,
         "expenses": gen_expenses(),
         "rates": RATES,
+        "budgets": BUDGETS,
     }
 
 

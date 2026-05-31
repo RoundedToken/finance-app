@@ -26,6 +26,9 @@ import type {
     TransactionUpdatePayload,
     TransactionsResponse,
     DashboardResponse,
+    BudgetsResponse,
+    BudgetCreatePayload,
+    BudgetUpdatePayload,
 } from "./types";
 
 export function useMe() {
@@ -359,6 +362,54 @@ export function useDashboard(params?: { from?: string; to?: string }) {
         queryKey: ["dashboard", params?.from ?? null, params?.to ?? null],
         queryFn: () => apiFetch<DashboardResponse>(`/v1/web/dashboard${suffix}`),
         staleTime: 30_000,
+    });
+}
+
+// ── Budgets (SPEC-020) ───────────────────────────────────────────────────────
+
+export function useBudgets() {
+    return useQuery({
+        queryKey: ["budgets"],
+        queryFn: () => apiFetch<BudgetsResponse>("/v1/web/budgets"),
+        staleTime: 30_000,
+    });
+}
+
+function invalidateBudgets(qc: ReturnType<typeof useQueryClient>) {
+    qc.invalidateQueries({ queryKey: ["budgets"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });   // бюджеты — линза на те же траты
+}
+
+export function useCreateBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: BudgetCreatePayload) =>
+            apiFetch<{ ok: true; id: string; inserted: boolean }>("/v1/web/budgets", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }),
+        onSuccess: () => invalidateBudgets(qc),
+    });
+}
+
+export function useUpdateBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, patch }: { id: string; patch: BudgetUpdatePayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/budgets/${id}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => invalidateBudgets(qc),
+    });
+}
+
+export function useDeleteBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/budgets/${id}`, { method: "DELETE" }),
+        onSuccess: () => invalidateBudgets(qc),
     });
 }
 

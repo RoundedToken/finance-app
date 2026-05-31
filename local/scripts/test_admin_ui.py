@@ -229,6 +229,21 @@ def _build_dashboard() -> dict:
 
 DASHBOARD = _build_dashboard()
 
+# Бюджеты (SPEC-020) — то, что worker считает на /v1/web/budgets за текущий месяц.
+# Покрываем три статуса (good/warn/over) + общий потолок + missing_rates.
+# category_id ссылаются на CATEGORIES; cafe/entertainment остаются без лимита
+# (попадут в секцию «Без лимита» через references).
+BUDGETS = {
+    "month": "2026-05",
+    "currency": "EUR",
+    "total": {"budget_id": "bt", "limit_eur": 1200, "spent_eur": 984.0, "remaining_eur": 216.0, "pct": 82, "status": "warn", "missing_rates": 0},
+    "categories": [
+        {"budget_id": "b1", "category_id": "food",      "name": "Еда",       "emoji": "🍔", "color": "#FFB199", "limit_eur": 300, "spent_eur": 342.0, "remaining_eur": -42.0, "pct": 114, "status": "over", "missing_rates": 0},
+        {"budget_id": "b2", "category_id": "groceries", "name": "Продукты",  "emoji": "🛒", "color": "#B5E3C5", "limit_eur": 450, "spent_eur": 392.0, "remaining_eur": 58.0,  "pct": 87,  "status": "warn", "missing_rates": 1},
+        {"budget_id": "b3", "category_id": "transport", "name": "Транспорт", "emoji": "🚗", "color": "#A8C8F0", "limit_eur": 120, "spent_eur": 54.0,  "remaining_eur": 66.0,  "pct": 45,  "status": "good", "missing_rates": 0},
+    ],
+}
+
 
 # ── Vite dev server ────────────────────────────────────────────────────────
 def free_port(start: int = 5173) -> int:
@@ -308,6 +323,9 @@ async def setup_mocks(page, base: str) -> None:
         if "/v1/web/snapshots" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"snapshots": []}))
+        if "/v1/web/budgets" in url and method == "GET":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps(BUDGETS))
         if "/v1/web/expenses" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"expenses": EXPENSES}))
@@ -532,6 +550,36 @@ async def scenario_categories(page, base: str) -> None:
     print(f"  ✓ {out.name}")
 
 
+async def scenario_budgets(page, base: str) -> None:
+    """/budgets (SPEC-020): total card + список с BudgetBar (good/warn/over) +
+    «Без лимита» + модал создания. Скриншоты light + dark (.dark class)."""
+    await page.goto(f"{base}/budgets", wait_until="networkidle")
+    await page.wait_for_selector("h1:has-text('Бюджеты')", timeout=5000)
+    await page.wait_for_selector("text=Общий потолок", timeout=5000)
+    await page.wait_for_timeout(300)
+    for scheme in ("light", "dark"):
+        if scheme == "dark":
+            await page.evaluate("document.documentElement.classList.add('dark')")
+        else:
+            await page.evaluate("document.documentElement.classList.remove('dark')")
+        await page.wait_for_timeout(200)
+        out = OUT_DIR / f"admin-budgets-{scheme}.png"
+        await page.screenshot(path=str(out), full_page=True)
+        print(f"  ✓ {out.name}")
+    await page.evaluate("document.documentElement.classList.remove('dark')")
+    # hover на строку бюджета — подсветка
+    await page.hover("text=Транспорт")
+    await page.wait_for_timeout(150)
+    # модал создания бюджета (выбор категории без лимита + лимит EUR)
+    await page.get_by_role("button", name="Бюджет", exact=True).click()
+    await page.wait_for_timeout(400)
+    out = OUT_DIR / "admin-budgets-modal.png"
+    await page.screenshot(path=str(out))
+    print(f"  ✓ {out.name}")
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(150)
+
+
 async def scenario_sidebar_navigation(page, base: str) -> None:
     """Sidebar active state: переключаемся по 4 пунктам, делаем 4 скриншота."""
     pages = [
@@ -644,6 +692,7 @@ async def run(headed: bool) -> int:
             await scenario_goal_detail(page, base)
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
             await scenario_categories(page, base)
+            await scenario_budgets(page, base)
             await scenario_toast_error(page, base)
             await scenario_list_error(page, base)
             await scenario_short_viewport_modal(page, base)
