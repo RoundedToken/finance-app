@@ -50,12 +50,47 @@ export interface Expense {
     updated_at?: string;
 }
 
+/** Бюджеты (SPEC-020) — read-only подсказка остатка при вводе траты. */
+export type BudgetStatus = "good" | "warn" | "over";
+
+export interface BudgetCategoryProgress {
+    budget_id: string;
+    category_id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    limit_eur: number;
+    spent_eur: number;
+    remaining_eur: number;
+    pct: number;
+    status: BudgetStatus;
+    missing_rates: number;
+}
+
+export interface BudgetTotalProgress {
+    budget_id: string;
+    limit_eur: number;
+    spent_eur: number;
+    remaining_eur: number;
+    pct: number;
+    status: BudgetStatus;
+    missing_rates: number;
+}
+
+export interface Budgets {
+    month: string;            // "YYYY-MM"
+    currency: "EUR";
+    total: BudgetTotalProgress | null;
+    categories: BudgetCategoryProgress[];
+}
+
 export interface Bootstrap {
     accounts: Account[];
     categories: Category[];
     currencies: Currency[];
     rates: Rates;
     expenses: Expense[];
+    budgets: Budgets | null;
 }
 
 /** Payload для POST/PUT /v1/expenses. account_id — новое (SPEC-014). */

@@ -411,3 +411,49 @@ export interface DashboardResponse {
     buckets: DashboardBucket[];
 }
 
+// ── Budgets (SPEC-020) ───────────────────────────────────────────────────────
+
+export type BudgetStatus = "good" | "warn" | "over";
+
+export interface BudgetCategoryProgress {
+    budget_id: string;
+    category_id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    limit_eur: number;
+    spent_eur: number;
+    remaining_eur: number;
+    pct: number;
+    status: BudgetStatus;
+    missing_rates: number;
+}
+
+export interface BudgetTotalProgress {
+    budget_id: string;
+    limit_eur: number;
+    spent_eur: number;
+    remaining_eur: number;
+    pct: number;
+    status: BudgetStatus;
+    missing_rates: number;
+}
+
+export interface BudgetsResponse {
+    month: string;                 // "YYYY-MM"
+    currency: "EUR";
+    total: BudgetTotalProgress | null;
+    categories: BudgetCategoryProgress[];
+}
+
+export interface BudgetCreatePayload {
+    id?: string;
+    scope?: "category" | "total";
+    category_id?: string | null;
+    limit_eur: number;
+}
+
+export interface BudgetUpdatePayload {
+    limit_eur: number;
+}
+

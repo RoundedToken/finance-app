@@ -142,6 +142,17 @@ export const contributionUpdateSchema = z.object({
     note: optStr,
 });
 
+// ── Budgets (SPEC-020; бизнес-правила scope/FK/uniqueness — в budgets.ts) ───
+export const budgetCreateSchema = z.object({
+    id: z.string().optional(),
+    scope: z.enum(["category", "total"]).optional(),   // default 'category' в домене
+    category_id: optStr,                               // обязателен при scope='category' (проверка в домене)
+    limit_eur: posAmount,
+});
+export const budgetUpdateSchema = z.object({
+    limit_eur: posAmount,
+});
+
 // ── Categories (expense + income, общий shape) ──────────────────────────────
 export const categoryCreateSchema = z.object({
     id: z.string().optional(),

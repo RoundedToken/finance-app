@@ -6,6 +6,7 @@ import type { Env, ExpensePayload } from "./types";
 import { loadRatesIndex } from "./rates";
 import { getEffectiveBalance } from "./snapshots";
 import { roundMoney } from "./ledger";
+import { getBudgetsWithProgress } from "./budgets";
 
 export async function isAuthorizedUser(env: Env, telegramId: string): Promise<boolean> {
     const row = await env.DB
@@ -194,9 +195,10 @@ export async function replaceReferences(env: Env, payload: ReferencePayload): Pr
 
 // ─── Bootstrap (для Mini App при старте) ────────────────────────────────────
 
-export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean } = {}) {
+export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean; withBudgets?: boolean } = {}) {
     const withExpenses = opts.withExpenses ?? true;
-    const [accounts, categories, currencies, expenses, ratesMaxDate] = await Promise.all([
+    const withBudgets = opts.withBudgets ?? true;   // refs (Admin) не нужны бюджеты-подсказки
+    const [accounts, categories, currencies, expenses, ratesMaxDate, budgets] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         // Все категории (вкл. неактивные) — чтобы история сохраняла подпись после
         // деактивации (SPEC-017 AC4); выбор фильтрует is_active на клиенте.
@@ -204,6 +206,8 @@ export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean 
         env.DB.prepare("SELECT * FROM currencies").all(),
         withExpenses ? listExpenses(env, { limit: 20000 }) : Promise.resolve([] as any[]),   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
+        // SPEC-020: read-only бюджет-подсказка «осталось X» при вводе траты в Mini App.
+        withBudgets ? getBudgetsWithProgress(env) : Promise.resolve(null),
     ]);
     const date = ratesMaxDate?.d ?? null;
     let rates: Record<string, number> = {};
@@ -219,5 +223,6 @@ export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean 
         currencies: currencies.results,
         expenses,
         rates: { date, base: "EUR", quotes: rates },
+        budgets,
     };
 }

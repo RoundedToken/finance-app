@@ -85,10 +85,17 @@ import {
 } from "./transactions";
 import { getDashboard } from "./dashboard";
 import {
+    getBudgetsWithProgress,
+    createBudget,
+    updateBudget,
+    deleteBudget,
+} from "./budgets";
+import {
     expenseCreateSchema, expenseUpdateSchema, incomeCreateSchema, incomeUpdateSchema,
     snapshotCreateSchema, snapshotUpdateSchema, transactionCreateSchema, transactionUpdateSchema,
     goalCreateSchema, goalUpdateSchema, goalStatusSchema, contributionCreateSchema,
-    contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema, zodMessage,
+    contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema,
+    budgetCreateSchema, budgetUpdateSchema, zodMessage,
 } from "./schemas";
 import type { z } from "zod";
 
@@ -187,6 +194,15 @@ export default {
             }
             if (path === "/v1/web/dashboard" && request.method === "GET") return handleWebDashboard(request, env, url);
 
+            // ── Web Admin · budgets (SPEC-020) ───────────────────────────────
+            if (path === "/v1/web/budgets" && request.method === "GET") return handleWebBudgetsList(request, env);
+            if (path === "/v1/web/budgets" && request.method === "POST") return handleWebBudgetsCreate(request, env);
+            const budgetMatch = path.match(/^\/v1\/web\/budgets\/([0-9a-fA-F-]+)$/);
+            if (budgetMatch) {
+                if (request.method === "PUT") return handleWebBudgetsUpdate(request, env, budgetMatch[1]);
+                if (request.method === "DELETE") return handleWebBudgetsDelete(request, env, budgetMatch[1]);
+            }
+
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
             if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
             if (path === "/v1/admin/migrate-expenses" && request.method === "POST") return handleMigrate(request, env);
@@ -277,7 +293,7 @@ async function handleWebExpenses(request: Request, env: Env, url: URL): Promise<
 async function handleWebReferences(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const bootstrap = await getBootstrapData(env, { withExpenses: false });   // refs не используют expenses (Фаза 1.8)
+    const bootstrap = await getBootstrapData(env, { withExpenses: false, withBudgets: false });   // refs не используют ни траты (Фаза 1.8), ни бюджеты (SPEC-020)
     return json({
         accounts: bootstrap.accounts,
         categories: bootstrap.categories,
@@ -614,6 +630,40 @@ async function handleWebDashboard(request: Request, env: Env, url: URL): Promise
         console.error("dashboard error", err);
         return json({ error: "internal" }, 500, request, env);
     }
+}
+
+// ── Web Admin · budgets (SPEC-020) ────────────────────────────────────────
+async function handleWebBudgetsList(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    return json(await getBudgetsWithProgress(env), 200, request, env);
+}
+
+async function handleWebBudgetsCreate(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const parsed = await readBody(request, env, budgetCreateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await createBudget(env, parsed.data);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
+}
+
+async function handleWebBudgetsUpdate(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const parsed = await readBody(request, env, budgetUpdateSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await updateBudget(env, id, parsed.data);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebBudgetsDelete(request: Request, env: Env, id: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const r = await deleteBudget(env, id);
+    return json({ ok: true, ...r }, 200, request, env);
 }
 
 // SPEC-012: chain endpoints удалены. transactions работают как

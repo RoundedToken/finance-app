@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target, FolderTree } from "lucide-react";
+import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target, FolderTree, Gauge } from "lucide-react";
 import { useMe } from "@/api/queries";
 import { clearToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
     { to: "/accounts", icon: Wallet, label: "Счета" },
     { to: "/snapshots", icon: PieChart, label: "Снапшоты" },
     { to: "/expenses", icon: ListChecks, label: "Расходы" },
+    { to: "/budgets", icon: Gauge, label: "Бюджеты" },
     { to: "/incomes", icon: TrendingUp, label: "Доходы" },
     { to: "/goals", icon: Target, label: "Цели" },
     { to: "/transactions", icon: ArrowRightLeft, label: "Обмены" },
