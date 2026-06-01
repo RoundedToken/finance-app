@@ -91,11 +91,17 @@ import {
     deleteBudget,
 } from "./budgets";
 import {
+    getRecommendations,
+    getArchetypes,
+    upsertBudgetSettings,
+    logRecommendationDecision,
+} from "./rbar";
+import {
     expenseCreateSchema, expenseUpdateSchema, incomeCreateSchema, incomeUpdateSchema,
     snapshotCreateSchema, snapshotUpdateSchema, transactionCreateSchema, transactionUpdateSchema,
     goalCreateSchema, goalUpdateSchema, goalStatusSchema, contributionCreateSchema,
     contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema,
-    budgetCreateSchema, budgetUpdateSchema, zodMessage,
+    budgetCreateSchema, budgetUpdateSchema, budgetSettingsSchema, budgetDecisionSchema, zodMessage,
 } from "./schemas";
 import type { z } from "zod";
 
@@ -193,6 +199,13 @@ export default {
                 if (request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
             }
             if (path === "/v1/web/dashboard" && request.method === "GET") return handleWebDashboard(request, env, url);
+
+            // ── Web Admin · adaptive budgets RBAR (SPEC-023) — ДО generic budgets/:id ─
+            if (path === "/v1/web/budgets/recommendations" && request.method === "GET") return handleWebBudgetRecommendations(request, env, url);
+            if (path === "/v1/web/budgets/recommendations/decision" && request.method === "POST") return handleWebBudgetDecision(request, env);
+            if (path === "/v1/web/budgets/archetypes" && request.method === "GET") return handleWebBudgetArchetypes(request, env);
+            const settingsMatch = path.match(/^\/v1\/web\/budgets\/settings\/([A-Za-z0-9_-]+)$/);
+            if (settingsMatch && request.method === "PUT") return handleWebBudgetSettingsUpdate(request, env, settingsMatch[1]);
 
             // ── Web Admin · budgets (SPEC-020) ───────────────────────────────
             if (path === "/v1/web/budgets" && request.method === "GET") return handleWebBudgetsList(request, env);
@@ -664,6 +677,41 @@ async function handleWebBudgetsDelete(request: Request, env: Env, id: string): P
     if (!session.ok) return session.response;
     const r = await deleteBudget(env, id);
     return json({ ok: true, ...r }, 200, request, env);
+}
+
+// ── Web Admin · adaptive budgets RBAR (SPEC-023) ───────────────────────────
+async function handleWebBudgetRecommendations(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const period = url.searchParams.get("period") ?? undefined;
+    const valid = period === undefined || /^\d{4}-\d{2}$/.test(period);
+    return json(await getRecommendations(env, { period: valid ? period : undefined }), 200, request, env);
+}
+
+async function handleWebBudgetArchetypes(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    return json(await getArchetypes(env), 200, request, env);
+}
+
+async function handleWebBudgetSettingsUpdate(request: Request, env: Env, categoryId: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const parsed = await readBody(request, env, budgetSettingsSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await upsertBudgetSettings(env, categoryId, parsed.data);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
+async function handleWebBudgetDecision(request: Request, env: Env): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const parsed = await readBody(request, env, budgetDecisionSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await logRecommendationDecision(env, parsed.data);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id }, 200, request, env);
 }
 
 // SPEC-012: chain endpoints удалены. transactions работают как

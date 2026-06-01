@@ -206,3 +206,28 @@ CREATE TABLE IF NOT EXISTS budgets (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id) WHERE deleted_at IS NULL AND category_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_total    ON budgets(scope)       WHERE deleted_at IS NULL AND scope = 'total';
+
+-- ─── Адаптивные бюджеты RBAR (SPEC-023) ───────────────────────────────────
+-- budget_settings: per-category override'ы. Состояние оценщика НЕ хранится —
+--   реплеится из expenses (§5, G6). budget_recommendation_log: аудит accept/dismiss.
+CREATE TABLE IF NOT EXISTS budget_settings (
+    category_id        TEXT PRIMARY KEY REFERENCES categories(id),
+    archetype_override TEXT CHECK (archetype_override IN ('fixed','recurring','seasonal','lumpy','intermittent')),
+    floor_eur          REAL CHECK (floor_eur >= 0),
+    adaptive_enabled   INTEGER NOT NULL DEFAULT 1,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS budget_recommendation_log (
+    id              TEXT PRIMARY KEY,
+    category_id     TEXT NOT NULL REFERENCES categories(id),
+    period          TEXT NOT NULL,
+    archetype       TEXT NOT NULL,
+    prev_limit_eur  REAL,
+    reco_limit_eur  REAL NOT NULL,
+    reason_code     TEXT NOT NULL,
+    decision        TEXT NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending','accepted','dismissed')),
+    decided_at      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_reco_log_cat_period ON budget_recommendation_log(category_id, period);

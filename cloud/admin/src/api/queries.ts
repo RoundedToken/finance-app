@@ -29,6 +29,10 @@ import type {
     BudgetsResponse,
     BudgetCreatePayload,
     BudgetUpdatePayload,
+    BudgetRecommendationsResponse,
+    BudgetRecommendation,
+    BudgetArchetypesResponse,
+    BudgetSettingsPatch,
 } from "./types";
 
 export function useMe() {
@@ -410,6 +414,87 @@ export function useDeleteBudget() {
         mutationFn: (id: string) =>
             apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/budgets/${id}`, { method: "DELETE" }),
         onSuccess: () => invalidateBudgets(qc),
+    });
+}
+
+// ── Adaptive budgets RBAR (SPEC-023) — advisory ──────────────────────────────
+
+export function useBudgetRecommendations() {
+    return useQuery({
+        queryKey: ["budget-recommendations"],
+        queryFn: () => apiFetch<BudgetRecommendationsResponse>("/v1/web/budgets/recommendations"),
+        staleTime: 60_000,
+    });
+}
+
+export function useBudgetArchetypes() {
+    return useQuery({
+        queryKey: ["budget-archetypes"],
+        queryFn: () => apiFetch<BudgetArchetypesResponse>("/v1/web/budgets/archetypes"),
+        staleTime: 60_000,
+    });
+}
+
+function invalidateAdaptive(qc: ReturnType<typeof useQueryClient>) {
+    qc.invalidateQueries({ queryKey: ["budgets"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["budget-recommendations"] });
+    qc.invalidateQueries({ queryKey: ["budget-archetypes"] });
+}
+
+/**
+ * Применить рекомендацию (advisory G5): создаёт/обновляет ручной лимит SPEC-020
+ * + логирует решение. Сама система лимит не двигает — это явное действие.
+ */
+export function useApplyRecommendation() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ rec, period }: { rec: BudgetRecommendation; period: string }) => {
+            const limit = rec.recommended_limit_eur;
+            if (limit == null || limit <= 0) throw new Error("Нет рекомендованного лимита для применения");
+            if (rec.budget_id) {
+                await apiFetch(`/v1/web/budgets/${rec.budget_id}`, { method: "PUT", body: JSON.stringify({ limit_eur: limit }) });
+            } else {
+                await apiFetch(`/v1/web/budgets`, { method: "POST", body: JSON.stringify({ scope: "category", category_id: rec.category_id, limit_eur: limit }) });
+            }
+            await apiFetch(`/v1/web/budgets/recommendations/decision`, {
+                method: "POST",
+                body: JSON.stringify({
+                    category_id: rec.category_id, period, archetype: rec.archetype,
+                    prev_limit_eur: rec.current_limit_eur, reco_limit_eur: limit,
+                    reason_code: rec.reason_code ?? "TRACKING_DOWN", decision: "accepted",
+                }),
+            });
+        },
+        onSuccess: () => invalidateAdaptive(qc),
+    });
+}
+
+export function useDismissRecommendation() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ rec, period }: { rec: BudgetRecommendation; period: string }) =>
+            apiFetch(`/v1/web/budgets/recommendations/decision`, {
+                method: "POST",
+                body: JSON.stringify({
+                    category_id: rec.category_id, period, archetype: rec.archetype,
+                    prev_limit_eur: rec.current_limit_eur, reco_limit_eur: rec.recommended_limit_eur ?? 0,
+                    reason_code: rec.reason_code ?? "HOLD", decision: "dismissed",
+                }),
+            }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ["budget-recommendations"] }),
+    });
+}
+
+export function useUpdateBudgetSettings() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ categoryId, patch }: { categoryId: string; patch: BudgetSettingsPatch }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/budgets/settings/${categoryId}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => invalidateAdaptive(qc),
     });
 }
 

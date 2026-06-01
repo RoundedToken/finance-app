@@ -153,6 +153,23 @@ export const budgetUpdateSchema = z.object({
     limit_eur: posAmount,
 });
 
+// ── Adaptive budgets (SPEC-023; домен RBAR в rbar.ts) ───────────────────────
+const archetypeEnum = z.enum(["fixed", "recurring", "seasonal", "lumpy", "intermittent"]);
+export const budgetSettingsSchema = z.object({
+    archetype_override: archetypeEnum.nullish(),
+    floor_eur: z.number().nonnegative().nullish(),
+    adaptive_enabled: z.boolean().optional(),
+});
+export const budgetDecisionSchema = z.object({
+    category_id: z.string().min(1),
+    period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM"),
+    archetype: z.string().min(1),
+    prev_limit_eur: z.number().nonnegative().nullish(),
+    reco_limit_eur: z.number().nonnegative(),
+    reason_code: z.string().min(1),
+    decision: z.enum(["accepted", "dismissed"]),
+});
+
 // ── Categories (expense + income, общий shape) ──────────────────────────────
 export const categoryCreateSchema = z.object({
     id: z.string().optional(),

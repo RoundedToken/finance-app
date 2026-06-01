@@ -259,6 +259,40 @@ BUDGETS = {
     ],
 }
 
+# SPEC-023: адаптивные рекомендации (advisory) + lumpy-конверт + cold-start.
+BUDGET_RECOMMENDATIONS = {
+    "period": "2026-06",
+    "currency": "EUR",
+    "recommendations": [
+        {"category_id": "food", "name": "Еда", "emoji": "🍔", "color": "#FFB199", "archetype": "recurring",
+         "archetype_override": None, "budget_id": "b1", "current_limit_eur": 300, "recommended_limit_eur": 285,
+         "delta_pct": -5.0, "baseline_eur": 271, "floor_eur": 210, "reason_code": "SAVINGS_STREAK",
+         "reason_text": "несколько месяцев в рамках — поджимаем", "confidence": "ok", "envelope": None, "dismissed": False},
+        {"category_id": "transport", "name": "Транспорт", "emoji": "🚗", "color": "#A8C8F0", "archetype": "recurring",
+         "archetype_override": None, "budget_id": "b3", "current_limit_eur": 120, "recommended_limit_eur": 134,
+         "delta_pct": 11.7, "baseline_eur": 128, "floor_eur": 80, "reason_code": "TRACKING_UP",
+         "reason_text": "устойчивый рост ≥3 мес — поднимаем планку", "confidence": "ok", "envelope": None, "dismissed": False},
+        {"category_id": "electronics", "name": "Техника", "emoji": "💻", "color": "#C9B6E4", "archetype": "lumpy",
+         "archetype_override": None, "budget_id": None, "current_limit_eur": None, "recommended_limit_eur": None,
+         "delta_pct": None, "baseline_eur": None, "floor_eur": None, "reason_code": None, "reason_text": None,
+         "confidence": "ok", "dismissed": False,
+         "envelope": {"annual_eur": 1130, "accrual_monthly_eur": 94, "accrued_eur": 620, "spent_trailing_12m_eur": 510, "alert": False}},
+    ],
+}
+BUDGET_ARCHETYPES = {
+    "categories": [
+        {"category_id": "food", "name": "Еда", "emoji": "🍔", "color": "#FFB199", "detected_archetype": "recurring",
+         "archetype_override": None, "floor_eur": None, "adaptive_enabled": True,
+         "metrics": {"n_months": 28, "median_eur": 339, "mean_eur": 312, "cov_resid": 0.41, "zero_frac": 0.0, "trend_pct_mo": 1.4, "spike": False}},
+        {"category_id": "electronics", "name": "Техника", "emoji": "💻", "color": "#C9B6E4", "detected_archetype": "lumpy",
+         "archetype_override": None, "floor_eur": None, "adaptive_enabled": True,
+         "metrics": {"n_months": 18, "median_eur": 85, "mean_eur": 605, "cov_resid": 1.99, "zero_frac": 0.38, "trend_pct_mo": 23.3, "spike": True}},
+        {"category_id": "transport", "name": "Транспорт", "emoji": "🚗", "color": "#A8C8F0", "detected_archetype": "recurring",
+         "archetype_override": "recurring", "floor_eur": 80, "adaptive_enabled": False,
+         "metrics": {"n_months": 29, "median_eur": 68, "mean_eur": 82, "cov_resid": 0.67, "zero_frac": 0.0, "trend_pct_mo": 3.1, "spike": True}},
+    ],
+}
+
 
 # ── Vite dev server ────────────────────────────────────────────────────────
 def free_port(start: int = 5173) -> int:
@@ -338,6 +372,16 @@ async def setup_mocks(page, base: str) -> None:
         if "/v1/web/snapshots" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({"snapshots": []}))
+        # SPEC-023 — специфичные пути ДО generic /v1/web/budgets (substring-коллизия).
+        if "/v1/web/budgets/recommendations" in url and method == "GET":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps(BUDGET_RECOMMENDATIONS))
+        if "/v1/web/budgets/archetypes" in url and method == "GET":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps(BUDGET_ARCHETYPES))
+        if ("/v1/web/budgets/recommendations/decision" in url or "/v1/web/budgets/settings/" in url):
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps({"ok": True, "updated": True, "id": "log1"}))
         if "/v1/web/budgets" in url and method == "GET":
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps(BUDGETS))
@@ -609,6 +653,15 @@ async def scenario_budgets(page, base: str) -> None:
     await page.goto(f"{base}/budgets", wait_until="networkidle")
     await page.wait_for_selector("h1:has-text('Бюджеты')", timeout=5000)
     await page.wait_for_selector("text=Общий потолок", timeout=5000)
+    # SPEC-023: дождаться адаптивных секций (рекомендации + конверт + классификация)
+    await page.wait_for_selector("text=Рекомендации", timeout=5000)
+    await page.wait_for_selector("text=Накопительные конверты", timeout=5000)
+    # раскрыть секцию классификации для скриншота
+    try:
+        await page.get_by_text("Как система видит мои категории").click()
+        await page.wait_for_timeout(200)
+    except Exception:
+        pass
     await page.wait_for_timeout(300)
     for scheme in ("light", "dark"):
         if scheme == "dark":
