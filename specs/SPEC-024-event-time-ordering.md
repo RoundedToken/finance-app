@@ -1,7 +1,7 @@
 ---
 id: SPEC-024
 title: Детерминированный порядок событий во времени (created_at tie-break + локальная таймзона)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-01
 updated: 2026-06-01
@@ -142,3 +142,4 @@ baseline = последний manual snapshot ведра с date <= asOf
 
 - 2026-06-01: создан сразу в `in_progress` (направление одобрено owner'ом через AskUserQuestion: «по времени записи» + «чинить таймзону локально»; правило 15 + autonomous-push-deploy).
 - 2026-06-01: реализация (worker формула+миграция 0013, клиенты, тесты). `Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES` (0 must-fix). 102 vitest зелёные на реальном SQLite (мок гоняет SQL воркера) + typecheck worker/admin/miniapp. Nice-to-have применены: deploy-order заметка в миграции (применять до/с деплоем worker), убран мёртвый `created_at` из payload Mini App, +AC6 unit-тест (`createExpense` серверный created_at). Backlog: вестигиальное `created_at` в `expenseCreateSchema`/`ExpensePayload` (нужно для `bulkInsert`).
+- 2026-06-01: `done` — выкачено на прод (PR #4 squash-merge). Порядок: backup D1 → миграция 0013 через `d1 execute --file` (1847 expenses ISO→канон, 0 остаточных; `migrations apply` НЕ использован — трекинг рассинхронизирован, 0006-0012 применялись out-of-band) → deploy worker → idempotent-добивка (0 gap-строк) → build+визуал-харнес admin (формы рендерятся, дата=локальный сегодня) → deploy admin/miniapp Pages (HTTP 200). Прод-импакт: 23 реальных операции (19 доходов + 4 траты) в день снапшота после него теперь корректно учитываются (раньше выпадали).
