@@ -6,7 +6,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
-import { cn, formatAmount, formatDate } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
 import type { Goal, GoalCreatePayload, GoalStatus, GoalUpdatePayload } from "@/api/types";
 
 const STATUS_TABS: { value: GoalStatus; label: string }[] = [
@@ -98,7 +98,7 @@ function GoalCard({ goal }: { goal: Goal }) {
     const color = goal.color ?? "#94a3b8";
     const hasTarget = goal.target_amount != null && goal.target_amount > 0 && !!ccy;
     const percent = hasTarget ? Math.min(100, (goal.balance / goal.target_amount!) * 100) : null;
-    const overdue = goal.deadline && goal.deadline < new Date().toISOString().slice(0, 10) && goal.status === "active";
+    const overdue = goal.deadline && goal.deadline < todayLocal() && goal.status === "active";
 
     return (
         <Link

@@ -12,10 +12,10 @@ import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
-import { cn, formatAmount, formatDate, formatExchangeRate } from "@/lib/utils";
+import { cn, formatAmount, formatDate, formatExchangeRate, todayLocal } from "@/lib/utils";
 import type { Account, Transaction, TransactionCreatePayload, TransactionType, TransactionUpdatePayload } from "@/api/types";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = todayLocal;   // SPEC-024: дефолт даты операции — локальный день, не UTC
 
 export function TransactionsPage() {
     const { data, isLoading, isError, refetch } = useTransactions();

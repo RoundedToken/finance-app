@@ -69,18 +69,19 @@ const r2 = (x: number) => round(x, 2);
 
 interface BucketRow { id: string; name: string; type: string; currency: string; form: string; color: string | null; sort_order: number; }
 interface CatRow { id: string; name: string; emoji: string | null; color: string | null; }
-interface SnapRow { account_id: string; date: string; amount: number; }
-interface IncRow { account_id: string; date: string; amount: number; currency_code: string; goal_id: string | null; }
-interface ExpRow { account_id: string | null; date: string; amount: number; currency: string; category_id: string | null; }
-interface TxRow { from_account_id: string; to_account_id: string; date: string; from_amount: number; to_amount: number; fee_amount: number | null; fee_currency: string | null; }
-interface GcRow { account_id: string | null; date: string; amount: number; }
+interface SnapRow { account_id: string; date: string; amount: number; created_at: string; }
+interface IncRow { account_id: string; date: string; amount: number; currency_code: string; goal_id: string | null; created_at: string; }
+interface ExpRow { account_id: string | null; date: string; amount: number; currency: string; category_id: string | null; created_at: string; }
+interface TxRow { from_account_id: string; to_account_id: string; date: string; from_amount: number; to_amount: number; fee_amount: number | null; fee_currency: string | null; created_at: string; }
+interface GcRow { account_id: string | null; date: string; amount: number; created_at: string; }
 
-interface NativeEvent { date: string; delta: number; }  // в валюте ведра
+interface NativeEvent { date: string; createdAt: string; delta: number; }  // в валюте ведра (createdAt — tie-break внутри дня, SPEC-024)
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-export async function getDashboard(env: Env, opts: { from?: string; to?: string }): Promise<unknown> {
-    const today = todayUtc();
+export async function getDashboard(env: Env, opts: { from?: string; to?: string; today?: string }): Promise<unknown> {
+    // SPEC-024: «сегодня» — локальный день клиента (?today=), иначе UTC fallback.
+    const today = opts.today && ISO_DATE.test(opts.today) ? opts.today : todayUtc();
 
     // Окно для графиков: дефолт — последние 12 месяцев .. today.
     const toDate = opts.to && ISO_DATE.test(opts.to) ? opts.to : today;
@@ -94,12 +95,12 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
         env.DB.prepare(`SELECT id, name, type, currency, form, color, sort_order FROM accounts
                         WHERE form != 'external' AND deleted_at IS NULL ORDER BY sort_order, name`).all<BucketRow>(),
         env.DB.prepare(`SELECT id, name, emoji, color FROM categories WHERE type = 'expense'`).all<CatRow>(),
-        env.DB.prepare(`SELECT account_id, date, amount FROM snapshots
+        env.DB.prepare(`SELECT account_id, date, amount, created_at FROM snapshots
                         WHERE source = 'manual' AND deleted_at IS NULL ORDER BY date, created_at`).all<SnapRow>(),
-        env.DB.prepare(`SELECT account_id, date, amount, currency_code, goal_id FROM incomes WHERE deleted_at IS NULL`).all<IncRow>(),
-        env.DB.prepare(`SELECT account_id, date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL`).all<ExpRow>(),
-        env.DB.prepare(`SELECT from_account_id, to_account_id, date, from_amount, to_amount, fee_amount, fee_currency FROM transactions WHERE deleted_at IS NULL`).all<TxRow>(),
-        env.DB.prepare(`SELECT account_id, date, amount FROM goal_contributions WHERE deleted_at IS NULL`).all<GcRow>(),
+        env.DB.prepare(`SELECT account_id, date, amount, currency_code, goal_id, created_at FROM incomes WHERE deleted_at IS NULL`).all<IncRow>(),
+        env.DB.prepare(`SELECT account_id, date, amount, currency, category_id, created_at FROM expenses WHERE deleted_at IS NULL`).all<ExpRow>(),
+        env.DB.prepare(`SELECT from_account_id, to_account_id, date, from_amount, to_amount, fee_amount, fee_currency, created_at FROM transactions WHERE deleted_at IS NULL`).all<TxRow>(),
+        env.DB.prepare(`SELECT account_id, date, amount, created_at FROM goal_contributions WHERE deleted_at IS NULL`).all<GcRow>(),
     ]);
     // Активные цели — для targeted net worth. Инкапсулирует конверсию goal balance
     // в target_currency (по latest rate), не дублируем логику.
@@ -131,11 +132,11 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
     for (const b of buckets) { evtByBucket.set(b.id, []); snapByBucket.set(b.id, []); }
 
     for (const s of snapsR.results) snapByBucket.get(s.account_id)?.push(s);
-    for (const i of incR.results) evtByBucket.get(i.account_id)?.push({ date: i.date, delta: +i.amount });
-    for (const e of expR.results) if (e.account_id) evtByBucket.get(e.account_id)?.push({ date: e.date, delta: -e.amount });
+    for (const i of incR.results) evtByBucket.get(i.account_id)?.push({ date: i.date, createdAt: i.created_at, delta: +i.amount });
+    for (const e of expR.results) if (e.account_id) evtByBucket.get(e.account_id)?.push({ date: e.date, createdAt: e.created_at, delta: -e.amount });
     for (const t of txR.results) {
-        evtByBucket.get(t.from_account_id)?.push({ date: t.date, delta: -t.from_amount });
-        evtByBucket.get(t.to_account_id)?.push({ date: t.date, delta: +t.to_amount });
+        evtByBucket.get(t.from_account_id)?.push({ date: t.date, createdAt: t.created_at, delta: -t.from_amount });
+        evtByBucket.get(t.to_account_id)?.push({ date: t.date, createdAt: t.created_at, delta: +t.to_amount });
         // Комиссия (L2) — отток из ведра-плательщика (валюта = fee_currency, приоритет from).
         const feePayer = feePayerBucket({
             from_account_id: t.from_account_id, to_account_id: t.to_account_id,
@@ -143,9 +144,9 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
             to_currency: bucketCcy.get(t.to_account_id) ?? "",
             fee_currency: t.fee_currency, fee_amount: t.fee_amount,
         });
-        if (feePayer) evtByBucket.get(feePayer)?.push({ date: t.date, delta: -(t.fee_amount as number) });
+        if (feePayer) evtByBucket.get(feePayer)?.push({ date: t.date, createdAt: t.created_at, delta: -(t.fee_amount as number) });
     }
-    for (const g of gcR.results) if (g.account_id) evtByBucket.get(g.account_id)?.push({ date: g.date, delta: +g.amount });
+    for (const g of gcR.results) if (g.account_id) evtByBucket.get(g.account_id)?.push({ date: g.date, createdAt: g.created_at, delta: +g.amount });
     for (const arr of evtByBucket.values()) arr.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
     /**
@@ -155,12 +156,13 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string 
      */
     const balanceAt = (bucketId: string, asOf: string): number => {
         const snaps = snapByBucket.get(bucketId) ?? [];
-        let base = 0, baseDate = "0000-01-01";
+        let base = 0, baseDate = "0000-01-01", baseCreatedAt = "";
         for (let i = snaps.length - 1; i >= 0; i--) {       // последний по date,created_at
-            if (snaps[i].date <= asOf) { base = snaps[i].amount; baseDate = snaps[i].date; break; }
+            if (snaps[i].date <= asOf) { base = snaps[i].amount; baseDate = snaps[i].date; baseCreatedAt = snaps[i].created_at; break; }
         }
-        // Единая формула с snapshots.ts:getEffectiveBalance (SPEC-011, ledger.ts).
-        return reconstructBalance(base, baseDate, evtByBucket.get(bucketId) ?? [], asOf);
+        // Единая формула с snapshots.ts:getEffectiveBalance (SPEC-011/024, ledger.ts):
+        // tie-break внутри дня снапшота по created_at.
+        return reconstructBalance(base, baseDate, baseCreatedAt, evtByBucket.get(bucketId) ?? [], asOf);
     };
 
     // ── KPI «сейчас» (asOf = today, latest rate) ─────────────────────────────

@@ -81,53 +81,61 @@ export async function getEffectiveBalance(env: Env, accountId: string, asOfDate?
     const upTo = asOfDate ?? "9999-12-31";
 
     const baselineRow = await env.DB.prepare(
-        `SELECT id, date, amount FROM snapshots
+        `SELECT id, date, amount, created_at FROM snapshots
          WHERE account_id = ? AND source = 'manual' AND deleted_at IS NULL AND date <= ?
          ORDER BY date DESC, created_at DESC LIMIT 1`,
-    ).bind(accountId, upTo).first<{ id: string; date: string; amount: number }>();
+    ).bind(accountId, upTo).first<{ id: string; date: string; amount: number; created_at: string }>();
 
     const baseline = baselineRow ?? null;
     const fromDate = baseline ? baseline.date : "0000-01-01";
+    // created_at tie-break внутри дня снапшота (SPEC-024). Нет baseline → "" пропускает
+    // ничью (все события и так берутся по date > "0000-01-01"). Каноничный формат
+    // 'YYYY-MM-DD HH:MM:SS' гарантируется миграцией 0013 + серверным created_at.
+    const fromCreatedAt = baseline?.created_at ?? "";
     let balance = baseline?.amount ?? 0;
     let events = 0;
+
+    // Событие учитывается, если date <= asOf И (date > baseline.date ИЛИ
+    // (date == baseline.date И created_at > baseline.created_at)). SPEC-024.
+    const afterBaseline = "date <= ? AND (date > ? OR (date = ? AND created_at > ?))";
 
     // Incomes (+amount)
     const inc = await env.DB.prepare(
         `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM incomes
-         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
-    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+         WHERE account_id = ? AND deleted_at IS NULL AND ${afterBaseline}`,
+    ).bind(accountId, upTo, fromDate, fromDate, fromCreatedAt).first<{ s: number; c: number }>();
     balance += inc?.s ?? 0;
     events  += inc?.c ?? 0;
 
     // Expenses (−amount)
     const exp = await env.DB.prepare(
         `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM expenses
-         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
-    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+         WHERE account_id = ? AND deleted_at IS NULL AND ${afterBaseline}`,
+    ).bind(accountId, upTo, fromDate, fromDate, fromCreatedAt).first<{ s: number; c: number }>();
     balance -= exp?.s ?? 0;
     events  += exp?.c ?? 0;
 
     // Transactions out (−from_amount)
     const txOut = await env.DB.prepare(
         `SELECT COALESCE(SUM(from_amount), 0) AS s, COUNT(*) AS c FROM transactions
-         WHERE from_account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
-    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+         WHERE from_account_id = ? AND deleted_at IS NULL AND ${afterBaseline}`,
+    ).bind(accountId, upTo, fromDate, fromDate, fromCreatedAt).first<{ s: number; c: number }>();
     balance -= txOut?.s ?? 0;
     events  += txOut?.c ?? 0;
 
     // Transactions in (+to_amount)
     const txIn = await env.DB.prepare(
         `SELECT COALESCE(SUM(to_amount), 0) AS s, COUNT(*) AS c FROM transactions
-         WHERE to_account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
-    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+         WHERE to_account_id = ? AND deleted_at IS NULL AND ${afterBaseline}`,
+    ).bind(accountId, upTo, fromDate, fromDate, fromCreatedAt).first<{ s: number; c: number }>();
     balance += txIn?.s ?? 0;
     events  += txIn?.c ?? 0;
 
     // Goal contributions (+amount если account_id=bucket)
     const gc = await env.DB.prepare(
         `SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM goal_contributions
-         WHERE account_id = ? AND deleted_at IS NULL AND date > ? AND date <= ?`,
-    ).bind(accountId, fromDate, upTo).first<{ s: number; c: number }>();
+         WHERE account_id = ? AND deleted_at IS NULL AND ${afterBaseline}`,
+    ).bind(accountId, upTo, fromDate, fromDate, fromCreatedAt).first<{ s: number; c: number }>();
     balance += gc?.s ?? 0;
     events  += gc?.c ?? 0;
 
@@ -141,13 +149,16 @@ export async function getEffectiveBalance(env: Env, accountId: string, asOfDate?
          JOIN accounts fa ON fa.id = t.from_account_id
          JOIN accounts ta ON ta.id = t.to_account_id
          WHERE t.deleted_at IS NULL AND t.fee_amount IS NOT NULL
-           AND t.date > ? AND t.date <= ?
+           AND t.date <= ? AND (t.date > ? OR (t.date = ? AND t.created_at > ?))
            AND ( (t.from_account_id = ? AND t.fee_currency = fa.currency)
               OR (t.to_account_id = ? AND t.fee_currency = ta.currency AND t.fee_currency <> fa.currency) )`,
-    ).bind(fromDate, upTo, accountId, accountId).first<{ s: number }>();
+    ).bind(upTo, fromDate, fromDate, fromCreatedAt, accountId, accountId).first<{ s: number }>();
     balance -= fee?.s ?? 0;
 
-    return { balance: roundMoney(balance), manual_baseline: baseline, events_count: events };
+    // manual_baseline — публичный контракт {id,date,amount} (created_at тащим только
+    // внутри для tie-break, наружу не отдаём — паритет с latestManualSnapshotPerAccount).
+    const publicBaseline = baseline ? { id: baseline.id, date: baseline.date, amount: baseline.amount } : null;
+    return { balance: roundMoney(balance), manual_baseline: publicBaseline, events_count: events };
 }
 
 /** Effective balance для всех active buckets. asOf по умолчанию — все события

@@ -13,29 +13,49 @@ export function roundMoney(x: number): number {
 }
 
 export interface LedgerEvent {
-    date: string;   // YYYY-MM-DD
-    delta: number;  // native-валюта ведра: + приход, − расход
+    date: string;        // YYYY-MM-DD — экономическая дата операции (может быть backdated)
+    createdAt: string;   // YYYY-MM-DD HH:MM:SS (UTC) — время записи, tie-break внутри дня
+    delta: number;       // native-валюта ведра: + приход, − расход
 }
 
 /**
- * Effective balance ведра (SPEC-011), семантика snapshot = «конец дня»:
+ * Канонизирует timestamp к 'YYYY-MM-DD HH:MM:SS' (как datetime('now')): отрезает
+ * мс/`Z` и меняет ISO-разделитель 'T' на пробел. Нужно, чтобы строковое сравнение
+ * created_at между таблицами было корректным (' ' 0x20 < 'T' 0x54 иначе ломает
+ * порядок). Момент времени не меняется (UTC→UTC). SPEC-024.
+ */
+export function canonicalTs(s: string): string {
+    return s.includes("T") ? s.slice(0, 19).replace("T", " ") : s;
+}
+
+/**
+ * Effective balance ведра (SPEC-011, уточнено SPEC-024): порядок событий
+ * относительно снапшота внутри одного дня решается по времени записи (created_at):
  *
- *   balance = baselineAmount + Σ delta  где  baselineDate < event.date ≤ asOf
+ *   balance = baselineAmount + Σ delta  где  event.date ≤ asOf  И
+ *     ( event.date > baselineDate  ИЛИ
+ *       (event.date == baselineDate И event.createdAt > baselineCreatedAt) )
  *
- * События строго ПОСЛЕ даты baseline (`event.date > baselineDate`) — операции
- * того же дня, что и снапшот, считаются уже учтёнными в снапшоте (конец дня).
- * Чтобы скорректировать день снапшота — ставь дату следующего дня или новый
- * снапшот. Нет baseline → baselineAmount=0, baselineDate="0000-01-01".
+ * Дата операции — главный ключ (backdating сохраняется: событие за прошлую неделю
+ * остаётся за прошлой неделей). created_at решает ТОЛЬКО ничью при равной дате —
+ * «событие, записанное после снапшота того же дня, учитывается». Нет baseline →
+ * baselineAmount=0, baselineDate="0000-01-01", baselineCreatedAt="" (created_at-ветка
+ * не срабатывает, т.к. реальных событий с date="0000-01-01" нет).
  */
 export function reconstructBalance(
     baselineAmount: number,
     baselineDate: string,
+    baselineCreatedAt: string,
     events: LedgerEvent[],
     asOf: string,
 ): number {
     let bal = baselineAmount;
     for (const e of events) {
-        if (e.date > baselineDate && e.date <= asOf) bal += e.delta;
+        if (e.date > asOf) continue;
+        const afterBaseline =
+            e.date > baselineDate ||
+            (e.date === baselineDate && e.createdAt > baselineCreatedAt);
+        if (afterBaseline) bal += e.delta;
     }
     return roundMoney(bal);
 }

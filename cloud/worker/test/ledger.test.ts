@@ -16,39 +16,53 @@ describe("roundMoney", () => {
     });
 });
 
-describe("reconstructBalance (SPEC-011, семантика «конец дня»)", () => {
-    it("baseline + события строго ПОСЛЕ даты baseline", () => {
+describe("reconstructBalance (SPEC-011/024, tie-break по created_at внутри дня)", () => {
+    const BASE_CA = "2026-01-10 12:00:00";   // created_at снапшота-baseline
+
+    it("дата — главный ключ; created_at решает ТОЛЬКО ничью при равной дате", () => {
         const events = [
-            { date: "2026-01-09", delta: +20 },  // до baseline → исключить
-            { date: "2026-01-10", delta: +50 },  // день baseline → исключить (конец дня)
-            { date: "2026-01-11", delta: -30 },  // после → учесть
-            { date: "2026-02-20", delta: -5 },   // после asOf → исключить
+            { date: "2026-01-09", createdAt: "2026-01-09 23:59:00", delta: +20 },  // до даты baseline → исключить (даже если created позже)
+            { date: "2026-01-10", createdAt: "2026-01-10 08:00:00", delta: +50 },  // день baseline, ДО снапшота → исключить (уже в снапшоте)
+            { date: "2026-01-10", createdAt: "2026-01-10 18:00:00", delta: +7 },   // день baseline, ПОСЛЕ снапшота → учесть
+            { date: "2026-01-11", createdAt: "2026-01-11 09:00:00", delta: -30 },  // после даты → учесть
+            { date: "2026-02-20", createdAt: "2026-02-20 09:00:00", delta: -5 },   // после asOf → исключить
         ];
-        expect(reconstructBalance(100, "2026-01-10", events, "2026-01-31")).toBe(70);
+        expect(reconstructBalance(100, "2026-01-10", BASE_CA, events, "2026-01-31")).toBe(77);  // 100 +7 −30
     });
 
-    it("без baseline (date 0000-01-01) — суммирует с нуля все события ≤ asOf", () => {
+    it("created_at == created_at снапшота → не учитывается (строгое >)", () => {
+        const events = [{ date: "2026-01-10", createdAt: BASE_CA, delta: +50 }];
+        expect(reconstructBalance(100, "2026-01-10", BASE_CA, events, "2026-12-31")).toBe(100);
+    });
+
+    it("без baseline (date 0000-01-01, created_at '') — суммирует с нуля все события ≤ asOf", () => {
         const events = [
-            { date: "2024-01-01", delta: +100 },
-            { date: "2024-02-01", delta: -30 },   // после asOf
+            { date: "2024-01-01", createdAt: "2024-01-01 10:00:00", delta: +100 },
+            { date: "2024-02-01", createdAt: "2024-02-01 10:00:00", delta: -30 },   // после asOf
         ];
-        expect(reconstructBalance(0, "0000-01-01", events, "2024-01-15")).toBe(100);
+        expect(reconstructBalance(0, "0000-01-01", "", events, "2024-01-15")).toBe(100);
     });
 
     it("событие ровно в asOf — включается", () => {
-        expect(reconstructBalance(0, "0000-01-01", [{ date: "2024-05-10", delta: 42 }], "2024-05-10")).toBe(42);
+        expect(reconstructBalance(0, "0000-01-01", "", [{ date: "2024-05-10", createdAt: "2024-05-10 10:00:00", delta: 42 }], "2024-05-10")).toBe(42);
     });
 
     it("округляет результат (ADR-015)", () => {
-        const events = [{ date: "2024-01-02", delta: 0.1 }, { date: "2024-01-03", delta: 0.2 }];
-        expect(reconstructBalance(0, "0000-01-01", events, "2024-12-31")).toBe(0.3);
+        const events = [
+            { date: "2024-01-02", createdAt: "2024-01-02 10:00:00", delta: 0.1 },
+            { date: "2024-01-03", createdAt: "2024-01-03 10:00:00", delta: 0.2 },
+        ];
+        expect(reconstructBalance(0, "0000-01-01", "", events, "2024-12-31")).toBe(0.3);
     });
 
-    it("порядок событий не важен", () => {
-        const a = [{ date: "2024-03-02", delta: 5 }, { date: "2024-03-01", delta: 10 }];
-        const b = [{ date: "2024-03-01", delta: 10 }, { date: "2024-03-02", delta: 5 }];
-        expect(reconstructBalance(0, "0000-01-01", a, "2024-12-31"))
-            .toBe(reconstructBalance(0, "0000-01-01", b, "2024-12-31"));
+    it("порядок событий в массиве не важен (сумма коммутативна)", () => {
+        const a = [
+            { date: "2024-03-02", createdAt: "2024-03-02 10:00:00", delta: 5 },
+            { date: "2024-03-01", createdAt: "2024-03-01 10:00:00", delta: 10 },
+        ];
+        const b = [...a].reverse();
+        expect(reconstructBalance(0, "0000-01-01", "", a, "2024-12-31"))
+            .toBe(reconstructBalance(0, "0000-01-01", "", b, "2024-12-31"));
     });
 });
 
