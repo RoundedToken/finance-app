@@ -30,5 +30,5 @@ export interface ExpensePayload {
     note?: string | null;
     source?: string;
     source_record_id?: string | null;
-    created_at?: string;          // сервер подставит now() если клиент не прислал (db.ts)
+    created_at?: string;          // принимается, но ИГНОРИРУЕТСЯ: createExpense ставит серверный datetime('now') (SPEC-024). Используется только в bulkInsertExpenses (импорт).
 }

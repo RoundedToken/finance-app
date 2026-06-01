@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { getEffectiveBalance, effectiveBalancePerAccount } from "../src/snapshots";
+import { createExpense } from "../src/db";
 import { makeEnv, seed } from "./d1-mock";
 
 describe("getEffectiveBalance", () => {
@@ -37,18 +38,39 @@ describe("getEffectiveBalance", () => {
         expect(r.events_count).toBe(2);
     });
 
-    it("событие в день baseline исключено (date > baseline.date)", async () => {
+    it("tie-break внутри дня снапшота по created_at: ПОСЛЕ снапшота учтено, ДО — нет (SPEC-024 AC1/AC2)", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "eur-cash", currency: "EUR" }],
+            snapshots: [{ id: "s1", date: "2026-03-01", account_id: "eur-cash", amount: 90, created_at: "2026-03-01 10:00:00" }],
+            expenses: [
+                // трата ДО снапшота того же дня → уже учтена в 90, повторно не вычитается (AC2)
+                { id: "e-before", date: "2026-03-01", account_id: "eur-cash", amount: 10, currency: "EUR", created_at: "2026-03-01 09:00:00" },
+            ],
+            incomes: [
+                // доход ПОСЛЕ снапшота того же дня → учитывается (AC1)
+                { id: "i-after", date: "2026-03-01", account_id: "eur-cash", amount: 50, currency_code: "EUR", created_at: "2026-03-01 11:00:00" },
+                // доход следующего дня → учитывается (date > baseline.date)
+                { id: "i-next", date: "2026-03-02", account_id: "eur-cash", amount: 5, currency_code: "EUR" },
+            ],
+        });
+        const r = await getEffectiveBalance(env, "eur-cash");
+        expect(r.balance).toBe(145);      // 90 (трата до снапшота уже внутри) + 50 (доход после) + 5 (след. день)
+        expect(r.events_count).toBe(2);   // i-after + i-next; e-before в окно после снапшота не попал
+    });
+
+    it("событие в день baseline с created_at ДО снапшота — исключено", async () => {
         const { env, d1 } = makeEnv();
         seed(d1, {
             accounts: [{ id: "eur-bank", currency: "EUR" }],
-            snapshots: [{ id: "s1", date: "2026-03-01", account_id: "eur-bank", amount: 1000 }],
+            snapshots: [{ id: "s1", date: "2026-03-01", account_id: "eur-bank", amount: 1000, created_at: "2026-03-01 23:00:00" }],
             incomes: [
-                { id: "i-sameday", date: "2026-03-01", account_id: "eur-bank", amount: 500, currency_code: "EUR" },
+                { id: "i-before", date: "2026-03-01", account_id: "eur-bank", amount: 500, currency_code: "EUR", created_at: "2026-03-01 08:00:00" },
                 { id: "i-next", date: "2026-03-02", account_id: "eur-bank", amount: 200, currency_code: "EUR" },
             ],
         });
         const r = await getEffectiveBalance(env, "eur-bank");
-        expect(r.balance).toBe(1200);     // 1000 + 200 (событие дня снапшота не входит)
+        expect(r.balance).toBe(1200);     // 1000 + 200 (i-before до снапшота → внутри baseline)
         expect(r.events_count).toBe(1);
     });
 
@@ -209,5 +231,22 @@ describe("effectiveBalancePerAccount", () => {
         expect(Object.keys(map).sort()).toEqual(["closed", "eur-bank"]); // closed присутствует несмотря на is_active=0
         expect(map["eur-bank"].balance).toBe(1234);
         expect(map["closed"].balance).toBe(0);
+    });
+});
+
+describe("createExpense · серверный created_at (SPEC-024 AC6)", () => {
+    it("ставит серверный created_at каноничного формата, игнорирует клиентский ISO", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, { accounts: [{ id: "eur-cash", currency: "EUR" }] });
+        const res = await createExpense(env, "u1", {
+            id: "e1", date: "2026-06-01", account_id: "eur-cash", amount: 10, currency: "EUR",
+            created_at: "2099-01-01T00:00:00.000Z",   // клиентский — должен быть проигнорирован
+        });
+        expect(res).toMatchObject({ ok: true, inserted: true });
+        const row = await env.DB.prepare("SELECT created_at FROM expenses WHERE id = ?")
+            .bind("e1").first<{ created_at: string }>();
+        // канон 'YYYY-MM-DD HH:MM:SS' (без 'T'/'Z'/мс) и НЕ клиентский 2099
+        expect(row!.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+        expect(row!.created_at.startsWith("2099")).toBe(false);
     });
 });

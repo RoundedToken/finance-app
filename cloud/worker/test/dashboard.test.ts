@@ -147,18 +147,22 @@ describe("getDashboard · граничные кейсы (немутируемо�
         expect(dash.kpi.net_worth_eur).toBeCloseTo(7000, 2);
     });
 
-    it("событие в день baseline исключено в dashboard-пути (ledger > baselineDate)", async () => {
+    it("tie-break внутри дня снапшота в dashboard-пути по created_at + зеркало getEffectiveBalance (SPEC-024 AC4)", async () => {
         const { env, d1 } = makeEnv();
         seed(d1, {
             accounts: [{ id: "eur-bank", currency: "EUR", sort_order: 10 }],
-            snapshots: [{ id: "s1", date: "2026-03-01", account_id: "eur-bank", amount: 1000 }],
-            incomes: [{ id: "i1", date: "2026-03-01", account_id: "eur-bank", amount: 500, currency_code: "EUR" }], // день снапшота → исключён
+            snapshots: [{ id: "s1", date: "2026-03-01", account_id: "eur-bank", amount: 1000, created_at: "2026-03-01 10:00:00" }],
+            incomes: [
+                { id: "i-before", date: "2026-03-01", account_id: "eur-bank", amount: 500, currency_code: "EUR", created_at: "2026-03-01 09:00:00" }, // до снапшота → исключён
+                { id: "i-after", date: "2026-03-01", account_id: "eur-bank", amount: 300, currency_code: "EUR", created_at: "2026-03-01 11:00:00" },  // после снапшота → учтён
+            ],
         });
         const dash = await getDashboard(env, {}) as any;
         const mar = dash.net_worth_series.find((p: any) => p.month === "2026-03");
-        expect(mar.by_bucket_native["eur-bank"]).toBe(1000);  // событие дня baseline не входит (ловит >= мутацию)
-        const cur = dash.net_worth_series.find((p: any) => p.month === "2026-05");
-        expect(cur.by_bucket_native["eur-bank"]).toBe(1000);
+        expect(mar.by_bucket_native["eur-bank"]).toBe(1300);  // 1000 + 300 (i-after); i-before уже в снапшоте
+        // зеркальность: тот же результат из per-bucket getEffectiveBalance (AC4)
+        const eff = await getEffectiveBalance(env, "eur-bank", "2026-03-31");
+        expect(eff.balance).toBe(1300);
     });
 
     it("текущий месяц капится по today: будущие события месяца исключены (M3)", async () => {

@@ -5,10 +5,10 @@ import { ErrorState } from "@/components/ErrorState";
 import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
-import { cn, formatAmount, formatDate } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
 import type { Account, Snapshot } from "@/api/types";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = todayLocal;   // SPEC-024: дефолт даты снапшота — локальный день, не UTC
 
 export function SnapshotsPage() {
     const { data: snapData, isLoading, isError, refetch } = useSnapshots();
