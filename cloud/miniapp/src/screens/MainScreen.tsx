@@ -10,7 +10,7 @@ import { Numpad } from "@/components/Numpad";
 import { DayTotal } from "@/components/DayTotal";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import { cn, fmt, humanDay, uuid4 } from "@/lib/utils";
-import type { Category, Account, Expense, BudgetCategoryProgress } from "@/api/types";
+import type { Category, Account, Expense, BudgetCategoryProgress, BudgetEnvelope } from "@/api/types";
 
 export function MainScreen() {
     const { s, d } = useApp();
@@ -21,6 +21,8 @@ export function MainScreen() {
     const cats = (data?.categories ?? []).filter(c => c.type === "expense" && c.is_active);
     // SPEC-020: read-only подсказка «осталось X €» на плитке категории с бюджетом.
     const budgetByCat = new Map((data?.budgets?.categories ?? []).map(b => [b.category_id, b] as const));
+    // SPEC-023: read-only lens конверта для lumpy-категорий (вместо месячного остатка).
+    const envelopeByCat = new Map((data?.budget_envelopes ?? []).map(e => [e.category_id, e] as const));
     const accounts = (data?.accounts ?? []).filter(a => a.form !== "external" && a.is_active !== 0);
     const account = accounts.find(a => a.id === s.accountId) ?? null;
 
@@ -49,7 +51,7 @@ export function MainScreen() {
 
             <SideActions account={account} hasNote={!!s.note} />
 
-            <Categories cats={cats} budgetByCat={budgetByCat} onPick={save} busy={create.isPending} canSave={amountValue(s) > 0} />
+            <Categories cats={cats} budgetByCat={budgetByCat} envelopeByCat={envelopeByCat} onPick={save} busy={create.isPending} canSave={amountValue(s) > 0} />
 
             <RecentDays />
         </div>
@@ -94,7 +96,7 @@ function ActionChip({ icon, label, active, onClick }: { icon: React.ReactNode; l
     );
 }
 
-function Categories({ cats, budgetByCat, onPick, busy, canSave }: { cats: Category[]; budgetByCat: Map<string, BudgetCategoryProgress>; onPick: (id: string) => void; busy: boolean; canSave: boolean }) {
+function Categories({ cats, budgetByCat, envelopeByCat, onPick, busy, canSave }: { cats: Category[]; budgetByCat: Map<string, BudgetCategoryProgress>; envelopeByCat: Map<string, BudgetEnvelope>; onPick: (id: string) => void; busy: boolean; canSave: boolean }) {
     const PER = 8;
     const pages: Category[][] = [];
     for (let i = 0; i < cats.length; i += PER) pages.push(cats.slice(i, i + PER));
@@ -115,7 +117,9 @@ function Categories({ cats, budgetByCat, onPick, busy, canSave }: { cats: Catego
                                     disabled ? "opacity-40 pointer-events-none" : "active:animate-pop")}>
                                 <span className="text-2xl leading-none">{c.emoji ?? "🏷"}</span>
                                 <span className="text-[11px] text-center leading-tight">{c.name}</span>
-                                <BudgetHint b={budgetByCat.get(c.id)} />
+                                {envelopeByCat.has(c.id)
+                                    ? <EnvelopeHint e={envelopeByCat.get(c.id)} />
+                                    : <BudgetHint b={budgetByCat.get(c.id)} />}
                             </button>
                         ))}
                     </div>
@@ -141,6 +145,16 @@ function BudgetHint({ b }: { b?: BudgetCategoryProgress }) {
             b.status === "over" ? "text-red-600" : b.status === "warn" ? "text-amber-600" : "text-hint",
         )}>
             {over ? `−${val} €` : `≈${val} €`}
+        </span>
+    );
+}
+
+/** SPEC-023: read-only накопленное в годовом конверте (lumpy). Только отображение. */
+function EnvelopeHint({ e }: { e?: BudgetEnvelope }) {
+    if (!e) return null;
+    return (
+        <span className="text-[9px] leading-none font-medium tabular-nums mt-0.5 text-violet-500">
+            🐷 {Math.round(e.accrued_eur)} €
         </span>
     );
 }

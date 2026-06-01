@@ -458,3 +458,73 @@ export interface BudgetUpdatePayload {
     limit_eur: number;
 }
 
+// ── Adaptive budgets RBAR (SPEC-023) ────────────────────────────────────────
+
+export type Archetype = "fixed" | "recurring" | "seasonal" | "lumpy" | "intermittent" | "cold-start";
+
+export interface BudgetEnvelope {
+    annual_eur: number;
+    accrual_monthly_eur: number;
+    accrued_eur: number;
+    spent_trailing_12m_eur: number;
+    alert: boolean;
+}
+
+export interface BudgetRecommendation {
+    category_id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    archetype: Archetype;
+    archetype_override: Archetype | null;
+    budget_id: string | null;
+    current_limit_eur: number | null;
+    recommended_limit_eur: number | null;
+    delta_pct: number | null;
+    baseline_eur: number | null;
+    floor_eur: number | null;
+    reason_code: string | null;
+    reason_text: string | null;
+    confidence: "ok" | "low";
+    envelope: BudgetEnvelope | null;
+    dismissed: boolean;
+}
+
+export interface BudgetRecommendationsResponse {
+    period: string;        // "YYYY-MM"
+    currency: "EUR";
+    recommendations: BudgetRecommendation[];
+}
+
+export interface ArchetypeMetrics {
+    n_months: number;
+    median_eur: number;
+    mean_eur: number;
+    cov_resid: number;
+    zero_frac: number;
+    trend_pct_mo: number;
+    spike: boolean;
+}
+
+export interface BudgetArchetypeRow {
+    category_id: string;
+    name: string;
+    emoji: string | null;
+    color: string | null;
+    detected_archetype: Archetype;
+    archetype_override: Archetype | null;
+    floor_eur: number | null;
+    adaptive_enabled: boolean;
+    metrics: ArchetypeMetrics;
+}
+
+export interface BudgetArchetypesResponse {
+    categories: BudgetArchetypeRow[];
+}
+
+export interface BudgetSettingsPatch {
+    archetype_override?: Archetype | null;
+    floor_eur?: number | null;
+    adaptive_enabled?: boolean;
+}
+
