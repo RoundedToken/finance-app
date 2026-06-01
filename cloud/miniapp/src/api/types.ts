@@ -84,6 +84,13 @@ export interface Budgets {
     categories: BudgetCategoryProgress[];
 }
 
+/** SPEC-023: read-only lens годового конверта lumpy-категории. */
+export interface BudgetEnvelope {
+    category_id: string;
+    accrued_eur: number;     // «накоплено / доступно потратить»
+    annual_eur: number;      // годовой бюджет конверта
+}
+
 export interface Bootstrap {
     accounts: Account[];
     categories: Category[];
@@ -91,6 +98,7 @@ export interface Bootstrap {
     rates: Rates;
     expenses: Expense[];
     budgets: Budgets | null;
+    budget_envelopes?: BudgetEnvelope[];
 }
 
 /** Payload для POST/PUT /v1/expenses. account_id — новое (SPEC-014). */

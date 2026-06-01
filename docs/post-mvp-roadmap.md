@@ -46,6 +46,7 @@
 | 2.6 | ✅ **D1-mock тесты на getEffectiveBalance + dashboard** (SPEC-022) | H/M | ~~Деньги-critical wiring тестами не закрыт.~~ Сделано: мок `env.DB` на `node:sqlite` (real SQLite, грузит schema.sql) + 14 тестов (getEffectiveBalance: baseline/окно/5 событий/fee-JOIN; getDashboard: гард `by_bucket_native`, net worth, targeted/free, помесячный ряд). Mutation-sanity пройден. |
 | 2.7 | **withAdminSession-обёртка + shared Zod-контракт worker↔admin** | M/M | 32 копии guard'а → инвариант (нельзя забыть). `admin/api/types.ts` ← `z.infer` из worker-схем (ловит drift на typecheck). Хвост Batch E. |
 | 2.8 | **Валидация `limit` + cap на list/bulk** | M/S | `?limit=abc` → `LIMIT NaN`; bulk-rates без cap. Один хелпер `parseLimit`. |
+| 2.9 | ✅ **Адаптивные бюджеты (RBAR)** — авто-рекомендация лимитов по истории (SPEC-023, Фазы 0+1+2) | H/XL | ~~Надстройка над 2.2: лимиты сами поджимаются/растут реалистично; накопительный конверт для редких покупок.~~ Сделано (2026-06-01): worker `rbar.ts`+`stats.ts` (движок, реплей из истории) + миграция 0012 + 4 эндпоинта advisory + Admin рекомендации/конверты/классификация-override + Mini App lens. 99 vitest (бэктест 29 мес + anti-drift). Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES (2 must-fix закрыты). ADR-016. Авто-применение (Фаза 3) + калибровка (Фаза 4) — отложены по дизайну. |
 
 ---
 

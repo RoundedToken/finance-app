@@ -94,6 +94,13 @@ BUDGETS = {
 }
 
 
+# SPEC-023: read-only lens конверта на плитке lumpy-категории (вместо месячного остатка).
+BUDGET_ENVELOPES = [
+    {"category_id": "home", "accrued_eur": 364, "annual_eur": 1040},
+    {"category_id": "clothing", "accrued_eur": 188, "annual_eur": 720},
+]
+
+
 def build_payload():
     return {
         "accounts": ACCOUNTS,
@@ -102,6 +109,7 @@ def build_payload():
         "expenses": gen_expenses(),
         "rates": RATES,
         "budgets": BUDGETS,
+        "budget_envelopes": BUDGET_ENVELOPES,
     }
 
 

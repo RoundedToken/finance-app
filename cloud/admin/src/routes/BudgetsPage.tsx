@@ -12,6 +12,7 @@ import { Select } from "@/components/Select";
 import { ErrorState } from "@/components/ErrorState";
 import { useToast } from "@/components/Toast";
 import { BudgetBar, BUDGET_STATUS_TEXT } from "@/components/BudgetBar";
+import { RecommendationsSection, EnvelopesSection, ClassificationSection } from "@/components/AdaptiveBudgets";
 import { formatAmount, cn } from "@/lib/utils";
 import type {
     BudgetCategoryProgress,
@@ -80,6 +81,9 @@ export function BudgetsPage() {
 
             {!isLoading && !isError && (
                 <>
+                    {/* SPEC-023: рекомендации адаптивного лимита (advisory) */}
+                    <RecommendationsSection />
+
                     {/* Общий месячный потолок */}
                     {total ? (
                         <TotalCard total={total} onEdit={() => setModal({
@@ -119,6 +123,9 @@ export function BudgetsPage() {
                         </div>
                     )}
 
+                    {/* SPEC-023: накопительные конверты для lumpy-категорий */}
+                    <EnvelopesSection />
+
                     {/* Категории без лимита */}
                     {unbudgeted.length > 0 && (
                         <div>
@@ -139,6 +146,9 @@ export function BudgetsPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* SPEC-023: классификация архетипов + override */}
+                    <ClassificationSection />
                 </>
             )}
 
