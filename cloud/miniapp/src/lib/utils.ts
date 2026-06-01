@@ -15,14 +15,21 @@ export function fmt(amount: number, currency = "EUR"): string {
     return amount.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+/** 'YYYY-MM-DD' в ЛОКАЛЬНОЙ зоне устройства (не UTC) — дата траты должна быть днём
+ *  пользователя, иначе ночная трата уезжает на соседний календарный день (SPEC-024). */
+function isoLocal(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export function todayISO(): string {
-    return new Date().toISOString().slice(0, 10);
+    return isoLocal(new Date());
 }
 
 export function dateShiftISO(days: number): string {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return isoLocal(d);
 }
 
 export function uuid4(): string {

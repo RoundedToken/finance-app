@@ -1,4 +1,4 @@
--- D1 schema (текущий снапшот после миграций 0001-0011).
+-- D1 schema (текущий снапшот после миграций 0001-0013).
 -- Source of truth для всех финансовых данных (ADR-011).
 -- Для свежей базы — применить этот файл; для существующей — миграции из migrations/.
 
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     note              TEXT,
     source            TEXT NOT NULL DEFAULT 'mini_app',
     source_record_id  TEXT,                       -- идемпотентность импортов
-    created_at        TEXT NOT NULL,
+    created_at        TEXT NOT NULL,              -- 'YYYY-MM-DD HH:MM:SS' (UTC), ставит сервер datetime('now'); канон SPEC-024 (миграция 0013)
     updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
     deleted_at        TEXT
 );

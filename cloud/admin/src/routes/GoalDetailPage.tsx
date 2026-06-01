@@ -14,10 +14,10 @@ import {
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
-import { cn, formatAmount, formatDate } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
 import type { ContributionCreatePayload, GoalContribution, GoalStatus } from "@/api/types";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = todayLocal;   // SPEC-024: дефолт даты взноса + overdue — локальный день, не UTC
 
 export function GoalDetailPage() {
     const { goalId } = useParams({ strict: false }) as { goalId: string };

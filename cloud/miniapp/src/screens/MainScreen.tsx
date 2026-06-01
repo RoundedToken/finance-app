@@ -31,7 +31,8 @@ export function MainScreen() {
         if (amount <= 0) { haptic("error"); toast("Введите сумму", "err"); return; }
         const catName = cats.find(c => c.id === categoryId)?.name ?? "";
         create.mutate(
-            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null, created_at: new Date().toISOString() },
+            // created_at не шлём: сервер ставит datetime('now') (SPEC-024 G3); s.date — локальный день.
+            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null },
             {
                 onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
                 onError: (e) => { haptic("error"); toast(e instanceof Error ? e.message : "Ошибка сохранения", "err"); },

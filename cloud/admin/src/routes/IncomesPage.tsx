@@ -14,21 +14,21 @@ import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
-import { cn, formatAmount, formatDate } from "@/lib/utils";
+import { cn, formatAmount, formatDate, isoLocal, todayLocal } from "@/lib/utils";
 import type { Account, Income, IncomeCategory } from "@/api/types";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = todayLocal;   // SPEC-024: дефолт даты дохода — локальный день, не UTC
 
 function firstOfMonth(): string {
     const d = new Date();
-    d.setUTCDate(1);
-    return d.toISOString().slice(0, 10);
+    d.setDate(1);
+    return isoLocal(d);
 }
 
 function minusDays(days: number): string {
     const d = new Date();
-    d.setUTCDate(d.getUTCDate() - days);
-    return d.toISOString().slice(0, 10);
+    d.setDate(d.getDate() - days);
+    return isoLocal(d);
 }
 
 export function IncomesPage() {

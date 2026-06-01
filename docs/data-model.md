@@ -1,6 +1,6 @@
 # Модель данных
 
-> Актуально на Стадию 2 (после ADR-011/012/014). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0010`.
+> Актуально на Стадию 2 (после ADR-011/012/014). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0013`.
 >
 > `local/finances.db` и `local/migrations/` — наследие до-D1-эпохи (см. `local/legacy/`), **не источник правды**.
 
@@ -8,7 +8,7 @@
 
 - **UUID v4** на клиенте для транзакционных сущностей (expenses, incomes, snapshots, transactions, goals, goal_contributions). `INSERT OR IGNORE` по PK → идемпотентность (ADR-005).
 - **Справочники** (accounts, categories, income_categories, currencies) — semantic ID в kebab-case.
-- **Все timestamps** — ISO 8601, TEXT. Даты операций — `YYYY-MM-DD` (date-only); `created_at`/`updated_at` — `datetime('now')`.
+- **Все timestamps** — TEXT. Даты операций (`date`) — `YYYY-MM-DD`, в **локальной зоне пользователя** (SPEC-024); экономическая дата, может быть backdated. `created_at`/`updated_at` — каноничный `YYYY-MM-DD HH:MM:SS` (UTC, `datetime('now')`); `created_at` = **время записи** и tie-break порядка событий внутри одного дня (см. `effective_balance`). Расходы тоже получают серверный `created_at` (не часы клиента).
 - **Денежные суммы** — `REAL` (ADR-015): single-user, малые суммы, округление на выдаче. Не integer-cents.
 - **Soft-delete** — `deleted_at TEXT` везде; все агрегаты фильтруют `deleted_at IS NULL`.
 - **Балансы не хранятся** — вычисляются on-read (`effective_balance`, см. ниже).
@@ -78,13 +78,15 @@
 
 ```
 effective_balance(bucket, asOf) = last_manual_snapshot.amount   (date ≤ asOf)
-                                + Σ events  где  event.date > snapshot.date  и  event.date ≤ asOf
+   + Σ events  где  event.date ≤ asOf  И
+        ( event.date > snapshot.date
+          ИЛИ (event.date == snapshot.date И event.created_at > snapshot.created_at) )
 ```
 
-- **baseline** — последний `source='manual'` snapshot ведра с `date ≤ asOf`. Нет baseline → 0 + все события.
+- **baseline** — последний `source='manual'` snapshot ведра с `date ≤ asOf` (ничья по дате → max `created_at`). Нет baseline → 0 + все события.
 - **events** в native-валюте ведра: incomes (+), expenses (−), transactions (−from_amount / +to_amount), goal_contributions (+amount при `account_id = bucket`), fee (−fee_amount у ведра-плательщика).
-- **Семантика snapshot = «конец дня»**: события строго `date > baseline.date` (события того же дня уже учтены в снапшоте). Чтобы скорректировать баланс в день снапшота — ставь дату следующего дня или сделай новый снапшот.
-- Реализация: `cloud/worker/src/snapshots.ts:getEffectiveBalance` (per-bucket, авторитетная) и `dashboard.ts:balanceAt` (in-memory батч для серий). Обе зеркалят одну формулу.
+- **Порядок внутри дня по `created_at`** (SPEC-024): дата операции — главный ключ (backdating сохраняется), а при равной дате tie-break решает **время записи** — «событие, записанное после снапшота того же дня, учитывается; записанное до — уже в снапшоте». Это требует каноничного формата `created_at` (миграция 0013) и серверного `created_at` расходов. Остаточный край: backdated-событие на дату снапшота, введённое после него — редко, самоисправляется следующим снапшотом.
+- Реализация: `cloud/worker/src/snapshots.ts:getEffectiveBalance` (per-bucket, авторитетная) и `dashboard.ts:balanceAt` (in-memory батч для серий) — обе зеркалят `ledger.ts:reconstructBalance`.
 - native-баланс округляется до 8 знаков на выдаче (ADR-015).
 
 ### Конвертация в EUR (ADR-014, SPEC-016)
@@ -106,7 +108,7 @@ free        = net_worth − targeted
 
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0010`, через `wrangler d1 migrations`. `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией.
+D1: `cloud/worker/migrations/0001…0013`, через `wrangler d1 migrations`. `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией.
 
 | Миграция | Что |
 |---|---|
@@ -119,3 +121,6 @@ D1: `cloud/worker/migrations/0001…0010`, через `wrangler d1 migrations`. 
 | 0008 | `goals` + `goal_contributions` + `incomes.goal_id` |
 | 0009 | `transactions` |
 | 0010 | hard-delete `source='auto_transaction'` snapshots (SPEC-011) |
+| 0011 | `budgets` (SPEC-020) |
+| 0012 | `budget_settings` + `budget_recommendation_log` (адаптивные бюджеты, SPEC-023) |
+| 0013 | нормализация формата `expenses.created_at`/`updated_at` под канон `YYYY-MM-DD HH:MM:SS` (SPEC-024) |

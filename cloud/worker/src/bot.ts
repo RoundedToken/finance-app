@@ -70,10 +70,11 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         return;
     }
 
-    // UUID v4 на стороне worker (для bootstrap fallback; Mini App будет генерить сам)
+    // UUID v4 на стороне worker (для bootstrap fallback; Mini App будет генерить сам).
+    // created_at ставит createExpense (серверный datetime('now'), SPEC-024) — не передаём.
+    // date — UTC: бот исполняется на сервере без зоны устройства (fallback-путь, ADR-009).
     const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const date = now.slice(0, 10);
+    const date = new Date().toISOString().slice(0, 10);
 
     const res = await createExpense(env, userId, {
         id,
@@ -82,7 +83,6 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         currency: parsed.currency,
         category_id: parsed.category,
         note: parsed.note ?? null,
-        created_at: now,
         source: "telegram_bot",
     });
 

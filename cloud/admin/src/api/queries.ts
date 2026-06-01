@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
+import { todayLocal } from "@/lib/utils";
 import type {
     AccountsResponse,
     ContributionCreatePayload,
@@ -61,9 +62,12 @@ export function useExpenses() {
 }
 
 export function useAccounts() {
+    // SPEC-024: «сегодня» = локальный день клиента (asOf балансов «сейчас»), не UTC.
+    // В queryKey → рефетч на локальной полуночи (балансы катятся в новый день).
+    const today = todayLocal();
     return useQuery({
-        queryKey: ["accounts"],
-        queryFn: () => apiFetch<AccountsResponse>("/v1/web/accounts"),
+        queryKey: ["accounts", today],
+        queryFn: () => apiFetch<AccountsResponse>(`/v1/web/accounts?today=${today}`),
         staleTime: 30_000,
     });
 }
@@ -358,13 +362,15 @@ export function useDeleteTransaction() {
 // ── Dashboard (SPEC-013) ────────────────────────────────────────────────────
 
 export function useDashboard(params?: { from?: string; to?: string }) {
+    // SPEC-024: KPI «сейчас» / asOf — локальный день клиента (не UTC).
+    const today = todayLocal();
     const qs = new URLSearchParams();
     if (params?.from) qs.set("from", params.from);
     if (params?.to) qs.set("to", params.to);
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    qs.set("today", today);
     return useQuery({
-        queryKey: ["dashboard", params?.from ?? null, params?.to ?? null],
-        queryFn: () => apiFetch<DashboardResponse>(`/v1/web/dashboard${suffix}`),
+        queryKey: ["dashboard", params?.from ?? null, params?.to ?? null, today],
+        queryFn: () => apiFetch<DashboardResponse>(`/v1/web/dashboard?${qs.toString()}`),
         staleTime: 30_000,
     });
 }

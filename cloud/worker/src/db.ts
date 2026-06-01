@@ -5,7 +5,7 @@
 import type { Env, ExpensePayload } from "./types";
 import { loadRatesIndex } from "./rates";
 import { getEffectiveBalance } from "./snapshots";
-import { roundMoney } from "./ledger";
+import { roundMoney, canonicalTs } from "./ledger";
 import { getBudgetsWithProgress } from "./budgets";
 import { getEnvelopesForBootstrap } from "./rbar";
 
@@ -29,10 +29,14 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
             return { ok: false, error: `недостаточно средств в ведре (доступно: ${eff.balance.toFixed(2)}, нужно: ${e.amount.toFixed(2)})` };
         }
     }
+    // created_at ставит СЕРВЕР (datetime('now'), каноничный формат) — порядок ввода
+    // = время записи на сервере, а не часы телефона (SPEC-024). Клиентский e.created_at
+    // намеренно игнорируется: tie-break баланса внутри дня должен быть монотонным и
+    // не зависеть от рассинхрона часов устройства.
     const r = await env.DB.prepare(
         `INSERT OR IGNORE INTO expenses
            (id, date, account_id, amount, currency, category_id, note, source, source_record_id, user_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
     )
         .bind(
             e.id,
@@ -45,7 +49,6 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
             e.source ?? "mini_app",
             e.source_record_id ?? null,
             userId,
-            e.created_at ?? new Date().toISOString(),   // fallback: created_at NOT NULL, клиент мог не прислать
         )
         .run();
     return { ok: true, inserted: (r.meta.changes ?? 0) > 0 };
@@ -132,8 +135,10 @@ export async function bulkInsertExpenses(env: Env, expenses: any[]): Promise<num
                 e.source ?? "migration",
                 e.source_record_id ?? null,
                 e.user_id ?? "migration",
-                e.created_at,
-                e.updated_at ?? e.created_at,
+                // Импорт сохраняет историческое время, но канонизируем формат под
+                // 'YYYY-MM-DD HH:MM:SS' (SPEC-024), чтобы created_at сравнивался корректно.
+                canonicalTs(e.created_at ?? new Date().toISOString()),
+                canonicalTs(e.updated_at ?? e.created_at ?? new Date().toISOString()),
             ),
         );
     }

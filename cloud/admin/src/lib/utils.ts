@@ -5,6 +5,20 @@ export function cn(...inputs: ClassValue[]): string {
     return twMerge(clsx(inputs));
 }
 
+/**
+ * 'YYYY-MM-DD' в ЛОКАЛЬНОЙ зоне устройства (не UTC). Дефолт дат операций и «сегодня»
+ * для запросов баланса должны быть в дне пользователя, иначе ночные операции уезжают
+ * на соседний календарный день (SPEC-024). `toISOString().slice(0,10)` = UTC — НЕ использовать для дат операций.
+ */
+export function isoLocal(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function todayLocal(): string {
+    return isoLocal(new Date());
+}
+
 export const DEFAULT_CURRENCY_DECIMALS: Record<string, number> = {
     EUR: 2, USD: 2, RUB: 2, RSD: 0, USDT: 2, TRY: 2, BTC: 8, ETH: 6,   // синхронизировано с miniapp/lib/utils.ts
 };

@@ -151,7 +151,7 @@ export default {
             if (path === "/v1/web/me" && request.method === "GET") return handleAdminMe(request, env);
             if (path === "/v1/web/expenses" && request.method === "GET") return handleWebExpenses(request, env, url);
             if (path === "/v1/web/references" && request.method === "GET") return handleWebReferences(request, env);
-            if (path === "/v1/web/accounts" && request.method === "GET") return handleWebAccounts(request, env);
+            if (path === "/v1/web/accounts" && request.method === "GET") return handleWebAccounts(request, env, url);
             if (path === "/v1/web/snapshots" && request.method === "GET") return handleWebSnapshotsList(request, env, url);
             if (path === "/v1/web/snapshots" && request.method === "POST") return handleWebSnapshotsCreate(request, env);
             const snapMatch = path.match(/^\/v1\/web\/snapshots\/([0-9a-fA-F-]+)$/);
@@ -315,14 +315,23 @@ async function handleWebReferences(request: Request, env: Env): Promise<Response
     }, 200, request, env);
 }
 
-async function handleWebAccounts(request: Request, env: Env): Promise<Response> {
+/** Локальное «сегодня» клиента из ?today=YYYY-MM-DD (зона устройства), иначе UTC
+ *  fallback (SPEC-024). Валидируем формат — в SQL уходит только как bind/сравнение. */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function resolveToday(url: URL): string {
+    const t = url.searchParams.get("today");
+    return t && ISO_DATE_RE.test(t) ? t : new Date().toISOString().slice(0, 10);
+}
+
+async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
     // SPEC-011: balance computed on-demand. Manual snapshot — отдельное поле.
     // SPEC-016: EUR-эквивалент (запас → курс НА СЕГОДНЯ, mark-to-market) считаем
     // на worker через canonical RatesIndex per-quote — клиент не конвертирует.
     // net/targeted/free зеркалят dashboard KPI «сейчас» (AC7).
-    const today = new Date().toISOString().slice(0, 10);
+    // SPEC-024: «сегодня» — локальный день клиента (?today=), иначе UTC.
+    const today = resolveToday(url);
     // Фаза 1.8: rates грузим один раз и передаём в listGoals (раньше listGoals
     // грузил их повторно — двойная загрузка на каждом /accounts).
     const rates = await loadRatesIndex(env);
@@ -636,6 +645,7 @@ async function handleWebDashboard(request: Request, env: Env, url: URL): Promise
         const data = await getDashboard(env, {
             from: url.searchParams.get("from") ?? undefined,
             to: url.searchParams.get("to") ?? undefined,
+            today: resolveToday(url),   // SPEC-024: локальный день клиента, иначе UTC
         });
         return json(data, 200, request, env);
     } catch (err) {
