@@ -1,10 +1,10 @@
 ---
 id: SPEC-013
 title: Stage 8 — Главный дашборд (Web Admin)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-06-01
 links:
   - adr: docs/decisions.md#adr-006   # rates pipeline (EUR base)
   - adr: docs/decisions.md#adr-012   # Web Admin
@@ -248,3 +248,4 @@ In-memory lookup внутри Worker, чтобы избежать N запрос
 - 2026-05-25: OQ1–OQ4 решены (см. §11 D1–D4), одобрен → `in_progress`.
 - 2026-05-25: Phase 2 — реализация (worker `dashboard.ts` + endpoint; admin `queries`/`types`/`DashboardPage`). Уточнения D5/D6. typecheck + build зелёные.
 - 2026-05-25: Phase 3 — senior-qa PASS_WITH_NICES + solution-architect APPROVED_WITH_NICES, 0 блокеров. Fix: missing_rates (E3 покрытие net worth + убран double-count), D6 пересчёт долей легенды, empty-state net worth chart, a11y/UX мелочи. Nice-to-have → roadmap tech-debt.
+- 2026-06-01: `status` → `done` (синхрон фронтматтера: фича давно в проде, статус застрял на `in_progress` — дрейф доков).
