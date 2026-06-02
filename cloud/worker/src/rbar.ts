@@ -377,7 +377,11 @@ export function recommendRecurring(
 
 // ── Lumpy: годовой конверт (sinking fund) ────────────────────────────────────
 
-export function computeEnvelope(series: number[], cfg: RbarConfig = DEFAULT_CONFIG): EnvelopeInfo {
+export function computeEnvelope(
+    series: number[],
+    cfg: RbarConfig = DEFAULT_CONFIG,
+    currentMonthSpentEur: number | null = null,
+): EnvelopeInfo {
     const n = series.length;
     const last12 = series.slice(Math.max(0, n - 12));
 
@@ -396,10 +400,20 @@ export function computeEnvelope(series: number[], cfg: RbarConfig = DEFAULT_CONF
     const annual = Math.max(annualA, annualB);
     const accrual = annual / 12;
 
-    // Накоплено: реплей баланса конверта (capped, не уходит в минус).
+    // Накоплено: реплей баланса конверта по закрытым месяцам (capped, не уходит в минус).
     let bal = 0;
     const cap = 12 * accrual;
     for (const x of series) bal = clamp(bal + accrual - x, 0, cap);
+    // Текущий (незакрытый) месяц — тот же шаг реплея: +отчисление − уже потраченное.
+    // Размер конверта (annual/accrual) считается по закрытым месяцам, но БАЛАНС обязан
+    // быть живым: иначе линза «доступно потратить сейчас» (SPEC-023) застывала на конце
+    // прошлого месяца и не реагировала на свежую трату (был баг — трата на поездку не
+    // уменьшала конверт). Отчисление за текущий месяц начисляется сразу, в начале месяца
+    // (owner-решение 2026-06-02). null = нет контекста текущего месяца (чистый бэктест/
+    // история) → шаг пропускается, поведение как раньше.
+    if (currentMonthSpentEur != null) {
+        bal = clamp(bal + accrual - currentMonthSpentEur, 0, cap);
+    }
 
     const spentTrailing12 = sum(last12);
     return {
@@ -443,24 +457,35 @@ interface CatSeries {
     months: string[];
     missing: number;
     total: number;
+    currentEur: number;   // EUR-сумма трат текущего (незакрытого) месяца — для живого баланса конверта
 }
 
-/** Строит per-категория месячный EUR-ряд (date-aware) до закрытого месяца. */
+/**
+ * Строит per-категория месячный EUR-ряд (date-aware) по ЗАКРЫТЫМ месяцам (≤ lastClosed)
+ * + отдельно EUR-сумму трат ТЕКУЩЕГО (незакрытого) месяца `period`. Ряд и метрики
+ * (классификация / recurring / sizing конверта) — только закрытые месяцы; `currentEur`
+ * нужен лишь для живого баланса lumpy-конверта, чтобы линза реагировала на свежую трату.
+ */
 function buildSeries(
     expenses: ExpenseLite[],
     rates: RatesIndex,
     lastClosed: string,
+    period: string,
 ): Map<string, CatSeries> {
-    const byCat = new Map<string, { ymSum: Map<string, number>; missing: number; total: number; minYm: string | null }>();
+    const byCat = new Map<string, { ymSum: Map<string, number>; missing: number; total: number; minYm: string | null; currentEur: number }>();
     for (const e of expenses) {
         const cid = e.category_id;
         if (cid == null) continue;
         const ym = e.date.slice(0, 7);
-        if (ym > lastClosed) continue;   // только закрытые месяцы
+        if (ym > period) continue;       // будущее относительно текущего месяца — игнор
         let rec = byCat.get(cid);
-        if (!rec) { rec = { ymSum: new Map(), missing: 0, total: 0, minYm: null }; byCat.set(cid, rec); }
-        rec.total++;
+        if (!rec) { rec = { ymSum: new Map(), missing: 0, total: 0, minYm: null, currentEur: 0 }; byCat.set(cid, rec); }
         const v = rates.toEurAt(e.amount, e.currency, e.date);
+        if (ym > lastClosed) {           // текущий незакрытый месяц → только для живого баланса конверта,
+            if (v != null) rec.currentEur += v;   // вне ряда/метрик закрытых месяцев (классификацию не трогаем)
+            continue;
+        }
+        rec.total++;
         if (v == null) { rec.missing++; continue; }
         rec.ymSum.set(ym, (rec.ymSum.get(ym) ?? 0) + v);
         if (rec.minYm == null || ym < rec.minYm) rec.minYm = ym;
@@ -471,7 +496,7 @@ function buildSeries(
         if (rec.minYm == null) continue;
         const months = enumerateMonths(rec.minYm, lastClosed);
         const series = months.map(m => rec.ymSum.get(m) ?? 0);
-        out.set(cid, { series, months, missing: rec.missing, total: rec.total });
+        out.set(cid, { series, months, missing: rec.missing, total: rec.total, currentEur: rec.currentEur });
     }
     return out;
 }
@@ -481,7 +506,7 @@ export function computeRecommendationsCore(
     cfg: RbarConfig = DEFAULT_CONFIG,
 ): RecommendationsResult {
     const lastClosed = prevMonth(input.period);
-    const seriesByCat = buildSeries(input.expenses, input.rates, lastClosed);
+    const seriesByCat = buildSeries(input.expenses, input.rates, lastClosed, input.period);
 
     const recommendations: Recommendation[] = [];
     for (const cat of input.categories) {
@@ -518,7 +543,7 @@ export function computeRecommendationsCore(
         };
 
         if (archetype === "lumpy") {
-            base.envelope = computeEnvelope(series, cfg);
+            base.envelope = computeEnvelope(series, cfg, cs ? cs.currentEur : 0);
         } else if (archetype === "recurring" || archetype === "seasonal") {
             // seasonal в v1 использует recurring-закон (YoY-уточнение — Фаза 3/4).
             const r = recommendRecurring(series, months, cfg, settings?.floor_eur ?? null);
@@ -603,7 +628,7 @@ export async function getArchetypes(env: Env): Promise<{
     const period = todayUtc().slice(0, 7);
     const common = await loadCommon(env, period);
     const lastClosed = prevMonth(period);
-    const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed);
+    const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed, period);
 
     const categories = common.categories.map(cat => {
         const cs = seriesByCat.get(cat.id);
@@ -630,7 +655,7 @@ export async function getEnvelopesForBootstrap(env: Env): Promise<Array<{ catego
     const period = todayUtc().slice(0, 7);
     const common = await loadCommon(env, period);
     const lastClosed = prevMonth(period);
-    const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed);
+    const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed, period);
 
     const out: Array<{ category_id: string; accrued_eur: number; annual_eur: number }> = [];
     for (const cat of common.categories) {
@@ -640,7 +665,7 @@ export async function getEnvelopesForBootstrap(env: Env): Promise<Array<{ catego
         if (settings && settings.adaptive_enabled === false) continue;
         const { archetype } = classifyArchetype(cs.series, DEFAULT_CONFIG, settings?.archetype_override ?? null);
         if (archetype !== "lumpy") continue;
-        const env_ = computeEnvelope(cs.series, DEFAULT_CONFIG);
+        const env_ = computeEnvelope(cs.series, DEFAULT_CONFIG, cs.currentEur);
         out.push({ category_id: cat.id, accrued_eur: env_.accrued_eur, annual_eur: env_.annual_eur });
     }
     return out;
