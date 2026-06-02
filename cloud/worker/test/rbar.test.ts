@@ -171,6 +171,23 @@ describe("computeEnvelope — lumpy конверт", () => {
         expect(e.alert).toBe(false);
         expect(e.accrued_eur).toBeGreaterThan(0);
     });
+
+    it("живой баланс: трата текущего месяца сразу уменьшает конверт (bug-fix SPEC-023)", () => {
+        const series = [0, 0, 600, 0, 0, 0, 0, 0, 500, 0, 0, 0];          // закрытые месяцы (lumpy)
+        const closed  = computeEnvelope(series, DEFAULT_CONFIG, null);    // как было: только закрытые
+        const noSpend = computeEnvelope(series, DEFAULT_CONFIG, 0);       // текущий месяц, трат ещё нет
+        const spent   = computeEnvelope(series, DEFAULT_CONFIG, 200);     // в текущем месяце потрачено 200
+        // вариант A: текущий месяц добавляет отчисление → баланс не ниже «как было»
+        expect(noSpend.accrued_eur).toBeGreaterThanOrEqual(closed.accrued_eur);
+        // главный баг: трата текущего месяца УМЕНЬШАЕТ живой баланс
+        expect(spent.accrued_eur).toBeLessThan(noSpend.accrued_eur);
+        // ровно на сумму траты (пока не упёрлись в пол 0 / потолок annual)
+        if (noSpend.accrued_eur > 200 && noSpend.accrued_eur < noSpend.annual_eur) {
+            expect(spent.accrued_eur).toBeCloseTo(noSpend.accrued_eur - 200, 2);
+        }
+        // обратная совместимость: без 3-го аргумента (default null) = режим «только закрытые»
+        expect(computeEnvelope(series).accrued_eur).toBe(closed.accrued_eur);
+    });
 });
 
 describe("бэктест AC13 — траектории на реальных 29 мес", () => {
