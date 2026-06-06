@@ -38,10 +38,11 @@ import {
     bulkInsertExpenses,
     getBootstrapData,
     replaceReferences,
+    setAppConfig,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
-import { fetchLatestRatesEUR, fetchCryptoRatesEUR, saveRates, getLatestRates, loadRatesIndex, CRYPTO_RATE_SOURCE } from "./rates";
-import { getInvestments, upsertInvestmentSettings } from "./investments";
+import { fetchLatestRatesEUR, fetchCryptoRatesEUR, fetchLidoStethApr, saveRates, getLatestRates, loadRatesIndex, CRYPTO_RATE_SOURCE } from "./rates";
+import { getInvestments, upsertInvestmentSettings, STETH_APR_KEY } from "./investments";
 import {
     listExpenseCategories,
     createExpenseCategory,
@@ -125,6 +126,14 @@ export default {
             console.log(`scheduled crypto rates: saved ${n} for date ${crypto.date}`);
         } catch (e) {
             console.error("scheduled crypto rates failed:", e);
+        }
+        // SPEC-027: авто-APR stETH с Lido — отдельный try/catch (изоляция).
+        try {
+            const apr = await fetchLidoStethApr();
+            await setAppConfig(env, STETH_APR_KEY, String(apr));
+            console.log(`scheduled lido apr: ${apr}`);
+        } catch (e) {
+            console.error("scheduled lido apr failed:", e);
         }
     },
 
@@ -805,7 +814,17 @@ async function handleRefreshRates(request: Request, env: Env): Promise<Response>
         cryptoError = String((e as Error)?.message ?? e);
         console.error("refresh crypto rates failed:", e);
     }
-    return json({ ok: true, saved: n, crypto_saved: cryptoSaved, crypto_error: cryptoError, date: payload.date }, 200, request, env);
+    // SPEC-027: авто-APR stETH с Lido — отдельный try/catch.
+    let lidoApr: number | null = null;
+    let lidoError: string | null = null;
+    try {
+        lidoApr = await fetchLidoStethApr();
+        await setAppConfig(env, STETH_APR_KEY, String(lidoApr));
+    } catch (e) {
+        lidoError = String((e as Error)?.message ?? e);
+        console.error("refresh lido apr failed:", e);
+    }
+    return json({ ok: true, saved: n, crypto_saved: cryptoSaved, crypto_error: cryptoError, lido_apr: lidoApr, lido_error: lidoError, date: payload.date }, 200, request, env);
 }
 
 async function handleBulkRates(request: Request, env: Env): Promise<Response> {

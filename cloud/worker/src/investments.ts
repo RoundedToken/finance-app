@@ -19,10 +19,15 @@
 import type { Env } from "./types";
 import { loadRatesIndex, RatesIndex } from "./rates";
 import { getEffectiveBalance } from "./snapshots";
+import { getAppConfig } from "./db";
 import { reconstructBalance, feePayerBucket, roundMoney } from "./ledger";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const r2 = (x: number) => Math.round(x * 100) / 100;
+
+/** Ключ app_config с авто-APR stETH (Lido), пишет cron/refresh-rates (SPEC-027). */
+export const STETH_APR_KEY = "steth_apr_pct";
+const QUOTE_CCY = "USDT";   // вторая котировочная валюта для отображения крипты
 
 function todayUtc(): string {
     return new Date().toISOString().slice(0, 10);
@@ -50,7 +55,7 @@ interface ExchRow {
     fee_amount: number | null; fee_currency: string | null;
 }
 interface SnapRow { date: string; amount: number; created_at: string; }
-interface SettingsRow { account_id: string; is_staked: number; staking_apr_pct: number | null; note: string | null; }
+interface SettingsRow { account_id: string; is_staked: number; staked_qty: number | null; staking_apr_pct: number | null; note: string | null; }
 
 export async function listInvestmentBuckets(env: Env): Promise<InvBucketRow[]> {
     const r = await env.DB.prepare(
@@ -74,12 +79,16 @@ export async function getInvestments(
     const buckets = await listInvestmentBuckets(env);
 
     const settingsR = await env.DB.prepare(
-        `SELECT account_id, is_staked, staking_apr_pct, note FROM investment_settings`,
+        `SELECT account_id, is_staked, staked_qty, staking_apr_pct, note FROM investment_settings`,
     ).all<SettingsRow>();
     const settings = new Map(settingsR.results.map(s => [s.account_id, s] as const));
 
+    // SPEC-027: авто-APR stETH с Lido (cron→app_config); эффективный = override ?? auto.
+    const autoAprRaw = await getAppConfig(env, STETH_APR_KEY);
+    const autoApr = autoAprRaw != null && isFinite(parseFloat(autoAprRaw)) ? parseFloat(autoAprRaw) : null;
+
     let missingRates = 0;
-    let sumValue = 0, sumCostKnown = 0, sumValueKnown = 0, sumStaking = 0;
+    let sumValue = 0, sumValueUsdt = 0, sumCostKnown = 0, sumValueKnown = 0, sumStaking = 0;
     let allCostKnown = true;
     const positions: any[] = [];
 
@@ -159,7 +168,18 @@ export async function getInvestments(
         }
 
         const st = settings.get(b.id);
+        // SPEC-027: частичный стейкинг. staked_qty явный, иначе legacy is_staked=1 → вся
+        // позиция (E3); кламп [0, qty]. liquid = qty − staked.
+        let stakedQty = st?.staked_qty != null ? st.staked_qty : (st?.is_staked ? qty : 0);
+        stakedQty = Math.min(Math.max(0, roundMoney(stakedQty)), Math.max(0, qty));
+        const liquidQty = Math.max(0, roundMoney(qty - stakedQty));
+        const isStaked = stakedQty > 1e-12;
+        const aprOverride = st?.staking_apr_pct ?? null;             // ручной override
+        const effectiveApr = aprOverride ?? autoApr;                 // override ?? авто Lido
         const priceEur = rates.toEurAt(1, b.currency, today);
+        const priceUsdt = rates.convertAt(1, b.currency, QUOTE_CCY, today);   // ETH→USDT
+        const valueUsdt = rates.convertAt(qty, b.currency, QUOTE_CCY, today);
+        if (valueUsdt != null) sumValueUsdt += valueUsdt;
         const lastSnapDate = snapR.results.length ? snapR.results[snapR.results.length - 1].date : null;
 
         // ── Серия стоимости (последние 12 мес, конец месяца), in-memory ────────
@@ -201,13 +221,19 @@ export async function getInvestments(
             account_id: b.id, name: b.name, currency: b.currency, color: b.color,
             qty: roundMoney(qty),
             price_eur: priceEur == null ? null : r2(priceEur),
+            price_usdt: priceUsdt == null ? null : r2(priceUsdt),
             value_eur: valueEur == null ? null : r2(valueEur),
+            value_usdt: valueUsdt == null ? null : r2(valueUsdt),
             cost_basis_eur: costBasisEur == null ? null : r2(costBasisEur),
             cost_basis_known: costBasisKnown,
             unrealized_pl_eur: plEur == null ? null : r2(plEur),
             unrealized_pl_pct: plPct,
-            is_staked: st ? !!st.is_staked : false,
-            staking_apr_pct: st ? st.staking_apr_pct : null,
+            is_staked: isStaked,
+            staked_qty: stakedQty,
+            liquid_qty: liquidQty,
+            staking_apr_pct: effectiveApr,             // эффективный (override ?? авто)
+            staking_apr_override: aprOverride,
+            staking_apr_auto: autoApr,
             staking_income_qty: stakingQty,
             staking_income_eur: stakingEur,
             note: st ? st.note : null,
@@ -223,6 +249,7 @@ export async function getInvestments(
         rates_date: rates.latestDate(),
         summary: {
             value_eur: r2(sumValue),
+            value_usdt: r2(sumValueUsdt),
             cost_basis_eur: r2(sumCostKnown),
             cost_basis_known: allCostKnown,
             unrealized_pl_eur: r2(sumValueKnown - sumCostKnown),
@@ -237,8 +264,8 @@ export async function getInvestments(
 // ── Settings (стейкинг: APR для прогноза + признак «застейкано») ───────────────
 
 export interface InvestmentSettingsPatch {
-    is_staked?: boolean;
-    staking_apr_pct?: number | null;
+    staked_qty?: number | null;       // сколько единиц в стейкинге (0 = убрать); is_staked производный
+    staking_apr_pct?: number | null;  // ручной override; null = авто Lido
     note?: string | null;
 }
 
@@ -257,26 +284,34 @@ export async function upsertInvestmentSettings(
     if (patch.staking_apr_pct != null && (typeof patch.staking_apr_pct !== "number" || patch.staking_apr_pct < 0 || patch.staking_apr_pct > 100)) {
         return { ok: false, error: "staking_apr_pct must be in [0, 100]" };
     }
+    if (patch.staked_qty != null && (typeof patch.staked_qty !== "number" || patch.staked_qty < 0)) {
+        return { ok: false, error: "staked_qty must be >= 0" };
+    }
 
-    const hasStaked = Object.prototype.hasOwnProperty.call(patch, "is_staked");
+    const hasStaked = Object.prototype.hasOwnProperty.call(patch, "staked_qty");
     const hasApr = Object.prototype.hasOwnProperty.call(patch, "staking_apr_pct");
     const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
+    const stakedVal = hasStaked ? (patch.staked_qty ?? null) : null;   // null = очистить
+    const isStakedDerived = (stakedVal ?? 0) > 0 ? 1 : 0;              // SPEC-027: is_staked производный
 
-    // UPSERT: вставляем дефолты при первом обращении, затем COALESCE-патчим переданное.
+    // UPSERT: вставляем дефолты при первом обращении, затем патчим переданное.
     const r = await env.DB.prepare(
-        `INSERT INTO investment_settings (account_id, is_staked, staking_apr_pct, note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+        `INSERT INTO investment_settings (account_id, is_staked, staked_qty, staking_apr_pct, note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
          ON CONFLICT(account_id) DO UPDATE SET
             is_staked       = ${hasStaked ? "?" : "is_staked"},
+            staked_qty      = ${hasStaked ? "?" : "staked_qty"},
             staking_apr_pct = ${hasApr ? "?" : "staking_apr_pct"},
             note            = ${hasNote ? "?" : "note"},
             updated_at      = datetime('now')`,
     ).bind(
         accountId,
-        hasStaked ? (patch.is_staked ? 1 : 0) : 0,
+        hasStaked ? isStakedDerived : 0,
+        hasStaked ? stakedVal : null,
         hasApr ? (patch.staking_apr_pct ?? null) : null,
         hasNote ? (patch.note ?? null) : null,
-        ...(hasStaked ? [patch.is_staked ? 1 : 0] : []),
+        ...(hasStaked ? [isStakedDerived] : []),
+        ...(hasStaked ? [stakedVal] : []),
         ...(hasApr ? [patch.staking_apr_pct ?? null] : []),
         ...(hasNote ? [patch.note ?? null] : []),
     ).run();

@@ -108,6 +108,40 @@ export async function fetchCryptoRatesEUR(date?: string): Promise<FetchedRates> 
 /** Тег источника крипто-курсов (для saveRates и тестов). */
 export const CRYPTO_RATE_SOURCE = CRYPTO_SOURCE;
 
+const LIDO_APR_SMA_URL = "https://eth-api.lido.fi/v1/protocol/steth/apr/sma";
+const LIDO_APR_LAST_URL = "https://eth-api.lido.fi/v1/protocol/steth/apr/last";
+
+/**
+ * Базовый stETH APR с публичного Lido API (SPEC-027). Предпочитаем сглаженный
+ * 7-дневный (`/sma` → data.smaApr) — стабильнее для прогноза; fallback на
+ * мгновенный (`/last` → data.apr). Без ключей/секретов. Вызывается в cron/
+ * refresh-rates в ОТДЕЛЬНОМ try/catch (падение не валит курсы, E1/AC4).
+ * Возвращает APR в процентах (напр. 2.48). Бросает при недоступности/мусоре.
+ */
+export async function fetchLidoStethApr(): Promise<number> {
+    const opts = {
+        // CF-specific RequestInit (cf.*) нет в DOM-типах fetch → as any (как в крипто-fetch).
+        cf: { cacheTtl: 0, cacheTtlByStatus: { "200-299": 0, "300-399": 0, "400-599": 0 } } as any,
+        headers: { "Cache-Control": "no-cache" },
+    };
+    let apr: number = NaN;
+    try {
+        const r = await fetch(LIDO_APR_SMA_URL, opts);
+        if (r.ok) {
+            const b = (await r.json()) as { data?: { smaApr?: number } };
+            if (b?.data?.smaApr != null) apr = Number(b.data.smaApr);
+        }
+    } catch { /* fallback ниже */ }
+    if (!isFinite(apr) || apr <= 0) {
+        const r = await fetch(LIDO_APR_LAST_URL, opts);
+        if (!r.ok) throw new Error(`lido apr http ${r.status}`);
+        const b = (await r.json()) as { data?: { apr?: number } };
+        apr = Number(b?.data?.apr);
+    }
+    if (!isFinite(apr) || apr <= 0 || apr > 100) throw new Error(`lido apr bad value: ${apr}`);
+    return apr;
+}
+
 /** Все курсы за последнюю доступную дату. Mini App забирает при старте. */
 export async function getLatestRates(env: Env): Promise<{
     date: string | null;
