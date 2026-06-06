@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { getInvestments, upsertInvestmentSettings } from "../src/investments";
-import { fetchCryptoRatesEUR } from "../src/rates";
+import { fetchCryptoRatesEUR, fetchLidoStethApr } from "../src/rates";
 import { getDashboard } from "../src/dashboard";
 import { createContribution } from "../src/goals";
 import { makeEnv, seed } from "./d1-mock";
@@ -202,26 +202,66 @@ describe("investments · free = net − targeted − invested (dashboard)", () =
 });
 
 describe("investments · guards", () => {
-    it("upsertInvestmentSettings: только инвест-ведро, APR в [0,100]", async () => {
+    it("upsertInvestmentSettings: только инвест-ведро, APR в [0,100], staked_qty>=0", async () => {
         const { env, d1 } = makeEnv();
         seed(d1, {
             accounts: [
                 { id: "eur-bank", currency: "EUR", sort_order: 10 },
                 { id: "eth-invest", currency: "ETH", type: "crypto", sort_order: 90, is_investment: 1 },
             ],
+            snapshots: [{ id: "s1", date: "2026-05-01", account_id: "eth-invest", amount: 1.0 }],
+            rates: [{ date: "2026-05-01", quote: "ETH", rate: 0.00025 }],
         });
-        const ok = await upsertInvestmentSettings(env, "eth-invest", { is_staked: true, staking_apr_pct: 3.6 });
-        expect(ok.ok).toBe(true);
-        const notInv = await upsertInvestmentSettings(env, "eur-bank", { is_staked: true });
+        const notInv = await upsertInvestmentSettings(env, "eur-bank", { staked_qty: 0.5 });
         expect(notInv.ok).toBe(false);
         const badApr = await upsertInvestmentSettings(env, "eth-invest", { staking_apr_pct: 500 });
         expect(badApr.ok).toBe(false);
-        // повторный upsert обновляет (ON CONFLICT)
-        const upd = await upsertInvestmentSettings(env, "eth-invest", { staking_apr_pct: 4.2 });
-        expect(upd.ok).toBe(true);
+        const badQty = await upsertInvestmentSettings(env, "eth-invest", { staked_qty: -1 });
+        expect(badQty.ok).toBe(false);
+        const ok = await upsertInvestmentSettings(env, "eth-invest", { staked_qty: 0.7, staking_apr_pct: 4.2 });
+        expect(ok.ok).toBe(true);
         const inv = await getInvestments(env, { today: TODAY }) as any;
-        expect(inv.positions[0].is_staked).toBe(true);
-        expect(inv.positions[0].staking_apr_pct).toBeCloseTo(4.2, 2);
+        const p = inv.positions[0];
+        expect(p.is_staked).toBe(true);
+        expect(p.staked_qty).toBeCloseTo(0.7, 6);
+        expect(p.liquid_qty).toBeCloseTo(0.3, 6);            // qty 1.0 − staked 0.7
+        expect(p.staking_apr_pct).toBeCloseTo(4.2, 2);       // override
+        expect(p.staking_apr_override).toBeCloseTo(4.2, 2);
+        // убрать из стейкинга: staked_qty=0
+        await upsertInvestmentSettings(env, "eth-invest", { staked_qty: 0 });
+        const inv2 = await getInvestments(env, { today: TODAY }) as any;
+        expect(inv2.positions[0].is_staked).toBe(false);
+        expect(inv2.positions[0].liquid_qty).toBeCloseTo(1.0, 6);
+    });
+
+    it("SPEC-027: USDT-стоимость + эффективный APR (override ?? авто Lido) + legacy is_staked", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", sort_order: 90, is_investment: 1 }],
+            snapshots: [{ id: "s1", date: "2026-05-01", account_id: "eth-invest", amount: 2.0 }],
+            rates: [
+                { date: "2026-05-01", quote: "ETH", rate: 0.00025 },   // 4000 EUR
+                { date: "2026-05-01", quote: "USDT", rate: 1.1 },      // 1 EUR = 1.1 USDT
+            ],
+            app_config: [{ key: "steth_apr_pct", value: "2.48" }],     // авто Lido
+            // legacy: is_staked=1 без staked_qty → трактуется как вся позиция (E3)
+            investment_settings: [{ account_id: "eth-invest", is_staked: 1, staked_qty: null, staking_apr_pct: null, note: null }],
+        });
+        const inv = await getInvestments(env, { today: TODAY }) as any;
+        const p = inv.positions[0];
+        // USDT: value = 2 ETH × 4000 EUR × 1.1 = 8800 USDT; price = 4400 USDT
+        expect(p.value_eur).toBeCloseTo(8000, 2);
+        expect(p.value_usdt).toBeCloseTo(8800, 2);
+        expect(p.price_usdt).toBeCloseTo(4400, 2);
+        expect(inv.summary.value_usdt).toBeCloseTo(8800, 2);
+        // эффективный APR = авто Lido (override null)
+        expect(p.staking_apr_override).toBeNull();
+        expect(p.staking_apr_auto).toBeCloseTo(2.48, 2);
+        expect(p.staking_apr_pct).toBeCloseTo(2.48, 2);
+        // legacy is_staked=1 без staked_qty → вся позиция застейкана (E3)
+        expect(p.is_staked).toBe(true);
+        expect(p.staked_qty).toBeCloseTo(2.0, 6);
+        expect(p.liquid_qty).toBeCloseTo(0, 6);
     });
 
     it("goal_contribution на инвест-ведро → 400 (E6)", async () => {
@@ -255,5 +295,28 @@ describe("rates · крипто-курс Binance (инверсия + изоля�
     it("Binance bad price (0/NaN) → throw", async () => {
         vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ price: "0" }), { status: 200 })));
         await expect(fetchCryptoRatesEUR("2026-05-15")).rejects.toThrow(/bad price/i);
+    });
+});
+
+describe("rates · Lido stETH APR (SPEC-027)", () => {
+    it("берёт сглаженный smaApr из /sma", async () => {
+        vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+            url.includes("/sma")
+                ? new Response(JSON.stringify({ data: { smaApr: 2.48 } }), { status: 200 })
+                : new Response(JSON.stringify({ data: { apr: 2.7 } }), { status: 200 })));
+        expect(await fetchLidoStethApr()).toBeCloseTo(2.48, 4);
+    });
+
+    it("fallback на /last когда sma недоступен", async () => {
+        vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+            url.includes("/sma")
+                ? new Response("err", { status: 500 })
+                : new Response(JSON.stringify({ data: { apr: 2.7 } }), { status: 200 })));
+        expect(await fetchLidoStethApr()).toBeCloseTo(2.7, 4);
+    });
+
+    it("оба источника мусор → throw (изолируется в cron/refresh)", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: {} }), { status: 200 })));
+        await expect(fetchLidoStethApr()).rejects.toThrow(/lido apr/i);
     });
 });

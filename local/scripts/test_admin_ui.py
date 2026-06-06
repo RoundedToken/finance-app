@@ -179,14 +179,15 @@ CURRENCIES = [
 # SPEC-026: портфель инвестиций (линза /v1/web/investments).
 INVESTMENTS = {
     "ok": True, "as_of": "2026-05-26", "currency": "EUR", "rates_date": "2026-05-24",
-    "summary": {"value_eur": 3300.0, "cost_basis_eur": 3010.0, "cost_basis_known": True,
+    "summary": {"value_eur": 3300.0, "value_usdt": 3828.0, "cost_basis_eur": 3010.0, "cost_basis_known": True,
                 "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6, "staking_income_eur": 42.0, "missing_rates": 0},
     "positions": [{
         "account_id": "eth-invest", "name": "ETH (инвест)", "currency": "ETH", "color": "#627eea",
-        "qty": 1.05, "price_eur": 3142.86, "value_eur": 3300.0,
+        "qty": 1.05, "price_eur": 3142.86, "price_usdt": 3645.72, "value_eur": 3300.0, "value_usdt": 3828.0,
         "cost_basis_eur": 3010.0, "cost_basis_known": True,
         "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6,
-        "is_staked": True, "staking_apr_pct": 3.6,
+        "is_staked": True, "staked_qty": 0.70, "liquid_qty": 0.35,
+        "staking_apr_pct": 2.5, "staking_apr_override": None, "staking_apr_auto": 2.5,
         "staking_income_qty": 0.013, "staking_income_eur": 42.0,
         "note": "Bybit Lido", "last_snapshot_date": "2026-05-20",
         "value_series": [

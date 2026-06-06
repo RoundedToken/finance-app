@@ -9,6 +9,19 @@ import { roundMoney, canonicalTs } from "./ledger";
 import { getBudgetsWithProgress } from "./budgets";
 import { getEnvelopesForBootstrap } from "./rbar";
 
+// ─── App config (key/value, SPEC-027) ───────────────────────────────────────
+export async function getAppConfig(env: Env, key: string): Promise<string | null> {
+    const r = await env.DB.prepare("SELECT value FROM app_config WHERE key = ?").bind(key).first<{ value: string }>();
+    return r?.value ?? null;
+}
+
+export async function setAppConfig(env: Env, key: string, value: string): Promise<void> {
+    await env.DB.prepare(
+        `INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    ).bind(key, value).run();
+}
+
 export async function isAuthorizedUser(env: Env, telegramId: string): Promise<boolean> {
     const row = await env.DB
         .prepare("SELECT 1 FROM authorized_users WHERE telegram_id = ?")
