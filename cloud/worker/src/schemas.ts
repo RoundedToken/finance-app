@@ -172,8 +172,8 @@ export const budgetDecisionSchema = z.object({
 
 // ── Investments (SPEC-026; бизнес-правила is_investment/APR — в investments.ts) ─
 export const investmentSettingsSchema = z.object({
-    is_staked: z.boolean().optional(),
-    staking_apr_pct: z.number().min(0).max(100).nullish(),   // sanity: реалистичный APR ≤ 100%
+    staked_qty: z.number().min(0).finite().nullish(),        // SPEC-027: сколько в стейкинге (0 = убрать); finite — отсечь Infinity
+    staking_apr_pct: z.number().min(0).max(100).nullish(),   // ручной override; sanity APR ≤ 100%
     note: optStr,
 });
 

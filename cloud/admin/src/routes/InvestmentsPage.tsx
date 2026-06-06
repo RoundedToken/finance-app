@@ -16,6 +16,7 @@ import { cn, formatAmount, formatDate, formatExchangeRate, todayLocal } from "@/
 import type { Account, InvestmentPosition, TransactionCreatePayload } from "@/api/types";
 
 const eur = (v: number | null | undefined) => v == null ? "—" : `${formatAmount(v, "EUR")} €`;
+const usdt = (v: number | null | undefined) => v == null ? "—" : `${formatAmount(v, "USDT")} USDT`;
 const FORECAST_MONTHS = 3;
 
 export function InvestmentsPage() {
@@ -68,7 +69,7 @@ export function InvestmentsPage() {
                 <>
                     {/* KPI */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                        <KpiCard icon={Wallet} label="Стоимость портфеля" value={eur(s!.value_eur)} />
+                        <KpiCard icon={Wallet} label="Стоимость портфеля" value={eur(s!.value_eur)} sub={`≈ ${usdt(s!.value_usdt)}`} />
                         <KpiCard icon={PiggyBank} label="Вложено (cost basis)"
                             value={s!.cost_basis_known ? eur(s!.cost_basis_eur) : "—"}
                             sub={s!.cost_basis_known ? undefined : "часть позиций без затратной цены"} />
@@ -122,13 +123,18 @@ function PositionCard({ p, onBuy, onSnapshot, onStake }: {
 }) {
     const color = p.color ?? "#627eea";
     const plPos = (p.unrealized_pl_eur ?? 0) >= 0;
+    const effApr = p.staking_apr_pct ?? 0;
+    const aprSource = p.staking_apr_override != null ? "вручную" : "Lido";
 
-    // Спарклайн: факт (value_series) + опц. прогноз по APR пунктиром (forecast).
+    // Спарклайн: факт (value_series) + прогноз по APR пунктиром — растёт ТОЛЬКО
+    // застейканная доля (свободный ETH не приносит стейкинг-доход, SPEC-027 G4).
     const factValues = p.value_series.map(pt => pt.value_eur);
-    const showForecast = p.is_staked && (p.staking_apr_pct ?? 0) > 0 && factValues.length >= 2;
     const lastVal = factValues[factValues.length - 1] ?? 0;
+    const stakedFrac = p.qty > 0 ? Math.max(0, Math.min(1, p.staked_qty / p.qty)) : 0;
+    const stakedValue = lastVal * stakedFrac;
+    const showForecast = p.is_staked && effApr > 0 && factValues.length >= 2 && stakedValue > 0;
     const forecast = showForecast
-        ? Array.from({ length: FORECAST_MONTHS }, (_, i) => lastVal * Math.pow(1 + (p.staking_apr_pct! / 100), (i + 1) / 12))
+        ? Array.from({ length: FORECAST_MONTHS }, (_, i) => lastVal + stakedValue * (Math.pow(1 + effApr / 100, (i + 1) / 12) - 1))
         : [];
     const sparkValues = [...factValues, ...forecast];
 
@@ -142,19 +148,22 @@ function PositionCard({ p, onBuy, onSnapshot, onStake }: {
                         <div className="font-medium truncate">{p.name}</div>
                         <div className="text-xs text-muted-foreground tabular-nums">
                             {formatAmount(p.qty, p.currency)} <Currency code={p.currency} size="xs" />
-                            {p.price_eur != null && <> · курс {eur(p.price_eur)}</>}
+                            {p.price_eur != null && <> · курс {eur(p.price_eur)}{p.price_usdt != null ? ` · ${usdt(p.price_usdt)}` : ""}</>}
                         </div>
                     </div>
                 </div>
                 {p.is_staked && (
                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/15 text-primary font-medium whitespace-nowrap">
-                        в стейкинге{p.staking_apr_pct != null ? ` · APR ${p.staking_apr_pct}%` : ""}
+                        в стейкинге{p.staking_apr_pct != null ? ` · APR ${p.staking_apr_pct}% (${aprSource})` : ""}
                     </span>
                 )}
             </div>
 
             <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <span className="text-2xl font-semibold tracking-tight num">{eur(p.value_eur)}</span>
+                <span className="text-2xl font-semibold tracking-tight num">
+                    {eur(p.value_eur)}
+                    {p.value_usdt != null && <span className="ml-2 text-sm font-normal text-muted-foreground">≈ {usdt(p.value_usdt)}</span>}
+                </span>
                 {p.cost_basis_known ? (
                     <span className={cn("text-sm font-medium num", plPos ? "text-positive" : "text-destructive")}>
                         P&L {plPos ? "+" : ""}{eur(p.unrealized_pl_eur)}{p.unrealized_pl_pct != null ? ` (${plPos ? "+" : ""}${p.unrealized_pl_pct}%)` : ""}
@@ -172,6 +181,14 @@ function PositionCard({ p, onBuy, onSnapshot, onStake }: {
                     <span>Вложено</span>
                     <span className="num tabular-nums">{p.cost_basis_known ? eur(p.cost_basis_eur) : "—"}</span>
                 </div>
+                {p.qty > 0 && (
+                    <div className="flex justify-between">
+                        <span>Стейкинг</span>
+                        <span className="num tabular-nums">
+                            застейкано {formatAmount(p.staked_qty, p.currency)} · свободно {formatAmount(p.liquid_qty, p.currency)} <Currency code={p.currency} size="xs" />
+                        </span>
+                    </div>
+                )}
                 {p.is_staked && (
                     <div className="flex justify-between">
                         <span>Доход стейкинга{p.last_snapshot_date ? ` · факт на ${formatDate(p.last_snapshot_date)}` : ""}</span>
@@ -386,7 +403,7 @@ function BalanceSnapshotModal({ position, onClose }: { position: InvestmentPosit
 function StakingModal({ position, onClose }: { position: InvestmentPosition | null; onClose: () => void }) {
     const update = useUpdateInvestmentSettings();
     const open = !!position;
-    const [isStaked, setIsStaked] = useState(false);
+    const [stakedAmt, setStakedAmt] = useState("");
     const [apr, setApr] = useState("");
     const [note, setNote] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -394,22 +411,28 @@ function StakingModal({ position, onClose }: { position: InvestmentPosition | nu
 
     useEffect(() => {
         if (!open || !position) return;
-        setIsStaked(position.is_staked);
-        setApr(position.staking_apr_pct != null ? String(position.staking_apr_pct) : "");
+        setStakedAmt(position.staked_qty > 0 ? String(position.staked_qty) : "");
+        // в поле override — только ручное значение; авто Lido показываем плейсхолдером
+        setApr(position.staking_apr_override != null ? String(position.staking_apr_override) : "");
         setNote(position.note ?? "");
         setSubmitting(false); setError(null);
     }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
 
     if (!position) return null;
+    const numStaked = stakedAmt === "" ? 0 : parseFloat(stakedAmt);
+    const stakedValid = Number.isFinite(numStaked) && numStaked >= 0 && numStaked <= position.qty + 1e-9;
     const numApr = apr === "" ? null : parseFloat(apr);
     const aprValid = numApr == null || (Number.isFinite(numApr) && numApr >= 0 && numApr <= 100);
+    const valid = stakedValid && aprValid;
+    const liquidPreview = Number.isFinite(numStaked) ? Math.max(0, position.qty - numStaked) : position.qty;
+    const aprPlaceholder = position.staking_apr_auto != null ? `авто Lido ${position.staking_apr_auto}%` : "напр. 3.6";
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!aprValid) return;
+        if (!valid) return;
         setSubmitting(true); setError(null);
         try {
-            await update.mutateAsync({ accountId: position.account_id, patch: { is_staked: isStaked, staking_apr_pct: numApr, note: note.trim() || null } });
+            await update.mutateAsync({ accountId: position.account_id, patch: { staked_qty: numStaked, staking_apr_pct: numApr, note: note.trim() || null } });
             onClose();
         } catch (err: any) {
             setError(err?.message ?? "Не удалось сохранить настройки");
@@ -419,12 +442,18 @@ function StakingModal({ position, onClose }: { position: InvestmentPosition | nu
     return (
         <Modal open={open} onClose={onClose} title="Стейкинг" size="md">
             <form onSubmit={submit} className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" checked={isStaked} onChange={e => setIsStaked(e.target.checked)} className="h-4 w-4 accent-primary" />
-                    <span className="text-sm">Позиция в стейкинге (Lido stETH через Bybit)</span>
-                </label>
-                <Field label="Ожидаемый APR, % (для прогноза-пунктира)">
-                    <input type="number" inputMode="decimal" step="any" min="0" max="100" value={apr} onChange={e => setApr(e.target.value)} placeholder="напр. 3.6"
+                <Field label={`Сколько ${position.currency} в стейкинге (макс ${formatAmount(position.qty, position.currency)}; 0 = убрать)`}>
+                    <input type="number" inputMode="decimal" step="any" min="0" max={position.qty} value={stakedAmt} onChange={e => setStakedAmt(e.target.value)} placeholder="0"
+                        className="w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                </Field>
+                {!stakedValid && <div className="text-xs text-destructive">Должно быть от 0 до {formatAmount(position.qty, position.currency)} {position.currency}.</div>}
+                {stakedValid && (
+                    <div className="text-xs text-muted-foreground bg-secondary/40 rounded-lg p-3 -mt-1">
+                        застейкано <span className="num tabular-nums">{formatAmount(numStaked, position.currency)}</span> · свободно <span className="num tabular-nums">{formatAmount(liquidPreview, position.currency)}</span> {position.currency}
+                    </div>
+                )}
+                <Field label="APR override, % (опц. — пусто = авто из Lido)">
+                    <input type="number" inputMode="decimal" step="any" min="0" max="100" value={apr} onChange={e => setApr(e.target.value)} placeholder={aprPlaceholder}
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                 </Field>
                 {!aprValid && <div className="text-xs text-destructive">APR должен быть в диапазоне 0–100.</div>}
@@ -433,12 +462,12 @@ function StakingModal({ position, onClose }: { position: InvestmentPosition | nu
                         className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </Field>
                 <p className="text-xs text-muted-foreground">
-                    Прогноз по APR — визуальная подсказка (пунктир), не реальные деньги. Факт дохода считается из снапшотов баланса.
+                    APR тянется автоматически с Lido (базовый stETH); перебей вручную, если Bybit даёт другой. Прогноз-пунктир — визуальная подсказка, не реальные деньги; факт дохода — из снапшотов баланса.
                 </p>
                 {error && <div className="text-sm rounded-lg p-3 border border-destructive/40 bg-destructive/10 text-destructive">{error}</div>}
                 <div className="flex justify-end gap-2 pt-2">
                     <button type="button" onClick={onClose} className="btn-ghost px-4 py-2">Отмена</button>
-                    <button type="submit" disabled={!aprValid || submitting} className="btn-primary px-4 py-2 min-w-[7rem]">{submitting ? "…" : "Сохранить"}</button>
+                    <button type="submit" disabled={!valid || submitting} className="btn-primary px-4 py-2 min-w-[7rem]">{submitting ? "…" : "Сохранить"}</button>
                 </div>
             </form>
         </Modal>

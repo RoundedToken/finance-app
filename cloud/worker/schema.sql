@@ -242,9 +242,17 @@ CREATE INDEX IF NOT EXISTS idx_reco_log_cat_period ON budget_recommendation_log(
 -- портфеля (qty/cost basis/P&L/доход) НЕ хранится — линза on-read (investments.ts).
 CREATE TABLE IF NOT EXISTS investment_settings (
     account_id        TEXT PRIMARY KEY REFERENCES accounts(id),
-    is_staked         INTEGER NOT NULL DEFAULT 0,
-    staking_apr_pct   REAL CHECK (staking_apr_pct IS NULL OR (staking_apr_pct >= 0 AND staking_apr_pct <= 100)),
+    is_staked         INTEGER NOT NULL DEFAULT 0,                  -- legacy: производный от staked_qty>0 (SPEC-027)
+    staked_qty        REAL CHECK (staked_qty IS NULL OR staked_qty >= 0),   -- SPEC-027: сколько единиц в стейкинге
+    staking_apr_pct   REAL CHECK (staking_apr_pct IS NULL OR (staking_apr_pct >= 0 AND staking_apr_pct <= 100)),  -- ручной override; NULL = авто-APR Lido
     note              TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- SPEC-027: глобальный key/value. steth_apr_pct — авто-APR stETH с Lido (cron).
+CREATE TABLE IF NOT EXISTS app_config (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

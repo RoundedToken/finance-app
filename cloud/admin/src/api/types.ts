@@ -548,13 +548,19 @@ export interface InvestmentPosition {
     color: string | null;
     qty: number;
     price_eur: number | null;
+    price_usdt: number | null;           // SPEC-027
     value_eur: number | null;
+    value_usdt: number | null;           // SPEC-027
     cost_basis_eur: number | null;       // null если cost_basis_known=false
     cost_basis_known: boolean;
     unrealized_pl_eur: number | null;
     unrealized_pl_pct: number | null;
     is_staked: boolean;
-    staking_apr_pct: number | null;
+    staked_qty: number;                  // SPEC-027: сколько в стейкинге
+    liquid_qty: number;                  // SPEC-027: свободно = qty − staked
+    staking_apr_pct: number | null;      // эффективный (override ?? авто Lido)
+    staking_apr_override: number | null; // SPEC-027: ручной override
+    staking_apr_auto: number | null;     // SPEC-027: авто из Lido
     staking_income_qty: number | null;   // факт: прирост qty, не объяснённый покупками
     staking_income_eur: number | null;
     note: string | null;
@@ -564,6 +570,7 @@ export interface InvestmentPosition {
 
 export interface InvestmentsSummary {
     value_eur: number;
+    value_usdt: number;                  // SPEC-027
     cost_basis_eur: number;
     cost_basis_known: boolean;
     unrealized_pl_eur: number;
@@ -582,8 +589,8 @@ export interface InvestmentsResponse {
 }
 
 export interface InvestmentSettingsPayload {
-    is_staked?: boolean;
-    staking_apr_pct?: number | null;
+    staked_qty?: number | null;          // SPEC-027: сколько в стейкинге (0 = убрать)
+    staking_apr_pct?: number | null;     // ручной override; null = авто Lido
     note?: string | null;
 }
 
