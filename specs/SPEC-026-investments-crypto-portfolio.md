@@ -1,7 +1,7 @@
 ---
 id: SPEC-026
 title: Инвестиции — крипто-портфель (ETH + стейкинг stETH), дневной курс, исключение из свободных
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-06
 updated: 2026-06-06
@@ -494,6 +494,7 @@ ASCII-набросок карточки позиции:
   ETH-холдинг как ведро + аналитическая линза поверх; `free = net − targeted − invested`. Реализация фазируется
   внутри спеки: Фаза 0 (курс+валюта+бэкфилл) → Фаза 1 (ведро+free+покупка+линза P&L) → Фаза 2 (стейкинг+доход+прогноз).
 - 2026-06-06: реализовано (Фазы 0+1+2). Worker: миграция `0014` (валюта ETH, `accounts.is_investment`, seed `eth-invest`, уникальный индекс, `investment_settings`) + `rates.ts` (Binance `fetchCryptoRatesEUR`, инверсия, изоляция от фиата) + `investments.ts` (линза: WAC cost basis, P&L, доход стейкинга, value_series) + `free = net − targeted − invested` в `dashboard.ts`/`/v1/web/accounts` (+ `prev_invested`) + endpoint'ы `/v1/web/investments[/settings/:id]` + guard'ы (createSnapshot account, exchange currencies, goal_contribution не инвест-ведро, `db.ts` replaceReferences несёт form/sort_order/is_investment). Admin: раздел `/investments` (KPI + карточка позиции + спарклайн факт/прогноз + модалки Купить/Обновить/Стейкинг), дашборд (Net worth breakdown «Инвестиции», free), AccountsPage breakdown, фильтр инвест-вёдер из пикеров расхода/дохода/цели. Local: `backfill_crypto_rates.py`. **115 vitest** (12 investments) + typecheck чист + admin build зелёный + Playwright light/dark (admin-investments-{light,dark,buy,staking}). **Phase 3: qa=FAIL→PASS, arch=CHANGES_REQUESTED→APPROVED.** Оба рецензента независимо нашли 1 must-fix (E2-смешанный: manual-снапшот раньше первой покупки не детектился → `cost_basis_known` ложно true → катастрофическое завышение P&L и дохода стейкинга на opening balance). Закрыт сразу: `cost_basis_known=false` при снапшоте до первой покупки (P&L и доход стейкинга автоматически `null`); +тест на смешанный кейс. Nice-to-have (N+1 в getInvestments, `positions: any[]`, APR-прогноз на клиенте) — осознанный долг (R5/§12).
+- 2026-06-06: **выкачено на прод** → `done`. Backup D1 → миграция `0014` применена (`execute --remote --file`, проверено: ETH=1, eth-invest=1, investment_settings=1) → worker + admin задеплоены → бэкфилл ETH/EUR (879 дней, 2024-01-10..2026-06-06) → прод-смоук Binance-из-Worker (`/v1/admin/refresh-rates` → `crypto_saved=1, crypto_error=null` — гео-блок R1 не сработал) → `/v1/web/investments` отвечает 401 без auth (роут+auth ок). roadmap Stage 9 ✅.
 - 2026-06-06: hardening после adversarial stress-test (workflow: 4 рецензента × верификация по реальному коду,
   ~1.7М токенов). Впитаны 12 находок: prev_invested для корректного Δ свободных; WAC-списание cost basis при
   продаже; точная формула дохода стейкинга на границе «снапшот→сегодня» + случаи E4/нет-снапшота; уникальный
