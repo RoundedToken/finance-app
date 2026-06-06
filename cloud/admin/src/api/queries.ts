@@ -34,6 +34,8 @@ import type {
     BudgetRecommendation,
     BudgetArchetypesResponse,
     BudgetSettingsPatch,
+    InvestmentsResponse,
+    InvestmentSettingsPayload,
 } from "./types";
 
 export function useMe() {
@@ -91,6 +93,7 @@ export function useCreateSnapshot() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
             qc.invalidateQueries({ queryKey: ["accounts"] });
+            qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
         },
     });
 }
@@ -106,6 +109,7 @@ export function useUpdateSnapshot() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
             qc.invalidateQueries({ queryKey: ["accounts"] });
+            qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
         },
     });
 }
@@ -118,6 +122,7 @@ export function useDeleteSnapshot() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
             qc.invalidateQueries({ queryKey: ["accounts"] });
+            qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
         },
     });
 }
@@ -324,6 +329,8 @@ function invalidateOnTxMutation(qc: ReturnType<typeof useQueryClient>) {
     qc.invalidateQueries({ queryKey: ["transactions"] });
     qc.invalidateQueries({ queryKey: ["snapshots"] });
     qc.invalidateQueries({ queryKey: ["accounts"] });
+    qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: покупка USDT→ETH меняет позицию
+    qc.invalidateQueries({ queryKey: ["dashboard"] });     // invested/free
 }
 
 export function useCreateTransaction() {
@@ -501,6 +508,29 @@ export function useUpdateBudgetSettings() {
                 body: JSON.stringify(patch),
             }),
         onSuccess: () => invalidateAdaptive(qc),
+    });
+}
+
+// ── Investments / крипто-портфель (SPEC-026) ────────────────────────────────
+
+export function useInvestments() {
+    const today = todayLocal();   // SPEC-024: «сегодня» — локальный день клиента
+    return useQuery({
+        queryKey: ["investments", today],
+        queryFn: () => apiFetch<InvestmentsResponse>(`/v1/web/investments?today=${today}`),
+        staleTime: 30_000,
+    });
+}
+
+export function useUpdateInvestmentSettings() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ accountId, patch }: { accountId: string; patch: InvestmentSettingsPayload }) =>
+            apiFetch<{ ok: true; updated: boolean }>(`/v1/web/investments/settings/${accountId}`, {
+                method: "PUT",
+                body: JSON.stringify(patch),
+            }),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ["investments"] }); },
     });
 }
 

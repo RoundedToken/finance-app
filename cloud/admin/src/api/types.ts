@@ -36,6 +36,7 @@ export interface Account {
     color: string | null;
     form?: "cash" | "digital" | "external";
     sort_order?: number;
+    is_investment?: boolean;          // SPEC-026: ведро-актив (входит в net, исключается из free)
     // SPEC-011: computed effective balance + manual baseline.
     manual_snapshot?: { id: string; date: string; amount: number } | null;
     effective_balance?: number;
@@ -90,7 +91,8 @@ export interface MeResponse {
 export interface AccountsSummary {
     net_worth_eur: number;
     targeted_eur: number;
-    free_eur: number;
+    invested_eur: number;             // SPEC-026: Σ EUR инвест-вёдер (mark-to-market)
+    free_eur: number;                 // = net − targeted − invested
     missing_rates: number;
     rates_date: string | null;
 }
@@ -362,11 +364,14 @@ export interface DashboardKpi {
     prev_monthly_income_free_eur: number;
     prev_net_worth_eur: number;            // net worth на конец окна назад (для Δ)
     prev_free_net_worth_eur: number;
+    invested_eur: number;                  // SPEC-026: Σ EUR инвест-вёдер (исключено из free)
+    prev_invested_eur: number;             // на конец окна назад (для корректного Δ свободных)
 }
 
 export interface NetWorthPoint {
     month: string;                         // "YYYY-MM"
     total_eur: number;
+    invested_eur?: number;                 // SPEC-026: слой «инвестиции» (опц. для обратной совместимости)
     by_bucket: Record<string, number>;        // account_id → EUR
     by_bucket_native: Record<string, number>; // SPEC-021: account_id → native-валюта ведра (для спарклайнов /accounts)
     by_form: Record<string, number>;       // cash/digital/crypto → EUR
@@ -526,5 +531,59 @@ export interface BudgetSettingsPatch {
     archetype_override?: Archetype | null;
     floor_eur?: number | null;
     adaptive_enabled?: boolean;
+}
+
+// ── Investments / крипто-портфель (SPEC-026) ─────────────────────────────────
+
+export interface InvestmentSeriesPoint {
+    date: string;            // конец месяца (или today для текущего)
+    value_eur: number;
+    qty: number;
+}
+
+export interface InvestmentPosition {
+    account_id: string;
+    name: string;
+    currency: string;
+    color: string | null;
+    qty: number;
+    price_eur: number | null;
+    value_eur: number | null;
+    cost_basis_eur: number | null;       // null если cost_basis_known=false
+    cost_basis_known: boolean;
+    unrealized_pl_eur: number | null;
+    unrealized_pl_pct: number | null;
+    is_staked: boolean;
+    staking_apr_pct: number | null;
+    staking_income_qty: number | null;   // факт: прирост qty, не объяснённый покупками
+    staking_income_eur: number | null;
+    note: string | null;
+    last_snapshot_date: string | null;
+    value_series: InvestmentSeriesPoint[];
+}
+
+export interface InvestmentsSummary {
+    value_eur: number;
+    cost_basis_eur: number;
+    cost_basis_known: boolean;
+    unrealized_pl_eur: number;
+    unrealized_pl_pct: number | null;
+    staking_income_eur: number;
+    missing_rates: number;
+}
+
+export interface InvestmentsResponse {
+    ok: true;
+    as_of: string;
+    currency: "EUR";
+    rates_date: string | null;
+    summary: InvestmentsSummary;
+    positions: InvestmentPosition[];
+}
+
+export interface InvestmentSettingsPayload {
+    is_staked?: boolean;
+    staking_apr_pct?: number | null;
+    note?: string | null;
 }
 

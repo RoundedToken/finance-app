@@ -170,6 +170,13 @@ export const budgetDecisionSchema = z.object({
     decision: z.enum(["accepted", "dismissed"]),
 });
 
+// ── Investments (SPEC-026; бизнес-правила is_investment/APR — в investments.ts) ─
+export const investmentSettingsSchema = z.object({
+    is_staked: z.boolean().optional(),
+    staking_apr_pct: z.number().min(0).max(100).nullish(),   // sanity: реалистичный APR ≤ 100%
+    note: optStr,
+});
+
 // ── Categories (expense + income, общий shape) ──────────────────────────────
 export const categoryCreateSchema = z.object({
     id: z.string().optional(),

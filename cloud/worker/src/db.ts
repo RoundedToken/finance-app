@@ -170,10 +170,16 @@ export async function replaceReferences(env: Env, payload: ReferencePayload): Pr
     if (payload.accounts) {
         stmts.push(env.DB.prepare("DELETE FROM accounts"));
         for (const a of payload.accounts) {
+            // form/sort_order/is_investment несём из payload — иначе DELETE+INSERT
+            // сбрасывал бы форму вёдер на 'digital' и инвест-флаг на 0 (SPEC-026).
             stmts.push(
                 env.DB.prepare(
-                    "INSERT INTO accounts (id, name, type, currency, is_active, color, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
-                ).bind(a.id, a.name, a.type, a.currency, a.is_active ?? 1, a.color ?? null),
+                    "INSERT INTO accounts (id, name, type, currency, is_active, color, form, sort_order, is_investment, updated_at) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                ).bind(
+                    a.id, a.name, a.type, a.currency, a.is_active ?? 1, a.color ?? null,
+                    a.form ?? "digital", a.sort_order ?? 0, a.is_investment ?? 0,
+                ),
             );
         }
     }

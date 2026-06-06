@@ -354,7 +354,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
                 <Field label="Из ведра">
                     <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
                         <option value="">— выбери ведро —</option>
-                        {accounts.map(a => <AccountOption key={a.id} account={a} />)}
+                        {accounts.filter(a => !a.is_investment).map(a => <AccountOption key={a.id} account={a} />)}   {/* SPEC-026: инвест-вёдра нельзя как backing цели */}
                     </Select>
                 </Field>
 

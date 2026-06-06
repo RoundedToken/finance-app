@@ -6,7 +6,7 @@
 - **D1 (Cloudflare SQLite)** — **единственный источник правды**. Не локальный SQLite.
 - **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` (Mini App), `/v1/admin/*` (Web Admin), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates/*`.
 - **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone. **Закрытый scope: только ввод, дальше не растёт** (аналитика расходов — в Web Admin). Auth: Telegram `initData` HMAC.
-- **Web Admin** (`cloud/admin/`) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля **и аналитики расходов**. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`.
+- **Web Admin** (`cloud/admin/`) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля, инвестиций (крипто-портфель ETH/стейкинг, SPEC-026) **и аналитики расходов**. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`. Свободные деньги: `free = net − targeted − invested` (инвест-ведро `accounts.is_investment=1` входит в net, исключается из free).
 - **MacBook** — только daily backup D1 через `wrangler d1 export`. Может быть выключен неделями.
 - Всё на Cloudflare Pages + Workers + D1 — **бесплатно**, без VPS.
 
