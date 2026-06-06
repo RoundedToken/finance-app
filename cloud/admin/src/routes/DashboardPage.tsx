@@ -187,7 +187,8 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const k = data.kpi;
     const free = lens === "free";
     const t = chartTheme();
-    const hasGoals = k.targeted_eur > 0.005;
+    const hasInvested = k.invested_eur > 0.005;
+    const hasGoals = k.targeted_eur > 0.005 || hasInvested;   // SPEC-026: показываем разбивку и при инвестициях
 
     // Цвет spark = цвет Δ-бейджа: считается по тем же cur/prev (3-мес окно), чтобы KPI
     // читался как ОДИН сигнал «хорошо/плохо» — нет конфликта между линией и бейджем.
@@ -213,7 +214,8 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
 
     // Спарклайны из существующих series. free net worth ≈ total − текущее
     // targeted (форма тренда сохраняется; историч. goal balance не реконструируем).
-    const nwSpark = data.net_worth_series.map(p => (free ? Math.max(0, p.total_eur - k.targeted_eur) : p.total_eur));
+    // free spark: вычитаем targeted (аппрокс. текущим) И invested (per-point, SPEC-026).
+    const nwSpark = data.net_worth_series.map(p => (free ? Math.max(0, p.total_eur - k.targeted_eur - (p.invested_eur ?? 0)) : p.total_eur));
     const incSpark = data.cashflow_series.map(p => (free ? p.income_free_eur : p.income_eur));
     const burnSpark = data.cashflow_series.map(p => p.expense_eur);
     const srSpark = data.cashflow_series.map(p => {
@@ -232,7 +234,8 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
                         {free
                             ? <Row label="Всего" value={eur(k.net_worth_eur)} />
                             : <Row label="Свободно" value={eur(k.free_net_worth_eur)} danger={k.free_net_worth_eur < 0} />}
-                        <Row label="Целевые фонды" value={eur(k.targeted_eur)} />
+                        {k.targeted_eur > 0.005 && <Row label="Целевые фонды" value={eur(k.targeted_eur)} />}
+                        {hasInvested && <Row label="Инвестиции" value={eur(k.invested_eur)} />}
                     </div>
                 )}
                 {(k.missing_rates > 0 || k.buckets_without_baseline > 0) && (
@@ -352,7 +355,7 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
         // SPEC-018: линза «Свободные» вычитает текущее targeted_eur (аппроксимация —
         // историч. goal balance не реконструируем). Применяется только когда форма-
         // фильтр не активен — иначе сдвиг искажает разбивку по выбранным вёдрам.
-        const shift = lens === "free" && forms.size === 0 ? data.kpi.targeted_eur : 0;
+        const shift = lens === "free" && forms.size === 0 ? data.kpi.targeted_eur + data.kpi.invested_eur : 0;   // SPEC-026
         const hist = data.net_worth_series.map(p => Math.max(0, Math.round(sumBuckets(p, ids) - shift)));
         series = [{
             name: "Net worth", type: "line", smooth: true, showSymbol: false,

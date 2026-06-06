@@ -67,7 +67,7 @@ const r2 = (x: number) => round(x, 2);
 
 // ── Row types ───────────────────────────────────────────────────────────────
 
-interface BucketRow { id: string; name: string; type: string; currency: string; form: string; color: string | null; sort_order: number; }
+interface BucketRow { id: string; name: string; type: string; currency: string; form: string; color: string | null; sort_order: number; is_investment: number; }
 interface CatRow { id: string; name: string; emoji: string | null; color: string | null; }
 interface SnapRow { account_id: string; date: string; amount: number; created_at: string; }
 interface IncRow { account_id: string; date: string; amount: number; currency_code: string; goal_id: string | null; created_at: string; }
@@ -92,7 +92,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
     // ── Батч-загрузка ──────────────────────────────────────────────────────
     const [rates, bucketsR, catsR, snapsR, incR, expR, txR, gcR] = await Promise.all([
         loadRatesIndex(env),
-        env.DB.prepare(`SELECT id, name, type, currency, form, color, sort_order FROM accounts
+        env.DB.prepare(`SELECT id, name, type, currency, form, color, sort_order, is_investment FROM accounts
                         WHERE form != 'external' AND deleted_at IS NULL ORDER BY sort_order, name`).all<BucketRow>(),
         env.DB.prepare(`SELECT id, name, emoji, color FROM categories WHERE type = 'expense'`).all<CatRow>(),
         env.DB.prepare(`SELECT account_id, date, amount, created_at FROM snapshots
@@ -171,11 +171,15 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
     // В KPI-окне burn/income НЕ считаем — оно пересекается с period-окном
     // (иначе одна операция учлась бы дважды).
     let missingRates = 0;
-    let netNow = 0, bucketsWithoutBaseline = 0;
+    let netNow = 0, investedNow = 0, bucketsWithoutBaseline = 0;
     for (const b of buckets) {
         if (!(snapByBucket.get(b.id) ?? []).some(s => s.date <= today)) bucketsWithoutBaseline++;
         const eur = toEurAt(balanceAt(b.id, today), b.currency, today);
-        if (eur == null) missingRates++; else netNow += eur;
+        if (eur == null) missingRates++;
+        else {
+            netNow += eur;
+            if (b.is_investment) investedNow += eur;   // SPEC-026: исключается из free
+        }
     }
     let targeted = 0;
     for (const g of goals) {
@@ -186,7 +190,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
             targeted += g.balance;   // legacy без target_currency — balance в EUR-нейтрале
         }
     }
-    const freeNow = netNow - targeted;
+    const freeNow = netNow - targeted - investedNow;   // SPEC-026
 
     // ── KPI burn / income / savings (WIN полных календарных месяцев) ─────────
     // SPEC-015: считаем окно дважды — текущее (shift=0) и предыдущее (shift=WIN),
@@ -237,10 +241,13 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
     // портфеле часть Δ — движение курса, а не отложенные деньги. Формулу не меняем
     // (иначе Δ разойдётся с net-worth-series на графике); семантику фиксируем здесь.
     const prevAsOf = endOfMonth(addMonths(curMonth, -WIN));
-    let prevNet = 0;
+    let prevNet = 0, prevInvested = 0;
     for (const b of buckets) {
         const eur = toEurAt(balanceAt(b.id, prevAsOf), b.currency, prevAsOf);
-        if (eur != null) prevNet += eur;
+        if (eur != null) {
+            prevNet += eur;
+            if (b.is_investment) prevInvested += eur;   // SPEC-026: для корректного Δ свободных
+        }
     }
 
     // ── Net worth series (по месяцам окна, конец месяца) ─────────────────────
@@ -250,7 +257,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
         const by_bucket_native: Record<string, number> = {};   // SPEC-021: нативный ряд для спарклайнов /accounts
         const by_form: Record<string, number> = {};
         const by_currency: Record<string, number> = {};
-        let total = 0;
+        let total = 0, invested = 0;
         for (const b of buckets) {
             const native = balanceAt(b.id, T);                            // SPEC-021: баланс в валюте ведра (до конверсии)
             const eur = toEurAt(native, b.currency, T) ?? 0;              // нет курса → 0 (rates backfill с 2024)
@@ -259,8 +266,9 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
             by_form[b.form] = r2((by_form[b.form] ?? 0) + eur);
             by_currency[b.currency] = r2((by_currency[b.currency] ?? 0) + eur);
             total += eur;
+            if (b.is_investment) invested += eur;                         // SPEC-026: слой «инвестиции» на графике net worth
         }
-        return { month: m, total_eur: r2(total), by_bucket, by_bucket_native, by_form, by_currency };
+        return { month: m, total_eur: r2(total), invested_eur: r2(invested), by_bucket, by_bucket_native, by_form, by_currency };
     });
 
     // ── Cashflow + expenses by category (за окно [fromDate, toDate]) ─────────
@@ -316,6 +324,7 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
             net_worth_eur: r2(netNow),
             free_net_worth_eur: r2(freeNow),
             targeted_eur: r2(targeted),
+            invested_eur: r2(investedNow),            // SPEC-026
             monthly_burn_eur: r2(monthlyBurn),
             monthly_income_eur: r2(monthlyIncome),
             savings_rate: savingsRate,
@@ -331,7 +340,8 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
             prev_monthly_income_eur: r2(prev.income),
             prev_monthly_income_free_eur: r2(prev.incomeFree),
             prev_net_worth_eur: r2(prevNet),
-            prev_free_net_worth_eur: r2(prevNet - targeted),
+            prev_invested_eur: r2(prevInvested),                       // SPEC-026
+            prev_free_net_worth_eur: r2(prevNet - targeted - prevInvested),   // SPEC-026: Δ свободных не завышается на прирост инвестиций
         },
         net_worth_series: netSeries,
         cashflow_series,

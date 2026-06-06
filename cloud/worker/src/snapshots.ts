@@ -174,7 +174,14 @@ export async function effectiveBalancePerAccount(env: Env, asOf?: string): Promi
     return out;
 }
 
-export async function createSnapshot(env: Env, payload: SnapshotPayload): Promise<{ id: string; inserted: boolean }> {
+export async function createSnapshot(env: Env, payload: SnapshotPayload): Promise<{ ok: true; id: string; inserted: boolean } | { ok: false; error: string }> {
+    // Guard: account существует (как в transactions.ts) — иначе снапшот «висит» в
+    // воздухе и getEffectiveBalance для несуществующего ведра даёт неверный baseline.
+    const acc = await env.DB.prepare(
+        "SELECT 1 FROM accounts WHERE id = ? AND deleted_at IS NULL",
+    ).bind(payload.account_id).first();
+    if (!acc) return { ok: false, error: "unknown account_id" };
+
     const id = payload.id ?? crypto.randomUUID();
     const r = await env.DB.prepare(
         `INSERT OR IGNORE INTO snapshots
@@ -188,7 +195,7 @@ export async function createSnapshot(env: Env, payload: SnapshotPayload): Promis
         payload.note ?? null,
         payload.source ?? "manual",
     ).run();
-    return { id, inserted: (r.meta.changes ?? 0) > 0 };
+    return { ok: true, id, inserted: (r.meta.changes ?? 0) > 0 };
 }
 
 export async function updateSnapshot(env: Env, id: string, patch: Partial<SnapshotPayload>): Promise<{ updated: boolean }> {
@@ -220,7 +227,7 @@ export async function deleteSnapshot(env: Env, id: string): Promise<{ deleted: b
 /** Возвращает список «активных» вёдер (form != 'external'). */
 export async function listBuckets(env: Env): Promise<any[]> {
     const r = await env.DB.prepare(
-        `SELECT id, name, type, currency, form, sort_order, color, is_active
+        `SELECT id, name, type, currency, form, sort_order, color, is_active, is_investment
          FROM accounts
          WHERE form != 'external' AND deleted_at IS NULL
          ORDER BY sort_order, name`,

@@ -27,6 +27,7 @@ export function AccountsPage() {
     const totalEur = summary?.net_worth_eur ?? 0;
     const targetedEur = summary?.targeted_eur ?? 0;
     const freeEur = summary?.free_eur ?? 0;        // может быть отрицательный — это сигнал
+    const investedEur = summary?.invested_eur ?? 0;   // SPEC-026: исключено из free
     const ratesDate = summary?.rates_date ?? null;
     const missingRates = summary?.missing_rates ?? 0;
 
@@ -77,7 +78,7 @@ export function AccountsPage() {
                     <div className={cn("mt-2 text-xl font-semibold num tabular-nums", totalEur < 0 && "text-destructive")}>
                         {formatAmount(totalEur, "EUR")} <Currency code="EUR" />
                     </div>
-                    {goalCount > 0 && (
+                    {(goalCount > 0 || investedEur > 0.005) && (
                         <div className="mt-3 space-y-1 text-xs">
                             <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground">Свободно</span>
@@ -85,15 +86,27 @@ export function AccountsPage() {
                                     {formatAmount(freeEur, "EUR")} <Currency code="EUR" size="xs" />
                                 </span>
                             </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Целевые фонды</span>
-                                <span className="num tabular-nums">
-                                    {formatAmount(targetedEur, "EUR")} <Currency code="EUR" size="xs" />
-                                </span>
-                            </div>
-                            <div className="text-muted-foreground/70 pt-0.5">
-                                {goalCount} {pluralizeGoals(goalCount)}
-                            </div>
+                            {targetedEur > 0.005 && (
+                                <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">Целевые фонды</span>
+                                    <span className="num tabular-nums">
+                                        {formatAmount(targetedEur, "EUR")} <Currency code="EUR" size="xs" />
+                                    </span>
+                                </div>
+                            )}
+                            {investedEur > 0.005 && (
+                                <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">Инвестиции</span>
+                                    <span className="num tabular-nums">
+                                        {formatAmount(investedEur, "EUR")} <Currency code="EUR" size="xs" />
+                                    </span>
+                                </div>
+                            )}
+                            {goalCount > 0 && (
+                                <div className="text-muted-foreground/70 pt-0.5">
+                                    {goalCount} {pluralizeGoals(goalCount)}
+                                </div>
+                            )}
                         </div>
                     )}
                     {missingRates > 0 && (

@@ -66,11 +66,14 @@ ACCOUNTS = [
      "manual_snapshot": {"id": "s4", "date": "2026-05-15", "amount": 5000}, "effective_balance": 5000, "effective_balance_eur": 4310.34, "events_count": 0},
     {"id": "try-cash", "name": "TRY · нал",   "type": "cash",   "currency": "TRY",  "is_active": 1, "color": "#fb7185", "form": "cash",    "sort_order": 70,
      "manual_snapshot": None, "effective_balance": 0, "effective_balance_eur": 0, "events_count": 0},
+    # SPEC-026: инвест-ведро ETH (входит в net, исключается из free)
+    {"id": "eth-invest", "name": "ETH (инвест)", "type": "crypto", "currency": "ETH", "is_active": 1, "color": "#627eea", "form": "digital", "sort_order": 90, "is_investment": True,
+     "manual_snapshot": {"id": "s7", "date": "2026-05-20", "amount": 1.05}, "effective_balance": 1.05, "effective_balance_eur": 3300.0, "events_count": 1},
 ]
 
-# SPEC-016: summary считается на worker (net = Σ effective_balance_eur;
-# targeted = Σ goal.balance→EUR by today; free = net − targeted).
-ACCOUNTS_SUMMARY = {"net_worth_eur": 47157.0, "targeted_eur": 38164.5, "free_eur": 8992.5, "missing_rates": 0, "rates_date": "2026-05-24"}
+# SPEC-016/026: summary на worker (net = Σ effective_balance_eur;
+# targeted = Σ goal.balance→EUR; invested = Σ инвест-вёдер; free = net − targeted − invested).
+ACCOUNTS_SUMMARY = {"net_worth_eur": 50457.0, "targeted_eur": 38164.5, "invested_eur": 3300.0, "free_eur": 8992.5, "missing_rates": 0, "rates_date": "2026-05-24"}
 
 INCOME_CATEGORIES = [
     {"id": "salary",    "name": "Зарплата",                       "emoji": "💼", "color": "#a78bfa", "sort_order": 10, "is_active": 1},
@@ -90,7 +93,7 @@ INCOMES = [
     {"id": "i6", "date": "2026-03-25", "account_id": "eur-bank", "amount": 800,    "currency_code": "EUR", "amount_eur": 800.0,   "category_id": "freelance", "source": "Project X",   "note": "Доработки",                "created_at": "2026-03-25 14:00:00", "updated_at": "2026-03-25 14:00:00"},
 ]
 
-RATES = {"date": "2026-05-24", "base": "EUR", "quotes": {"USD": 1.16, "RSD": 117.41, "RUB": 82.63, "USDT": 1.16, "EUR": 1.0, "TRY": 39.5}}
+RATES = {"date": "2026-05-24", "base": "EUR", "quotes": {"USD": 1.16, "RSD": 117.41, "RUB": 82.63, "USDT": 1.16, "EUR": 1.0, "TRY": 39.5, "ETH": 0.000318}}
 
 # SPEC-016: amount_eur date-aware (по курсу даты траты) — приходит с worker.
 EXPENSES = [
@@ -170,7 +173,31 @@ CURRENCIES = [
     {"code": "RSD", "name": "Динар", "emoji": "🇷🇸", "is_crypto": 0, "decimals": 2},
     {"code": "USDT", "name": "Тезер", "emoji": "₮", "is_crypto": 1, "decimals": 2},
     {"code": "TRY", "name": "Лира", "emoji": "🇹🇷", "is_crypto": 0, "decimals": 2},
+    {"code": "ETH", "name": "Ethereum", "emoji": "⟠", "is_crypto": 1, "decimals": 6},
 ]
+
+# SPEC-026: портфель инвестиций (линза /v1/web/investments).
+INVESTMENTS = {
+    "ok": True, "as_of": "2026-05-26", "currency": "EUR", "rates_date": "2026-05-24",
+    "summary": {"value_eur": 3300.0, "cost_basis_eur": 3010.0, "cost_basis_known": True,
+                "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6, "staking_income_eur": 42.0, "missing_rates": 0},
+    "positions": [{
+        "account_id": "eth-invest", "name": "ETH (инвест)", "currency": "ETH", "color": "#627eea",
+        "qty": 1.05, "price_eur": 3142.86, "value_eur": 3300.0,
+        "cost_basis_eur": 3010.0, "cost_basis_known": True,
+        "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6,
+        "is_staked": True, "staking_apr_pct": 3.6,
+        "staking_income_qty": 0.013, "staking_income_eur": 42.0,
+        "note": "Bybit Lido", "last_snapshot_date": "2026-05-20",
+        "value_series": [
+            {"date": f"2025-{m:02d}-28" if m >= 6 else f"2026-{m:02d}-28", "value_eur": v, "qty": round(v / 3142.86, 4)}
+            for m, v in zip(
+                [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5],
+                [0, 0, 980, 1010, 1500, 1460, 2100, 2050, 2600, 3010, 3180, 3300],
+            )
+        ],
+    }],
+}
 
 
 # Дашборд (SPEC-013) — агрегат, который worker отдаёт на /v1/web/dashboard.
@@ -199,7 +226,7 @@ def _build_dashboard() -> dict:
     for i, m in enumerate(months):
         total = round(nw_free[i] + TARGETED, 2)
         net_worth_series.append({
-            "month": m, "total_eur": total,
+            "month": m, "total_eur": total, "invested_eur": 3300.0,
             "by_bucket": {"rub-bank": round(total * 0.40, 2), "rsd-bank": round(total * 0.20, 2),
                           "eur-bank": round(total * 0.25, 2), "usdt": round(total * 0.15, 2)},
             "by_bucket_native": {bid: round(NATIVE_END[bid] * NATIVE_SHAPE[bid][i], 2) for bid in NATIVE_END},
@@ -215,7 +242,8 @@ def _build_dashboard() -> dict:
         "as_of": "2026-05-26", "base": "EUR", "rates_date": "2026-05-24", "data_trust_from": "2024-01-15",
         "window": {"from": "2025-06-30", "to": "2026-05-31", "months": len(months)},
         "kpi": {
-            "net_worth_eur": 10259.19, "free_net_worth_eur": 7834.38, "targeted_eur": 2424.81,
+            "net_worth_eur": 13559.19, "free_net_worth_eur": 7834.38, "targeted_eur": 2424.81,
+            "invested_eur": 3300.0, "prev_invested_eur": 3000.0,
             "monthly_burn_eur": 2566.71, "monthly_income_eur": 3629.93,
             "savings_rate": 0.29, "runway_months": 3.1, "runway_months_total": 4.0,
             "burn_window_months": 3, "buckets_without_baseline": 2, "missing_rates": 0,
@@ -223,7 +251,7 @@ def _build_dashboard() -> dict:
             "monthly_income_free_eur": 3629.93, "savings_rate_free": 0.29,
             "prev_monthly_burn_eur": 3720.0, "prev_monthly_income_eur": 3300.0,
             "prev_monthly_income_free_eur": 3300.0,
-            "prev_net_worth_eur": 11327.5, "prev_free_net_worth_eur": 8902.7,
+            "prev_net_worth_eur": 14327.5, "prev_free_net_worth_eur": 8902.7,
         },
         "net_worth_series": net_worth_series,
         "cashflow_series": cashflow_series,
@@ -428,6 +456,12 @@ async def setup_mocks(page, base: str) -> None:
                         "net_worth_series": [p for p in DASHBOARD["net_worth_series"] if p["month"] >= fm],
                         "cashflow_series": [p for p in DASHBOARD["cashflow_series"] if p["month"] >= fm]}
             return await route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+        # SPEC-026 — investments. settings PUT ДО generic substring.
+        if "/v1/web/investments/settings/" in url and method == "PUT":
+            return await route.fulfill(status=200, content_type="application/json",
+                                       body=json.dumps({"ok": True, "updated": True}))
+        if "/v1/web/investments" in url:
+            return await route.fulfill(status=200, content_type="application/json", body=json.dumps(INVESTMENTS))
         if "/v1/web/references" in url:
             return await route.fulfill(status=200, content_type="application/json",
                                        body=json.dumps({
@@ -767,6 +801,39 @@ async def scenario_list_error(page, base: str) -> None:
         await page.unroute("**/v1/web/snapshots**", err)
 
 
+async def scenario_investments(page, base: str) -> None:
+    """/investments (SPEC-026): KPI + карточка позиции ETH (qty/value/cost basis/
+    P&L/доход стейкинга + спарклайн факт+прогноз). Light + dark. + модал покупки."""
+    await page.goto(f"{base}/investments", wait_until="networkidle")
+    await page.wait_for_selector("h1:has-text('Инвестиции')", timeout=5000)
+    await page.wait_for_selector("text=Стоимость портфеля", timeout=5000)
+    await page.wait_for_timeout(1200)  # echarts спарклайн
+    for scheme in ("light", "dark"):
+        if scheme == "dark":
+            await page.evaluate("document.documentElement.classList.add('dark')")
+        else:
+            await page.evaluate("document.documentElement.classList.remove('dark')")
+        await page.wait_for_timeout(400)
+        out = OUT_DIR / f"admin-investments-{scheme}.png"
+        await page.screenshot(path=str(out), full_page=True)
+        print(f"  ✓ {out.name}")
+    await page.evaluate("document.documentElement.classList.remove('dark')")
+    # модал покупки ETH
+    await page.get_by_role("button", name="Купить ETH").first.click()
+    await page.wait_for_timeout(400)
+    await page.screenshot(path=str(OUT_DIR / "admin-investments-buy.png"))
+    print("  ✓ admin-investments-buy.png")
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(150)
+    # модал стейкинга
+    await page.get_by_role("button", name="Стейкинг").first.click()
+    await page.wait_for_timeout(400)
+    await page.screenshot(path=str(OUT_DIR / "admin-investments-staking.png"))
+    print("  ✓ admin-investments-staking.png")
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(150)
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 async def run(headed: bool) -> int:
     from playwright.async_api import async_playwright
@@ -800,6 +867,7 @@ async def run(headed: bool) -> int:
             await scenario_full_page(page, base, "/transactions", "admin-transactions.png", "Обмены")
             await scenario_categories(page, base)
             await scenario_budgets(page, base)
+            await scenario_investments(page, base)
             await scenario_toast_error(page, base)
             await scenario_list_error(page, base)
             await scenario_short_viewport_modal(page, base)
