@@ -11,17 +11,21 @@ CREATE TABLE IF NOT EXISTS authorized_users (
 
 -- ─── Справочники ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS accounts (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    type        TEXT NOT NULL,                  -- 'bank' | 'cash' | 'crypto' | 'external'
-    currency    TEXT NOT NULL,
-    is_active   INTEGER NOT NULL DEFAULT 1,
-    color       TEXT,
-    form        TEXT NOT NULL DEFAULT 'digital', -- 'cash' | 'digital' | 'external'
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    deleted_at  TEXT,
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    type          TEXT NOT NULL,                  -- 'bank' | 'cash' | 'crypto' | 'external'
+    currency      TEXT NOT NULL,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    color         TEXT,
+    form          TEXT NOT NULL DEFAULT 'digital', -- 'cash' | 'digital' | 'external'
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    is_investment INTEGER NOT NULL DEFAULT 0,       -- SPEC-026: ведро-актив (входит в net, исключается из free)
+    deleted_at    TEXT,
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- SPEC-026: не более одного активного инвест-ведра на валюту (одна позиция на актив)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_one_investment_per_currency
+    ON accounts(currency) WHERE is_investment = 1 AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS categories (
     id          TEXT PRIMARY KEY,
@@ -231,3 +235,16 @@ CREATE TABLE IF NOT EXISTS budget_recommendation_log (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_reco_log_cat_period ON budget_recommendation_log(category_id, period);
+
+-- ─── Инвестиции / стейкинг (SPEC-026) ─────────────────────────────────────
+-- Холдинг ETH — обычное ведро (accounts.is_investment=1). Здесь только настройки
+-- стейкинга: APR для прогноза дохода (пунктир) + признак «застейкано». Состояние
+-- портфеля (qty/cost basis/P&L/доход) НЕ хранится — линза on-read (investments.ts).
+CREATE TABLE IF NOT EXISTS investment_settings (
+    account_id        TEXT PRIMARY KEY REFERENCES accounts(id),
+    is_staked         INTEGER NOT NULL DEFAULT 0,
+    staking_apr_pct   REAL CHECK (staking_apr_pct IS NULL OR (staking_apr_pct >= 0 AND staking_apr_pct <= 100)),
+    note              TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);

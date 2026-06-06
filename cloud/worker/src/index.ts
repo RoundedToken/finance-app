@@ -40,7 +40,8 @@ import {
     replaceReferences,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
-import { fetchLatestRatesEUR, saveRates, getLatestRates, loadRatesIndex } from "./rates";
+import { fetchLatestRatesEUR, fetchCryptoRatesEUR, saveRates, getLatestRates, loadRatesIndex, CRYPTO_RATE_SOURCE } from "./rates";
+import { getInvestments, upsertInvestmentSettings } from "./investments";
 import {
     listExpenseCategories,
     createExpenseCategory,
@@ -101,12 +102,13 @@ import {
     snapshotCreateSchema, snapshotUpdateSchema, transactionCreateSchema, transactionUpdateSchema,
     goalCreateSchema, goalUpdateSchema, goalStatusSchema, contributionCreateSchema,
     contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema,
-    budgetCreateSchema, budgetUpdateSchema, budgetSettingsSchema, budgetDecisionSchema, zodMessage,
+    budgetCreateSchema, budgetUpdateSchema, budgetSettingsSchema, budgetDecisionSchema,
+    investmentSettingsSchema, zodMessage,
 } from "./schemas";
 import type { z } from "zod";
 
 export default {
-    /** Cron Trigger — ежедневно тянет курсы. */
+    /** Cron Trigger — ежедневно тянет курсы (фиат из Google Sheets + крипта из Binance). */
     async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
         try {
             const payload = await fetchLatestRatesEUR(env);
@@ -114,6 +116,15 @@ export default {
             console.log(`scheduled rates: saved ${n} for date ${payload.date}`);
         } catch (e) {
             console.error("scheduled rates failed:", e);
+        }
+        // SPEC-026: крипто-курсы (ETH) — ОТДЕЛЬНЫЙ try/catch, чтобы гео-блок/таймаут
+        // Binance не валил фиат-курсы (E7). Падение → курс ETH остаётся вчерашним.
+        try {
+            const crypto = await fetchCryptoRatesEUR();
+            const n = await saveRates(env, crypto, CRYPTO_RATE_SOURCE);
+            console.log(`scheduled crypto rates: saved ${n} for date ${crypto.date}`);
+        } catch (e) {
+            console.error("scheduled crypto rates failed:", e);
         }
     },
 
@@ -199,6 +210,11 @@ export default {
                 if (request.method === "DELETE") return handleWebTransactionsDelete(request, env, txMatch[1]);
             }
             if (path === "/v1/web/dashboard" && request.method === "GET") return handleWebDashboard(request, env, url);
+
+            // ── Web Admin · investments (SPEC-026) ───────────────────────────
+            if (path === "/v1/web/investments" && request.method === "GET") return handleWebInvestments(request, env, url);
+            const invSettingsMatch = path.match(/^\/v1\/web\/investments\/settings\/([A-Za-z0-9_-]+)$/);
+            if (invSettingsMatch && request.method === "PUT") return handleWebInvestmentSettings(request, env, invSettingsMatch[1]);
 
             // ── Web Admin · adaptive budgets RBAR (SPEC-023) — ДО generic budgets/:id ─
             if (path === "/v1/web/budgets/recommendations" && request.method === "GET") return handleWebBudgetRecommendations(request, env, url);
@@ -343,13 +359,19 @@ async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<
     ]);
     const r2 = (x: number) => Math.round(x * 100) / 100;
 
-    let netWorthEur = 0, missingRates = 0;
+    let netWorthEur = 0, investedEur = 0, missingRates = 0;
     const enriched = buckets.map((b: any) => {
         const balance = effective[b.id]?.balance ?? 0;
         const eur = rates.toEurAt(balance, b.currency, today);
-        if (eur == null) missingRates++; else netWorthEur += eur;
+        if (eur == null) missingRates++;
+        else {
+            netWorthEur += eur;
+            // SPEC-026: инвест-ведро входит в net, но вычитается из free (invested).
+            if (b.is_investment) investedEur += eur;
+        }
         return {
             ...b,
+            is_investment: !!b.is_investment,
             manual_snapshot: manual[b.id] ?? null,
             effective_balance: balance,
             effective_balance_eur: eur == null ? null : r2(eur),
@@ -372,7 +394,8 @@ async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<
         summary: {
             net_worth_eur: r2(netWorthEur),
             targeted_eur: r2(targetedEur),
-            free_eur: r2(netWorthEur - targetedEur),
+            invested_eur: r2(investedEur),
+            free_eur: r2(netWorthEur - targetedEur - investedEur),   // SPEC-026
             missing_rates: missingRates,
             rates_date: rates.latestDate(),
         },
@@ -395,7 +418,8 @@ async function handleWebSnapshotsCreate(request: Request, env: Env): Promise<Res
     const parsed = await readBody(request, env, snapshotCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createSnapshot(env, parsed.data);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, id: r.id, inserted: r.inserted }, 200, request, env);
 }
 
 async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string): Promise<Response> {
@@ -655,6 +679,29 @@ async function handleWebDashboard(request: Request, env: Env, url: URL): Promise
     }
 }
 
+// ── Web Admin · investments (SPEC-026) ────────────────────────────────────
+async function handleWebInvestments(request: Request, env: Env, url: URL): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    try {
+        const data = await getInvestments(env, { today: resolveToday(url) });
+        return json(data, 200, request, env);
+    } catch (err) {
+        console.error("investments error", err);
+        return json({ error: "internal" }, 500, request, env);
+    }
+}
+
+async function handleWebInvestmentSettings(request: Request, env: Env, accountId: string): Promise<Response> {
+    const session = await requireAdminSession(request, env);
+    if (!session.ok) return session.response;
+    const parsed = await readBody(request, env, investmentSettingsSchema);
+    if (!parsed.ok) return parsed.response;
+    const r = await upsertInvestmentSettings(env, accountId, parsed.data);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
+}
+
 // ── Web Admin · budgets (SPEC-020) ────────────────────────────────────────
 async function handleWebBudgetsList(request: Request, env: Env): Promise<Response> {
     const session = await requireAdminSession(request, env);
@@ -748,7 +795,17 @@ async function handleRefreshRates(request: Request, env: Env): Promise<Response>
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
     const payload = await fetchLatestRatesEUR(env);
     const n = await saveRates(env, payload);
-    return json({ ok: true, saved: n, date: payload.date }, 200, request, env);
+    // SPEC-026: крипта (ETH) — отдельный try/catch, падение не валит ответ по фиату (E7).
+    let cryptoSaved = 0;
+    let cryptoError: string | null = null;
+    try {
+        const crypto = await fetchCryptoRatesEUR(payload.date);
+        cryptoSaved = await saveRates(env, crypto, CRYPTO_RATE_SOURCE);
+    } catch (e) {
+        cryptoError = String((e as Error)?.message ?? e);
+        console.error("refresh crypto rates failed:", e);
+    }
+    return json({ ok: true, saved: n, crypto_saved: cryptoSaved, crypto_error: cryptoError, date: payload.date }, 200, request, env);
 }
 
 async function handleBulkRates(request: Request, env: Env): Promise<Response> {

@@ -10,6 +10,13 @@
 import type { Env } from "./types";
 
 const RATE_SOURCE = "google-sheets";
+const CRYPTO_SOURCE = "binance";
+
+// Крипто-котировки (SPEC-026). GOOGLEFINANCE крипту не умеет → берём с публичного
+// Binance API. Ключ — quote-валюта в нашей таблице rates, значение — символ Binance
+// (пара к EUR). stETH НЕ фетчим: пегуется к ETH 1:1 (Q4/NG1), стоимость по курсу ETH.
+const CRYPTO_SYMBOLS: Record<string, string> = { ETH: "ETHEUR" };
+const BINANCE_PRICE_URL = "https://api.binance.com/api/v3/ticker/price";
 
 export interface FetchedRates {
     base: string;
@@ -55,7 +62,7 @@ export function parseLatestCsv(text: string): { date: string; rates: Record<stri
     return { date, rates };
 }
 
-export async function saveRates(env: Env, payload: FetchedRates): Promise<number> {
+export async function saveRates(env: Env, payload: FetchedRates, source: string = RATE_SOURCE): Promise<number> {
     const stmts = [];
     for (const [quote, rate] of Object.entries(payload.rates)) {
         if (!isFinite(rate) || rate <= 0) continue;
@@ -63,13 +70,43 @@ export async function saveRates(env: Env, payload: FetchedRates): Promise<number
             env.DB.prepare(
                 "INSERT OR REPLACE INTO rates (date, base, quote, rate, source, fetched_at) " +
                 "VALUES (?, ?, ?, ?, ?, datetime('now'))",
-            ).bind(payload.date, payload.base, quote, rate, RATE_SOURCE),
+            ).bind(payload.date, payload.base, quote, rate, source),
         );
     }
     if (!stmts.length) return 0;
     await env.DB.batch(stmts);
     return stmts.length;
 }
+
+/**
+ * Крипто-курсы (SPEC-026): ETH/EUR с публичного Binance API. Хранимая семантика
+ * rates — «1 EUR = rate × quote», а Binance ETHEUR отдаёт EUR за 1 ETH (цена),
+ * поэтому ИНВЕРТИРУЕМ: rate_ETH = 1 / price. Тогда toEurAt(qty,'ETH') = qty / rate
+ * = qty × price (корректно). Дата — сегодня (UTC), как и у фиат-cron.
+ *
+ * Вызывается в scheduled/refresh-rates ОТДЕЛЬНО от фиата (изолированный try/catch):
+ * падение Binance (гео-блок 451/403, таймаут) не должно ломать фиат-курсы. При
+ * ошибке возвращает пустой rates → saveRates пропускает (курс остаётся вчерашним).
+ */
+export async function fetchCryptoRatesEUR(date?: string): Promise<FetchedRates> {
+    const d = date ?? new Date().toISOString().slice(0, 10);
+    const rates: Record<string, number> = {};
+    for (const [quote, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
+        const r = await fetch(`${BINANCE_PRICE_URL}?symbol=${symbol}`, {
+            cf: { cacheTtl: 0, cacheTtlByStatus: { "200-299": 0, "300-399": 0, "400-599": 0 } } as any,
+            headers: { "Cache-Control": "no-cache" },
+        });
+        if (!r.ok) throw new Error(`binance ${symbol} http ${r.status}`);
+        const body = (await r.json()) as { symbol?: string; price?: string };
+        const price = parseFloat(body?.price ?? "");
+        if (!isFinite(price) || price <= 0) throw new Error(`binance ${symbol} bad price: ${body?.price}`);
+        rates[quote] = 1 / price;   // инверсия: EUR→ETH (quote per EUR)
+    }
+    return { base: "EUR", date: d, rates };
+}
+
+/** Тег источника крипто-курсов (для saveRates и тестов). */
+export const CRYPTO_RATE_SOURCE = CRYPTO_SOURCE;
 
 /** Все курсы за последнюю доступную дату. Mini App забирает при старте. */
 export async function getLatestRates(env: Env): Promise<{

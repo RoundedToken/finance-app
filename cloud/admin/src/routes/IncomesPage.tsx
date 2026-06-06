@@ -425,7 +425,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                     </Field>
                     <Field label="Ведро">
                         <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
-                            {accounts.map(a => (
+                            {accounts.filter(a => !a.is_investment).map(a => (   /* SPEC-026: инвест-вёдра не для доходов */
                                 <AccountOption key={a.id} account={a} />
                             ))}
                         </Select>

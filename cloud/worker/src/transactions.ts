@@ -48,6 +48,11 @@ async function loadAccount(env: Env, id: string): Promise<AccountInfo | null> {
     return r ?? null;
 }
 
+async function currencyExists(env: Env, code: string): Promise<boolean> {
+    const r = await env.DB.prepare("SELECT 1 FROM currencies WHERE code = ?").bind(code).first();
+    return r !== null;
+}
+
 async function checkOverdraft(
     env: Env,
     bucketId: string,
@@ -105,6 +110,11 @@ async function validateStep(env: Env, step: TransactionPayload): Promise<Result<
     if (!from) return { ok: false, error: "unknown from_account_id" };
     const to = await loadAccount(env, step.to_account_id);
     if (!to) return { ok: false, error: "unknown to_account_id" };
+    // SPEC-026: валюты ведёр должны существовать в справочнике (ETH добавлен миграцией
+    // 0014). Защита от обмена в валюту без курса/справочной записи (AC18).
+    if (!(await currencyExists(env, from.currency))) return { ok: false, error: `unknown currency: ${from.currency}` };
+    if (!(await currencyExists(env, to.currency))) return { ok: false, error: `unknown currency: ${to.currency}` };
+    if (step.fee_currency && !(await currencyExists(env, step.fee_currency))) return { ok: false, error: `unknown fee_currency: ${step.fee_currency}` };
     if (step.type === "exchange" && from.currency === to.currency) {
         return { ok: false, error: "exchange requires from.currency !== to.currency" };
     }

@@ -53,11 +53,13 @@ async function currencyExists(env: Env, code: string): Promise<boolean> {
     return r !== null;
 }
 
-/** Валюта ведра — взнос всегда в native-валюте ведра (G11), деривится отсюда
- *  (также подтверждает существование account). */
-async function accountCurrency(env: Env, id: string): Promise<string | null> {
-    const r = await env.DB.prepare("SELECT currency FROM accounts WHERE id = ? AND deleted_at IS NULL").bind(id).first<{ currency: string }>();
-    return r?.currency ?? null;
+/** Валюта + инвест-флаг ведра — взнос всегда в native-валюте ведра (G11),
+ *  деривится отсюда (также подтверждает существование account). */
+async function accountInfo(env: Env, id: string): Promise<{ currency: string; is_investment: number } | null> {
+    const r = await env.DB.prepare(
+        "SELECT currency, is_investment FROM accounts WHERE id = ? AND deleted_at IS NULL",
+    ).bind(id).first<{ currency: string; is_investment: number }>();
+    return r ?? null;
 }
 
 async function goalExists(env: Env, id: string): Promise<boolean> {
@@ -351,8 +353,12 @@ export async function createContribution(env: Env, payload: ContributionPayload)
     // ведра в native-валюте (SUM amount), поэтому его валюта = валюта ведра — иначе
     // net (native) и targeted (convertAt) разъезжаются (G11). Клиентский currency_code
     // игнорируется.
-    const currencyCode = await accountCurrency(env, payload.account_id);
-    if (!currencyCode) return { ok: false, error: "unknown account_id" };
+    const acc = await accountInfo(env, payload.account_id);
+    if (!acc) return { ok: false, error: "unknown account_id" };
+    // SPEC-026 (E6): инвест-ведро нельзя использовать как backing цели — иначе
+    // targeted и invested пересекаются и free вычитается дважды.
+    if (acc.is_investment) return { ok: false, error: "нельзя привязать вклад цели к инвест-ведру" };
+    const currencyCode = acc.currency;
     if (!payload.date || !ISO_DATE.test(payload.date)) return { ok: false, error: "date must be YYYY-MM-DD" };
 
     const id = payload.id ?? crypto.randomUUID();
@@ -381,8 +387,10 @@ export async function updateContribution(env: Env, id: string, patch: Partial<Co
     let newCurrency: string | null = null;
     if (patch.account_id !== undefined) {
         if (patch.account_id === null) return { ok: false, error: "account_id обязателен: взнос привязан к ведру" };
-        newCurrency = await accountCurrency(env, patch.account_id);
-        if (!newCurrency) return { ok: false, error: "unknown account_id" };
+        const acc = await accountInfo(env, patch.account_id);
+        if (!acc) return { ok: false, error: "unknown account_id" };
+        if (acc.is_investment) return { ok: false, error: "нельзя привязать вклад цели к инвест-ведру" };  // SPEC-026 E6
+        newCurrency = acc.currency;
     }
     if (patch.goal_id !== undefined && !(await goalExists(env, patch.goal_id))) {
         return { ok: false, error: "unknown goal_id" };

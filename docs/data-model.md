@@ -96,19 +96,27 @@ effective_balance(bucket, asOf) = last_manual_snapshot.amount   (date ≤ asOf)
 - **Поток** (операция на дату: расход, доход, day-total; точка net-worth-series на конец месяца) → курс **на дату операции** (`rateAt(date)`, date-aware).
 - `rateAt` берёт ближайший курс с `date ≤ target` (нет точного — fallback назад, не 0).
 
-### Net worth / Свободно / Целевые (SPEC-013/015)
+### Net worth / Свободно / Целевые / Инвестиции (SPEC-013/015/026)
 
 ```
 net_worth   = Σ effective_balance(bucket) → EUR (today)
 targeted    = Σ goal.balance → EUR (today)
-free        = net_worth − targeted
+invested    = Σ effective_balance(bucket WHERE is_investment=1) → EUR (today)   # SPEC-026
+free        = net_worth − targeted − invested
 ```
 
-`free = net − targeted` сходится by-construction: обе величины — запас по сегодняшнему курсу. **Инвариант:** каждый targeted-евро физически лежит в ведре (через `income.goal_id` или `goal_contribution.account_id`). `income.goal_id` и взнос `goal_contribution` на одни и те же деньги — взаимоисключающие.
+`free = net − targeted − invested` сходится by-construction: все величины — запас по сегодняшнему курсу. **Инвариант:** каждый targeted-евро физически лежит в ведре (через `income.goal_id` или `goal_contribution.account_id`); `income.goal_id` и взнос `goal_contribution` на одни и те же деньги — взаимоисключающие. **SPEC-026:** инвест-ведро (`accounts.is_investment=1`) входит в `net_worth` (реальный актив), но вычитается из free как `invested`; `invested ⊆ net` (нет двойного счёта). Инвест-ведро **нельзя** использовать как backing цели (`goal_contribution.account_id`) — иначе `targeted` и `invested` пересеклись бы. Рост курса крипто-актива поднимает `net` и `invested` на одну сумму → `free` не меняется (нереализованная прибыль ≠ свободные деньги). На дашборде `prev_free` вычитает `prev_invested` (корректный Δ).
+
+### Инвестиции (SPEC-026)
+
+- **`accounts.is_investment`** (INTEGER, default 0): флаг ведра-актива. Seed: `eth-invest` (currency=ETH). Уникальный partial-индекс — не более одного активного инвест-ведра на валюту.
+- **`investment_settings`** (`account_id` PK, `is_staked`, `staking_apr_pct` 0..100, `note`): настройки стейкинга для прогноза-пунктира. Состояние портфеля (qty/cost basis/P&L/доход) **не хранится** — линза on-read (`investments.ts`).
+- **Валюта ETH** в `currencies` (is_crypto=1, decimals=6). Курс ETH/EUR — `rates` с `source='binance'` (cron + бэкфилл `backfill_crypto_rates.py`); хранится как `1 EUR = rate × quote` → `rate = 1/price_Binance`. stETH пегуется к ETH 1:1 (отдельной котировки нет).
+- **Покупка** USDT→ETH = `transactions` (`type='exchange'`); **ребейзинг** = `snapshots` инвест-ведра (ground truth). Cost basis — WAC из exchange-истории; доход стейкинга (факт) = `qty(today) − net_bought_qty`.
 
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0013`, через `wrangler d1 migrations`. `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией.
+D1: `cloud/worker/migrations/0001…0014`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`).
 
 | Миграция | Что |
 |---|---|

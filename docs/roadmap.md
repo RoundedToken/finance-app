@@ -182,10 +182,10 @@
 ### Stage 5d — Legacy import (отложено)
 - Импорт 33 EUR-eq снимков из `data/legacy/Finances.xlsx` с обратной конверсией по историческим курсам. Решено начать с нуля; восстановление — only if нужно.
 
-### Stage 9 — Инвестиции
-- `yield_pct` на Account: автоматическая транзакция `interest` ежемесячно.
-- Ожидаемый доход за период, реальный yield.
-- (когда появятся) Holdings: акции / ETF, цены, P&L.
+### Stage 9 — Инвестиции ✅ (крипто-портфель, SPEC-026 — на проде 2026-06-06)
+- ✅ Крипто-портфель: ETH-холдинг как ведро (`is_investment`), курс ETH/EUR из Binance (cron + бэкфилл), раздел `/investments` (стоимость, cost basis WAC, P&L, доход стейкинга), `free = net − targeted − invested`.
+- ✅ Стейкинг (stETH/Lido/Bybit): признак позиции + доход из снапшотов (ground truth) + APR-прогноз пунктиром.
+- Отложено (NG SPEC-026): realized P&L при продаже, акции/ETF/банк-%, отдельная котировка stETH (пег), авто-interest-tx (конфликт с manual=ground-truth).
 
 ### Stage 10 — AI Coach
 LLM-агент с доступом к финансовым данным; шлёт инсайты в Mini App / Web Admin / Telegram-бота.
