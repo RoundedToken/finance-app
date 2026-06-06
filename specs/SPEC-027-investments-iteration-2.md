@@ -1,7 +1,7 @@
 ---
 id: SPEC-027
 title: Инвестиции — итерация 2 (цена в USDT, частичный стейкинг, авто-APR с Lido)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-06
 updated: 2026-06-06
@@ -150,4 +150,5 @@ Guard: `staked_qty ≥ 0`; `is_staked` выставляется производ
 ## 12. Changelog
 
 - 2026-06-06: создан в `in_progress` после фидбэка с прода (3 пункта) + owner-решения «авто Lido + override».
+- 2026-06-06: **выкачено на прод** → `done`. Backup → миграция `0015` (`execute --remote --file`, проверено: `app_config.steth_apr_pct=2.48`, колонка `staked_qty` есть) → worker + admin задеплоены → прод-смоук `/v1/admin/refresh-rates` → `lido_apr=2.48, lido_error=null` (Lido-из-Worker работает) + `crypto_saved=1`.
 - 2026-06-06: реализовано. Worker: миграция `0015` (`investment_settings.staked_qty`, `app_config`) + `rates.ts fetchLidoStethApr` (sma→last, изоляция) + cron/refresh пишут `app_config['steth_apr_pct']` + `db.ts` getAppConfig/setAppConfig + `investments.ts` (staked_qty/liquid, USDT price/value через `convertAt`, эффективный APR = override ?? авто, legacy is_staked→full, upsert деривит is_staked) + schemas (staked_qty). Admin: USDT на карточке/KPI, разбивка застейкано/свободно, модал стейкинга с amount-полем (без галочки) + APR-override с авто-подсказкой Lido, forecast по застейканной доле. **119 vitest** (16 investments) + typecheck + admin build + Playwright light/dark/модалки. **Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES** (без must-fix; закрыты nice-to-have: дрейф data-model.md, Zod `.finite()` на staked_qty, комментарии 0015/rates).
