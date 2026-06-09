@@ -384,3 +384,55 @@ describe("rates · Lido stETH APR (SPEC-027)", () => {
         await expect(fetchLidoStethApr()).rejects.toThrow(/lido apr/i);
     });
 });
+
+describe("investments · value_series окно периода (SPEC-029)", () => {
+    const seedBasic = (d1: ReturnType<typeof makeEnv>["d1"]) => seed(d1, {
+        accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+        snapshots: [{ id: "s1", date: "2024-06-01", account_id: "eth-invest", amount: 1.0 }],
+        rates: [{ date: "2024-06-01", quote: "ETH", rate: 1 / 2000 }],
+    });
+
+    it("дефолт (без from/to) → 12 месячных точек, последняя ≤ today", async () => {
+        const { env, d1 } = makeEnv();
+        seedBasic(d1);
+        const inv = await getInvestments(env, { today: "2026-05-15" }) as any;
+        const s = inv.positions[0].value_series;
+        expect(s).toHaveLength(12);
+        expect(s[0].date.slice(0, 7)).toBe("2025-06");
+        expect(s.at(-1).date <= "2026-05-15").toBe(true);
+    });
+
+    it("from = 6 мес назад → 6 точек", async () => {
+        const { env, d1 } = makeEnv();
+        seedBasic(d1);
+        const inv = await getInvestments(env, { today: "2026-05-15", from: "2025-12-01", to: "2026-05-15" }) as any;
+        const s = inv.positions[0].value_series;
+        expect(s).toHaveLength(6);
+        expect(s[0].date.slice(0, 7)).toBe("2025-12");
+    });
+
+    it("custom прошлое окно (to < today) → границы по to", async () => {
+        const { env, d1 } = makeEnv();
+        seedBasic(d1);
+        const inv = await getInvestments(env, { today: "2026-05-15", from: "2025-01-01", to: "2025-03-31" }) as any;
+        const s = inv.positions[0].value_series;
+        expect(s).toHaveLength(3);                       // янв/фев/мар 2025
+        expect(s[0].date.slice(0, 7)).toBe("2025-01");
+        expect(s.at(-1).date).toBe("2025-03-31");        // конец марта (≤ to)
+    });
+
+    it("'all' длинная история не переполняет (cap 240)", async () => {
+        const { env, d1 } = makeEnv();
+        seedBasic(d1);
+        const inv = await getInvestments(env, { today: "2026-05-15", from: "2000-01-01", to: "2026-05-15" }) as any;
+        expect(inv.positions[0].value_series.length).toBeLessThanOrEqual(240);
+        expect(inv.positions[0].value_series.length).toBeGreaterThan(100);
+    });
+
+    it("мусорные from/to (не-ISO) → дефолт 12 мес (валидация)", async () => {
+        const { env, d1 } = makeEnv();
+        seedBasic(d1);
+        const inv = await getInvestments(env, { today: "2026-05-15", from: "garbage", to: "2026-13-99" }) as any;
+        expect(inv.positions[0].value_series).toHaveLength(12);
+    });
+});

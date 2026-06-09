@@ -513,11 +513,15 @@ export function useUpdateBudgetSettings() {
 
 // ── Investments / крипто-портфель (SPEC-026) ────────────────────────────────
 
-export function useInvestments() {
+export function useInvestments(params?: { from?: string; to?: string }) {
     const today = todayLocal();   // SPEC-024: «сегодня» — локальный день клиента
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set("from", params.from);   // SPEC-029: окно value_series
+    if (params?.to) qs.set("to", params.to);
+    qs.set("today", today);
     return useQuery({
-        queryKey: ["investments", today],
-        queryFn: () => apiFetch<InvestmentsResponse>(`/v1/web/investments?today=${today}`),
+        queryKey: ["investments", params?.from ?? null, params?.to ?? null, today],
+        queryFn: () => apiFetch<InvestmentsResponse>(`/v1/web/investments?${qs.toString()}`),
         staleTime: 30_000,
     });
 }
