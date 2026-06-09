@@ -82,3 +82,58 @@ describe("RatesIndex.latestDate", () => {
         expect(new RatesIndex().latestDate()).toBeNull();
     });
 });
+
+describe("RatesIndex tick-aware rateAt (SPEC-028: свежесть по времени фетча)", () => {
+    function idxWithTick(): RatesIndex {
+        const r = new RatesIndex();
+        r.add("ETH", "2026-06-05", 1 / 1500);              // дневной historical
+        r.add("ETH", "2026-06-07", 1 / 1400);              // последний дневной (закрытие)
+        r.addTick("ETH", "2026-06-09 12:00:00", 1 / 1450); // свежий внутридневной тик
+        r.finalize();
+        return r;
+    }
+
+    it("today (≥ последней дневной даты) → свежий тик, не дневное закрытие", () => {
+        expect(idxWithTick().rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1450, 10);
+    });
+    it("дата == последней дневной → тик (граница >=)", () => {
+        expect(idxWithTick().rateAt("ETH", "2026-06-07")).toBeCloseTo(1 / 1450, 10);
+    });
+    it("прошлая дата (< последней дневной) → дневной historical, тик не влияет", () => {
+        const r = idxWithTick();
+        expect(r.rateAt("ETH", "2026-06-06")).toBeCloseTo(1 / 1500, 10);  // 06-05 ≤ 06-06
+        expect(r.rateAt("ETH", "2026-06-05")).toBeCloseTo(1 / 1500, 10);
+    });
+    it("нет тика → обычный дневной (E2 fallback)", () => {
+        const r = new RatesIndex();
+        r.add("ETH", "2026-06-07", 1 / 1400);
+        r.finalize();
+        expect(r.rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1400, 10);
+    });
+    it("только тик, нет дневных → тик", () => {
+        const r = new RatesIndex();
+        r.addTick("ETH", "2026-06-09 12:00:00", 1 / 1450);
+        r.finalize();
+        expect(r.rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1450, 10);
+    });
+    it("addTick держит последний по fetched_at (порядок вставки неважен)", () => {
+        const r = new RatesIndex();
+        r.add("ETH", "2026-06-07", 1 / 1400);
+        r.addTick("ETH", "2026-06-09 06:00:00", 1 / 1500);
+        r.addTick("ETH", "2026-06-09 18:00:00", 1 / 1460);   // новее → побеждает
+        r.addTick("ETH", "2026-06-09 12:00:00", 1 / 1480);   // старее → игнор
+        r.finalize();
+        expect(r.rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1460, 10);
+    });
+    it("фиат тиков не имеет → дневной даже на today (не затронут крипто-тиком)", () => {
+        const r = new RatesIndex();
+        r.add("USD", "2026-06-07", 1.08);
+        r.addTick("ETH", "2026-06-09 12:00:00", 1 / 1450);
+        r.finalize();
+        expect(r.rateAt("USD", "2026-06-09")).toBe(1.08);
+    });
+    it("toEurAt стоимости 'сейчас' идёт по тику (mark-to-market)", () => {
+        // 2 ETH сейчас → 2 × 1450 = 2900 EUR (тик), а не 2 × 1400 (дневное закрытие)
+        expect(idxWithTick().toEurAt(2, "ETH", "2026-06-09")).toBeCloseTo(2900, 6);
+    });
+});

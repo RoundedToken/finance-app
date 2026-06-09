@@ -79,6 +79,19 @@ CREATE TABLE IF NOT EXISTS rates (
 );
 CREATE INDEX IF NOT EXISTS idx_rates_quote_date ON rates(quote, date);
 
+-- ─── Внутридневные тики курса (SPEC-028) ──────────────────────────────────
+-- Свежесть «по времени фетча» для mark-to-market. Дневная rates остаётся
+-- источником historical-конверсии (поток по дате); тики — для стоимости «сейчас».
+CREATE TABLE IF NOT EXISTS rate_ticks (
+    base        TEXT NOT NULL,                  -- 'EUR'
+    quote       TEXT NOT NULL,                  -- 'ETH' (крипта; фиат тики не пишет)
+    rate        REAL NOT NULL,                  -- 1 base = rate * quote (инверсия 1/price)
+    source      TEXT NOT NULL,                  -- 'binance' | 'coinbase' | 'coingecko'
+    fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),  -- момент фетча (UTC) — авторитет свежести
+    PRIMARY KEY (base, quote, fetched_at)
+);
+CREATE INDEX IF NOT EXISTS idx_rate_ticks_quote_fetched ON rate_ticks(quote, fetched_at DESC);
+
 -- ─── Снапшоты балансов (Stage 5; +transaction_id Stage 7.5) ───────────────
 CREATE TABLE IF NOT EXISTS snapshots (
     id              TEXT PRIMARY KEY,
