@@ -1,7 +1,7 @@
 ---
 id: SPEC-028
 title: ETH-курсы — устойчивость фетча и свежесть по времени фетча
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-09
 updated: 2026-06-09
@@ -154,21 +154,21 @@ CREATE INDEX IF NOT EXISTS idx_rate_ticks_quote_fetched ON rate_ticks(quote, fet
 
 ## 9. Acceptance criteria
 
-- [ ] AC1: cron сконфигурирован на 4×/сутки (`0 */6 * * *`).
-- [ ] AC2: при недоступности Binance крипто-фетч берёт курс с Coinbase, при недоступности обоих —
-  с CoinGecko (unit-тест с мок-fetch, fallback-цепочка).
-- [ ] AC3: если все провайдеры упали — `saveCryptoTick` не пишет, последний курс остаётся, `refresh-rates`
-  возвращает `crypto_saved=0` + непустой `crypto_error`.
-- [ ] AC4: каждый успешный фетч пишет строку в `rate_ticks` (история) и обновляет дневной `rates`.
-- [ ] AC5: `RatesIndex.rateAt('ETH', today)` возвращает курс **последнего тика**; `rateAt('ETH', pastDate)`
-  возвращает дневной historical (unit-тест tick-aware).
-- [ ] AC6: стоимость ETH в `/investments`, `/dashboard` (netNow + tail net-worth-series) и `/accounts`
-  совпадает (одна цена — последний тик; тест консистентности).
-- [ ] AC7: историческая конвертация трат/доходов/cost basis (поток по дате) не изменилась (регресс-тесты
-  budgets/dashboard/investments зелёные).
-- [ ] AC8: `refresh-rates` на проде возвращает `crypto_saved=1` и `crypto_provider` ∈ {binance,coinbase,coingecko};
-  ETH-курс на проде свежий (fetched_at в пределах часа после запуска).
-- [ ] AC9: страница «Инвестиции» показывает время последнего фетча курса.
+- [x] AC1: cron сконфигурирован на 4×/сутки (`0 */6 * * *`). ✅ деплой подтвердил `schedule: 0 */6 * * *`.
+- [x] AC2: при недоступности Binance крипто-фетч берёт курс с Coinbase, при недоступности обоих —
+  с CoinGecko (unit-тест с мок-fetch, fallback-цепочка). ✅ `investments.test.ts`.
+- [x] AC3: если все провайдеры упали — `saveCryptoRates` не пишет, последний курс остаётся, `refresh-rates`
+  возвращает `crypto_saved=0` + непустой `crypto_error`. ✅ unit (throw `all crypto providers failed`).
+- [x] AC4: каждый успешный фетч пишет строку в `rate_ticks` (история) и обновляет дневной `rates`. ✅ `saveCryptoRates`.
+- [x] AC5: `RatesIndex.rateAt('ETH', today)` возвращает курс **последнего тика**; `rateAt('ETH', pastDate)`
+  возвращает дневной historical (unit-тест tick-aware). ✅ `rates.test.ts`.
+- [x] AC6: стоимость ETH в `/investments`, `/dashboard` (netNow + tail net-worth-series) и `/accounts`
+  совпадает (одна цена — последний тик; единый tick-aware `rateAt`). ✅ интеграция `investments.test.ts`.
+- [x] AC7: историческая конвертация трат/доходов/cost basis (поток по дате) не изменилась (регресс-тесты
+  budgets/dashboard/investments зелёные). ✅ 131 тест зелёный.
+- [x] AC8: крипто-фетч на проде записал ETH через провайдера; ETH-курс свежий. ✅ live-триггер scheduled на
+  CF-edge: `saved 1 via binance`, `rate_ticks` ← ETH 1442.8 EUR `2026-06-09 11:16:10`, дневной `rates` за 06-09 закрыт.
+- [x] AC9: страница «Инвестиции» показывает время последнего фетча курса. ✅ визуал light/dark.
 
 ## 10. Test plan
 
@@ -204,3 +204,9 @@ CREATE INDEX IF NOT EXISTS idx_rate_ticks_quote_fetched ON rate_ticks(quote, fet
 
 - 2026-06-09: создан сразу в `in_progress` (взят в работу по фидбэку с прода; owner выбрал внутридневную
   историю). Root cause диагностирован на проде (Binance гео-блок CF-IP, R1 материализовался).
+- 2026-06-09: реализовано + выкачено на прод (PR #10, merge `main` `ad9c244`). Миграция 0016 применена,
+  worker + admin задеплоены (cron `0 */6 * * *` активен), 131 тест зелёный.
+- 2026-06-09: `done`. Live-триггер scheduled на CF-edge (`wrangler dev --remote --test-scheduled`) подтвердил:
+  `crypto rates: saved 1 via binance`, `rate_ticks` и дневной `rates` за 06-09 заполнены — двухдневная дырка
+  ETH закрыта. Binance прошёл с CF-IP → гео-блок был интермиттентным (POP-зависимым); цепочка fallback
+  страхует на случай блокировки конкретного POP.

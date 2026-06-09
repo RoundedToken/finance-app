@@ -182,9 +182,10 @@
 ### Stage 5d — Legacy import (отложено)
 - Импорт 33 EUR-eq снимков из `data/legacy/Finances.xlsx` с обратной конверсией по историческим курсам. Решено начать с нуля; восстановление — only if нужно.
 
-### Stage 9 — Инвестиции ✅ (крипто-портфель, SPEC-026 — на проде 2026-06-06)
-- ✅ Крипто-портфель: ETH-холдинг как ведро (`is_investment`), курс ETH/EUR из Binance (cron + бэкфилл), раздел `/investments` (стоимость, cost basis WAC, P&L, доход стейкинга), `free = net − targeted − invested`.
-- ✅ Стейкинг (stETH/Lido/Bybit): признак позиции + доход из снапшотов (ground truth) + APR-прогноз пунктиром.
+### Stage 9 — Инвестиции ✅ (крипто-портфель, SPEC-026/027/028 — на проде)
+- ✅ Крипто-портфель: ETH-холдинг как ведро (`is_investment`), курс ETH/EUR, раздел `/investments` (стоимость, cost basis WAC, P&L, доход стейкинга), `free = net − targeted − invested`.
+- ✅ Стейкинг (stETH/Lido/Bybit): признак позиции + доход из снапшотов (ground truth) + APR-прогноз пунктиром; частичный стейкинг + авто-APR с Lido (SPEC-027).
+- ✅ Устойчивость курса ETH (SPEC-028): цепочка провайдеров Binance→Coinbase→CoinGecko (fallback при гео-блоке CF-IP), cron 4×/сутки, внутридневные тики (`rate_ticks`) + tick-aware mark-to-market «по времени фетча».
 - Отложено (NG SPEC-026): realized P&L при продаже, акции/ETF/банк-%, отдельная котировка stETH (пег), авто-interest-tx (конфликт с manual=ground-truth).
 
 ### Stage 10 — AI Coach
