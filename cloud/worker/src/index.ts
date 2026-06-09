@@ -693,7 +693,10 @@ async function handleWebInvestments(request: Request, env: Env, url: URL): Promi
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
     try {
-        const data = await getInvestments(env, { today: resolveToday(url) });
+        // SPEC-029: окно value_series — from/to (как /dashboard); getInvestments валидирует ISO.
+        const from = url.searchParams.get("from") ?? undefined;
+        const to = url.searchParams.get("to") ?? undefined;
+        const data = await getInvestments(env, { today: resolveToday(url), from, to });
         return json(data, 200, request, env);
     } catch (err) {
         console.error("investments error", err);
