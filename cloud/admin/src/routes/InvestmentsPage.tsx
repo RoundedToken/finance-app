@@ -13,6 +13,7 @@ import { Select } from "@/components/Select";
 import { Sparkline } from "@/components/Sparkline";
 import { Currency, AccountOption } from "@/components/Currency";
 import { cn, formatAmount, formatDate, formatExchangeRate, formatRelativeTime, hoursSince, todayLocal } from "@/lib/utils";
+import { type Preset, PeriodPresets, presetRange, startOfMonthMinus, todayIso } from "@/components/PeriodPresets";
 import type { Account, InvestmentPosition, TransactionCreatePayload } from "@/api/types";
 
 const eur = (v: number | null | undefined) => v == null ? "—" : `${formatAmount(v, "EUR")} €`;
@@ -20,7 +21,11 @@ const usdt = (v: number | null | undefined) => v == null ? "—" : `${formatAmou
 const FORECAST_MONTHS = 3;
 
 export function InvestmentsPage() {
-    const { data, isLoading, isError, refetch } = useInvestments();
+    // SPEC-029: период графика (паритет с дашбордом) — окно value_series спарклайнов.
+    const [preset, setPreset] = useState<Preset>("12m");
+    const [cf, setCf] = useState<string>(startOfMonthMinus(11));
+    const [ct, setCt] = useState<string>(todayIso());
+    const { data, isLoading, isError, refetch } = useInvestments(presetRange(preset, cf, ct));
     const { data: accData } = useAccounts();
     const accounts = accData?.accounts ?? [];
 
@@ -45,9 +50,12 @@ export function InvestmentsPage() {
                             : data?.rates_date && <span className="ml-1">Курс ETH: {data.rates_date}.</span>}
                     </p>
                 </div>
-                <button onClick={() => refetch()} className="btn-ghost self-start" title="Обновить" aria-label="Обновить">
-                    <RefreshCw className="h-4 w-4" />
-                </button>
+                <div className="flex items-start gap-2">
+                    <PeriodPresets preset={preset} setPreset={setPreset} cf={cf} ct={ct} setCf={setCf} setCt={setCt} />
+                    <button onClick={() => refetch()} className="btn-ghost self-start" title="Обновить" aria-label="Обновить">
+                        <RefreshCw className="h-4 w-4" />
+                    </button>
+                </div>
             </div>
 
             {staleRates && (

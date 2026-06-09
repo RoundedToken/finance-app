@@ -71,10 +71,14 @@ export async function listInvestmentBuckets(env: Env): Promise<InvBucketRow[]> {
  */
 export async function getInvestments(
     env: Env,
-    opts: { today?: string } = {},
+    opts: { today?: string; from?: string; to?: string } = {},
     ratesArg?: RatesIndex,
 ): Promise<unknown> {
     const today = opts.today && ISO_DATE.test(opts.today) ? opts.today : todayUtc();
+    // SPEC-029: окно value_series — from/to (как дашборд); дефолт — последние 12 мес. to не в будущее.
+    const seriesTo = opts.to && ISO_DATE.test(opts.to) && opts.to < today ? opts.to : today;
+    const seriesStartYm = opts.from && ISO_DATE.test(opts.from) ? monthKey(opts.from) : addMonths(monthKey(today), -11);
+    const seriesEndYm = monthKey(seriesTo);
     const rates = ratesArg ?? await loadRatesIndex(env);
     const buckets = await listInvestmentBuckets(env);
 
@@ -182,7 +186,7 @@ export async function getInvestments(
         if (valueUsdt != null) sumValueUsdt += valueUsdt;
         const lastSnapDate = snapR.results.length ? snapR.results[snapR.results.length - 1].date : null;
 
-        // ── Серия стоимости (последние 12 мес, конец месяца), in-memory ────────
+        // ── Серия стоимости (окно [from..to], конец месяца), in-memory (SPEC-029) ──
         // События ведра (tx in/out + fee) — у инвест-ведра нет income/expense/gc
         // (фильтр пикеров + guard goal_contribution), поэтому tx+snap достаточно
         // и совпадает с getEffectiveBalance.
@@ -208,9 +212,9 @@ export async function getInvestments(
             return reconstructBalance(base, baseDate, baseCreatedAt, events, asOf);
         };
         const series: { date: string; value_eur: number; qty: number }[] = [];
-        let cur = addMonths(monthKey(today), -11);
-        for (let i = 0; i < 24 && cur <= monthKey(today); i++) {
-            const T = endOfMonth(cur) <= today ? endOfMonth(cur) : today;
+        let cur = seriesStartYm;
+        for (let i = 0; i < 240 && cur <= seriesEndYm; i++) {
+            const T = endOfMonth(cur) <= seriesTo ? endOfMonth(cur) : seriesTo;
             const native = balanceAt(T);
             const ev = rates.toEurAt(native, b.currency, T);
             series.push({ date: T, value_eur: ev == null ? 0 : r2(ev), qty: roundMoney(native) });

@@ -9,6 +9,7 @@ import { Currency } from "@/components/Currency";
 import { Sparkline } from "@/components/Sparkline";
 import { chartTheme } from "@/lib/chart-theme";
 import { formatAmount, cn } from "@/lib/utils";
+import { type Preset, PeriodPresets, presetRange, startOfMonthMinus, todayIso, pad } from "@/components/PeriodPresets";
 import type { DashboardResponse, NetWorthPoint, DashboardBucket, Goal } from "@/api/types";
 
 /**
@@ -19,35 +20,8 @@ import type { DashboardResponse, NetWorthPoint, DashboardBucket, Goal } from "@/
  * только график net worth; категория → только donut расходов.
  */
 
-// ── Date helpers для пресетов периода (local time, YYYY-MM-DD) ─────────────
-const pad = (n: number) => String(n).padStart(2, "0");
-const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const todayIso = () => iso(new Date());
-function startOfMonthMinus(monthsBack: number): string {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - monthsBack);
-    return iso(d);
-}
-
-type Preset = "12m" | "6m" | "year" | "all" | "custom";
-const PRESETS: { key: Preset; label: string }[] = [
-    { key: "12m", label: "12 мес" },
-    { key: "6m", label: "6 мес" },
-    { key: "year", label: "Год" },
-    { key: "all", label: "Всё" },
-    { key: "custom", label: "Период" },
-];
-function presetRange(p: Preset, cf: string, ct: string): { from?: string; to?: string } {
-    const today = todayIso();
-    switch (p) {
-        case "12m": return { from: startOfMonthMinus(11), to: today };
-        case "6m": return { from: startOfMonthMinus(5), to: today };
-        case "year": return { from: `${new Date().getFullYear()}-01-01`, to: today };
-        case "all": return { from: "2000-01-01", to: today };
-        case "custom": return { from: cf || undefined, to: ct || today };
-    }
-}
+// Пресеты периода (Preset/presetRange/PeriodPresets) + date-helpers (pad/iso/...) — общий
+// компонент `@/components/PeriodPresets` (переиспользуется инвестициями, SPEC-029).
 
 const MON = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const monthLabel = (ym: string) => { const [y, m] = ym.split("-"); return `${MON[+m - 1]} ’${y.slice(2)}`; };
@@ -471,33 +445,6 @@ function CategoryDonut({ data, cats, setCats }: { data: DashboardResponse; cats:
 }
 
 // ── Filters / controls ──────────────────────────────────────────────────────
-
-function PeriodPresets({ preset, setPreset, cf, ct, setCf, setCt }: {
-    preset: Preset; setPreset: (p: Preset) => void; cf: string; ct: string; setCf: (s: string) => void; setCt: (s: string) => void;
-}) {
-    return (
-        <div className="flex flex-col items-end gap-2">
-            <div className="inline-flex gap-1 p-1 bg-secondary/60 rounded-xl">
-                {PRESETS.map(p => (
-                    <button key={p.key} type="button" aria-pressed={preset === p.key} onClick={() => setPreset(p.key)}
-                        className={cn("py-1.5 px-3 rounded-lg text-xs font-medium transition-colors",
-                            preset === p.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground")}>
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-            {preset === "custom" && (
-                <div className="flex items-center gap-2">
-                    <input type="date" value={cf} max={ct} onChange={e => setCf(e.target.value)}
-                        className="px-2 py-1 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring" />
-                    <span className="text-muted-foreground text-sm">–</span>
-                    <input type="date" value={ct} min={cf} max={todayIso()} onChange={e => setCt(e.target.value)}
-                        className="px-2 py-1 rounded-lg border bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring" />
-                </div>
-            )}
-        </div>
-    );
-}
 
 function FormFilter({ buckets, forms, setForms }: { buckets: DashboardBucket[]; forms: Set<string>; setForms: (s: Set<string>) => void }) {
     const available = [...new Set(buckets.map(b => b.form))];
