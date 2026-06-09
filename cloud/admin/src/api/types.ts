@@ -563,6 +563,9 @@ export interface InvestmentPosition {
     staking_apr_auto: number | null;     // SPEC-027: авто из Lido
     staking_income_qty: number | null;   // факт: прирост qty, не объяснённый покупками
     staking_income_eur: number | null;
+    staking_forecast_eur: number | null;          // SPEC-030: накопл. прогноз по APR
+    staking_expected_annual_eur: number | null;   // SPEC-030: ожидаемый €/год
+    staked_since: string | null;                  // SPEC-030: дата отсчёта прогноза
     note: string | null;
     last_snapshot_date: string | null;
     value_series: InvestmentSeriesPoint[];
@@ -576,6 +579,8 @@ export interface InvestmentsSummary {
     unrealized_pl_eur: number;
     unrealized_pl_pct: number | null;
     staking_income_eur: number;
+    staking_forecast_eur: number;                 // SPEC-030
+    staking_expected_annual_eur: number;
     missing_rates: number;
 }
 
