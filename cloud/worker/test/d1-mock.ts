@@ -107,6 +107,7 @@ const FILL: Record<string, (r: Row) => Row> = {
     transactions: r => ({ type: "exchange", fee_amount: null, fee_currency: null, note: null, chain_id: null, chain_sequence: null, goal_id: null, created_at: "2020-01-01 00:00:00", updated_at: "2020-01-01 00:00:00", deleted_at: null, ...r }),
     goal_contributions: r => ({ account_id: null, note: null, created_at: "2020-01-01 00:00:00", updated_at: "2020-01-01 00:00:00", deleted_at: null, ...r }),
     rates: r => ({ base: "EUR", source: "test", fetched_at: "2020-01-01 00:00:00", ...r }),
+    rate_ticks: r => ({ base: "EUR", source: "test", fetched_at: "2020-01-01 00:00:00", ...r }),
     goals: r => ({ emoji: null, color: null, target_amount: null, target_currency: null, deadline: null, note: null, status: "active", sort_order: 0, created_at: "2020-01-01 00:00:00", updated_at: "2020-01-01 00:00:00", deleted_at: null, ...r }),
     categories: r => ({ type: "expense", name: String(r.id), parent_id: null, emoji: null, color: null, sort_order: 0, is_active: 1, updated_at: "2020-01-01 00:00:00", ...r }),
     income_categories: r => ({ name: String(r.id), emoji: null, color: null, sort_order: 0, is_active: 1, created_at: "2020-01-01 00:00:00", ...r }),

@@ -63,7 +63,9 @@
 **`snapshots`** — ручные снимки баланса ведра. `id, date, account_id, amount, note, source('manual'|'auto_transaction'), transaction_id?, created_at, updated_at, deleted_at`.
 - После SPEC-011 (миграция 0010) auto-снапшоты не создаются; для баланса используются **только** `source = 'manual'`.
 
-**`rates`** — курсы (ADR-006). PK `(date, base, quote)`, `rate` (`1 base = rate × quote`), `base` фиксированно `EUR`, `source`, `fetched_at`.
+**`rates`** — дневные курсы (ADR-006). PK `(date, base, quote)`, `rate` (`1 base = rate × quote`), `base` фиксированно `EUR`, `source`, `fetched_at`. Источник historical-конверсии (поток по дате).
+
+**`rate_ticks`** — внутридневные тики курса (SPEC-028/ADR-019). PK `(base, quote, fetched_at)`, те же `rate`/`source`. Крипта пишет тик при каждом фетче; mark-to-market «сейчас» берёт `MAX(fetched_at)` (свежесть по времени фетча, а не по календарной дате). Фиат тики не пишет.
 
 **`goals`** — целевые фонды. `id, name, emoji, color, target_amount?(>0), target_currency?(FK), deadline?, note, status('active'|'achieved'|'archived'), sort_order, created_at, updated_at, deleted_at`.
 
@@ -112,12 +114,12 @@ free        = net_worth − targeted − invested
 - **`accounts.is_investment`** (INTEGER, default 0): флаг ведра-актива. Seed: `eth-invest` (currency=ETH). Уникальный partial-индекс — не более одного активного инвест-ведра на валюту.
 - **`investment_settings`** (`account_id` PK, `staked_qty`, `staking_apr_pct`, `note`, `is_staked` legacy): настройки стейкинга. `staked_qty` (SPEC-027) — сколько единиц актива в стейкинге (частичный стейкинг; `0` = убрать; остальное = свободно); `is_staked` теперь **производный** (`staked_qty>0`). `staking_apr_pct` — ручной **override** APR (NULL = авто-APR с Lido). Состояние портфеля (qty/cost basis/P&L/доход) **не хранится** — линза on-read (`investments.ts`).
 - **`app_config`** (`key` PK, `value`, SPEC-027): глобальный key/value. `steth_apr_pct` — авто-APR stETH с публичного Lido API (cron + `/v1/admin/refresh-rates`). Эффективный APR позиции = override `??` авто.
-- **Валюта ETH** в `currencies` (is_crypto=1, decimals=6). Курс ETH/EUR — `rates` с `source='binance'` (cron + бэкфилл `backfill_crypto_rates.py`); хранится как `1 EUR = rate × quote` → `rate = 1/price_Binance`. stETH пегуется к ETH 1:1 (отдельной котировки нет).
+- **Валюта ETH** в `currencies` (is_crypto=1, decimals=6). Курс ETH/EUR — цепочка провайдеров **Binance→Coinbase→CoinGecko** (SPEC-028/ADR-019, fallback при гео-блоке CF-IP), cron 4×/сутки + бэкфилл `backfill_crypto_rates.py`; хранится как `1 EUR = rate × quote` → `rate = 1/price`. Пишется в дневной `rates` (закрытие дня) **и** `rate_ticks` (внутридневная свежесть). stETH пегуется к ETH 1:1 (отдельной котировки нет).
 - **Покупка** USDT→ETH = `transactions` (`type='exchange'`); **ребейзинг** = `snapshots` инвест-ведра (ground truth). Cost basis — WAC из exchange-истории; доход стейкинга (факт) = `qty(today) − net_bought_qty`.
 
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0015`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`).
+D1: `cloud/worker/migrations/0001…0016`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса).
 
 | Миграция | Что |
 |---|---|
@@ -133,3 +135,6 @@ D1: `cloud/worker/migrations/0001…0015`, применять через `wrangl
 | 0011 | `budgets` (SPEC-020) |
 | 0012 | `budget_settings` + `budget_recommendation_log` (адаптивные бюджеты, SPEC-023) |
 | 0013 | нормализация формата `expenses.created_at`/`updated_at` под канон `YYYY-MM-DD HH:MM:SS` (SPEC-024) |
+| 0014 | `accounts.is_investment` + `investment_settings` + валюта ETH (SPEC-026) |
+| 0015 | `investment_settings.staked_qty` + `app_config` (SPEC-027) |
+| 0016 | `rate_ticks` — внутридневные тики курса (SPEC-028) |

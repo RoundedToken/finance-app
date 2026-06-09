@@ -46,6 +46,27 @@ export function formatDateTime(iso: string): string {
     return d.toLocaleString("ru-RU", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** D1 datetime('now') = "YYYY-MM-DD HH:MM:SS" в UTC без зоны → парсим как UTC (иначе JS возьмёт локаль). */
+function parseUtc(iso: string): Date {
+    return new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
+}
+
+/** Относительное «N назад» для свежести курса (SPEC-028). Грубо: только что / мин / ч / дн. */
+export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+    const sec = Math.max(0, Math.floor((now.getTime() - parseUtc(iso).getTime()) / 1000));
+    if (sec < 90) return "только что";
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} мин назад`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} ч назад`;
+    return `${Math.floor(h / 24)} дн назад`;
+}
+
+/** Часов с момента fetched_at (SPEC-028: порог устаревания курса). */
+export function hoursSince(iso: string, now: Date = new Date()): number {
+    return (now.getTime() - parseUtc(iso).getTime()) / 3.6e6;
+}
+
 /**
  * Естественное отображение курса обмена.
  * rate = to_amount / from_amount.

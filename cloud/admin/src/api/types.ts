@@ -584,6 +584,7 @@ export interface InvestmentsResponse {
     as_of: string;
     currency: "EUR";
     rates_date: string | null;
+    rate_fetched_at: string | null;   // SPEC-028: момент последнего фетча курса (свежесть)
     summary: InvestmentsSummary;
     positions: InvestmentPosition[];
 }

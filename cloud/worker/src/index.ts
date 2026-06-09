@@ -41,7 +41,7 @@ import {
     setAppConfig,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
-import { fetchLatestRatesEUR, fetchCryptoRatesEUR, fetchLidoStethApr, saveRates, getLatestRates, loadRatesIndex, CRYPTO_RATE_SOURCE } from "./rates";
+import { fetchLatestRatesEUR, fetchCryptoRatesEUR, fetchLidoStethApr, saveRates, saveCryptoRates, getLatestRates, loadRatesIndex } from "./rates";
 import { getInvestments, upsertInvestmentSettings, STETH_APR_KEY } from "./investments";
 import {
     listExpenseCategories,
@@ -122,8 +122,8 @@ export default {
         // Binance не валил фиат-курсы (E7). Падение → курс ETH остаётся вчерашним.
         try {
             const crypto = await fetchCryptoRatesEUR();
-            const n = await saveRates(env, crypto, CRYPTO_RATE_SOURCE);
-            console.log(`scheduled crypto rates: saved ${n} for date ${crypto.date}`);
+            const n = await saveCryptoRates(env, crypto);
+            console.log(`scheduled crypto rates: saved ${n} via ${crypto.provider} for date ${crypto.date}`);
         } catch (e) {
             console.error("scheduled crypto rates failed:", e);
         }
@@ -806,10 +806,12 @@ async function handleRefreshRates(request: Request, env: Env): Promise<Response>
     const n = await saveRates(env, payload);
     // SPEC-026: крипта (ETH) — отдельный try/catch, падение не валит ответ по фиату (E7).
     let cryptoSaved = 0;
+    let cryptoProvider: string | null = null;
     let cryptoError: string | null = null;
     try {
         const crypto = await fetchCryptoRatesEUR(payload.date);
-        cryptoSaved = await saveRates(env, crypto, CRYPTO_RATE_SOURCE);
+        cryptoSaved = await saveCryptoRates(env, crypto);
+        cryptoProvider = crypto.provider ?? null;
     } catch (e) {
         cryptoError = String((e as Error)?.message ?? e);
         console.error("refresh crypto rates failed:", e);
@@ -824,7 +826,7 @@ async function handleRefreshRates(request: Request, env: Env): Promise<Response>
         lidoError = String((e as Error)?.message ?? e);
         console.error("refresh lido apr failed:", e);
     }
-    return json({ ok: true, saved: n, crypto_saved: cryptoSaved, crypto_error: cryptoError, lido_apr: lidoApr, lido_error: lidoError, date: payload.date }, 200, request, env);
+    return json({ ok: true, saved: n, crypto_saved: cryptoSaved, crypto_provider: cryptoProvider, crypto_error: cryptoError, lido_apr: lidoApr, lido_error: lidoError, date: payload.date }, 200, request, env);
 }
 
 async function handleBulkRates(request: Request, env: Env): Promise<Response> {

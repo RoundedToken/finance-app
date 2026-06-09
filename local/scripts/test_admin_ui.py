@@ -25,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -179,6 +180,8 @@ CURRENCIES = [
 # SPEC-026: портфель инвестиций (линза /v1/web/investments).
 INVESTMENTS = {
     "ok": True, "as_of": "2026-05-26", "currency": "EUR", "rates_date": "2026-05-24",
+    # SPEC-028: свежесть по времени фетча — «12 мин назад» (happy-path, не stale)
+    "rate_fetched_at": (datetime.now(timezone.utc) - timedelta(minutes=12)).strftime("%Y-%m-%d %H:%M:%S"),
     "summary": {"value_eur": 3300.0, "value_usdt": 3828.0, "cost_basis_eur": 3010.0, "cost_basis_known": True,
                 "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6, "staking_income_eur": 42.0, "missing_rates": 0},
     "positions": [{

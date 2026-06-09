@@ -12,7 +12,7 @@ import { Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { Sparkline } from "@/components/Sparkline";
 import { Currency, AccountOption } from "@/components/Currency";
-import { cn, formatAmount, formatDate, formatExchangeRate, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, formatExchangeRate, formatRelativeTime, hoursSince, todayLocal } from "@/lib/utils";
 import type { Account, InvestmentPosition, TransactionCreatePayload } from "@/api/types";
 
 const eur = (v: number | null | undefined) => v == null ? "—" : `${formatAmount(v, "EUR")} €`;
@@ -29,7 +29,9 @@ export function InvestmentsPage() {
     const [stakeFor, setStakeFor] = useState<InvestmentPosition | null>(null);
 
     const s = data?.summary;
-    const staleRates = !!(data?.rates_date && data.rates_date < todayLocal());
+    // SPEC-028: свежесть по времени последнего фетча (тика), а не по календарной дате.
+    const fetchedAt = data?.rate_fetched_at ?? null;
+    const staleRates = fetchedAt ? hoursSince(fetchedAt) >= 12 : false;
 
     return (
         <div className="space-y-6">
@@ -38,7 +40,9 @@ export function InvestmentsPage() {
                     <h1 className="text-3xl font-semibold tracking-tight">Инвестиции</h1>
                     <p className="text-muted-foreground mt-1">
                         Крипто-портфель (ETH + стейкинг). Входит в net worth, но <b>не</b> в свободные деньги.
-                        {data?.rates_date && <span className="ml-1">Курс ETH: {data.rates_date}.</span>}
+                        {fetchedAt
+                            ? <span className="ml-1">Курс ETH обновлён {formatRelativeTime(fetchedAt)}.</span>
+                            : data?.rates_date && <span className="ml-1">Курс ETH: {data.rates_date}.</span>}
                     </p>
                 </div>
                 <button onClick={() => refetch()} className="btn-ghost self-start" title="Обновить" aria-label="Обновить">
@@ -49,7 +53,7 @@ export function InvestmentsPage() {
             {staleRates && (
                 <div className="card p-3 border-amber-500/50 bg-amber-500/10 text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
                     <Info className="h-4 w-4 shrink-0" />
-                    Курс ETH от {data!.rates_date}, может устаревать. Цифры — по последнему известному курсу.
+                    Курс ETH обновлялся {formatRelativeTime(fetchedAt!)} — мог устареть (провайдеры не отвечают?). Цифры по последнему известному курсу.
                 </div>
             )}
 

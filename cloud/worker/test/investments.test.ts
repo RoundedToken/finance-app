@@ -276,25 +276,89 @@ describe("investments · guards", () => {
     });
 });
 
-describe("rates · крипто-курс Binance (инверсия + изоляция)", () => {
-    it("fetchCryptoRatesEUR инвертирует цену: rate = 1/price (toEurAt → цена)", async () => {
-        vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ symbol: "ETHEUR", price: "3200.00" }), { status: 200 })));
+describe("rates · крипто-курс по цепочке провайдеров (SPEC-028: fallback)", () => {
+    // url-based мок: по подстроке URL отдаём ответ конкретного провайдера.
+    const seq = (h: Record<string, () => Response>) => vi.fn(async (url: string) => {
+        for (const [k, fn] of Object.entries(h)) if (url.includes(k)) return fn();
+        throw new Error(`unexpected fetch ${url}`);
+    });
+    const ok = (b: any) => new Response(JSON.stringify(b), { status: 200 });
+
+    it("Binance ok → provider=binance, инверсия rate=1/price (toEurAt → цена)", async () => {
+        vi.stubGlobal("fetch", seq({ "binance.com": () => ok({ symbol: "ETHEUR", price: "3200.00" }) }));
         const r = await fetchCryptoRatesEUR("2026-05-15");
         expect(r.base).toBe("EUR");
         expect(r.date).toBe("2026-05-15");
+        expect(r.provider).toBe("binance");
         expect(r.rates.ETH).toBeCloseTo(1 / 3200, 10);   // инверсия
-        // toEurAt(1 ETH) должен дать ≈ цену Binance
-        expect(1 / r.rates.ETH).toBeCloseTo(3200, 2);
+        expect(1 / r.rates.ETH).toBeCloseTo(3200, 2);    // toEurAt(1 ETH) ≈ цена
     });
 
-    it("Binance http-ошибка → throw (изолируется в cron/refresh)", async () => {
-        vi.stubGlobal("fetch", vi.fn(async () => new Response("blocked", { status: 451 })));
-        await expect(fetchCryptoRatesEUR("2026-05-15")).rejects.toThrow(/binance/i);
+    it("Binance заблокирован (451) → fallback Coinbase (R1 mitigation)", async () => {
+        vi.stubGlobal("fetch", seq({
+            "binance.com": () => new Response("blocked", { status: 451 }),
+            "coinbase.com": () => ok({ data: { amount: "1500.5", base: "ETH", currency: "EUR" } }),
+        }));
+        const r = await fetchCryptoRatesEUR("2026-05-15");
+        expect(r.provider).toBe("coinbase");
+        expect(r.rates.ETH).toBeCloseTo(1 / 1500.5, 10);
     });
 
-    it("Binance bad price (0/NaN) → throw", async () => {
-        vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ price: "0" }), { status: 200 })));
-        await expect(fetchCryptoRatesEUR("2026-05-15")).rejects.toThrow(/bad price/i);
+    it("Binance + Coinbase падают → fallback CoinGecko", async () => {
+        vi.stubGlobal("fetch", seq({
+            "binance.com": () => new Response("", { status: 403 }),
+            "coinbase.com": () => new Response("", { status: 500 }),
+            "coingecko.com": () => ok({ ethereum: { eur: 1450 } }),
+        }));
+        const r = await fetchCryptoRatesEUR("2026-05-15");
+        expect(r.provider).toBe("coingecko");
+        expect(r.rates.ETH).toBeCloseTo(1 / 1450, 10);
+    });
+
+    it("провайдер 200 но мусорная цена (0/NaN) → пробует следующий (E5)", async () => {
+        vi.stubGlobal("fetch", seq({
+            "binance.com": () => ok({ price: "0" }),               // 0 невалидно
+            "coinbase.com": () => ok({ data: { amount: "abc" } }), // NaN невалидно
+            "coingecko.com": () => ok({ ethereum: { eur: 1400 } }),
+        }));
+        const r = await fetchCryptoRatesEUR("2026-05-15");
+        expect(r.provider).toBe("coingecko");
+        expect(r.rates.ETH).toBeCloseTo(1 / 1400, 10);
+    });
+
+    it("все провайдеры упали → throw агрегированной ошибкой (→ crypto_error в refresh)", async () => {
+        vi.stubGlobal("fetch", seq({
+            "binance.com": () => new Response("", { status: 451 }),
+            "coinbase.com": () => new Response("", { status: 500 }),
+            "coingecko.com": () => new Response("", { status: 429 }),
+        }));
+        await expect(fetchCryptoRatesEUR("2026-05-15")).rejects.toThrow(/all crypto providers failed/);
+    });
+});
+
+describe("investments · свежесть курса по тику (SPEC-028, через реальный rate_ticks)", () => {
+    it("стоимость позиции 'сейчас' идёт по последнему тику, а не по дневному закрытию", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+            snapshots: [{ id: "s1", date: "2026-06-07", account_id: "eth-invest", amount: 2.0 }],
+            rates: [{ date: "2026-06-07", quote: "ETH", rate: 1 / 1400 }],          // дневное закрытие: 1400 EUR
+            rate_ticks: [{ quote: "ETH", rate: 1 / 1450, fetched_at: "2026-06-09 12:00:00" }],  // свежий тик: 1450 EUR
+        });
+        const inv = await getInvestments(env, { today: "2026-06-09" }) as any;
+        expect(inv.positions[0].value_eur).toBeCloseTo(2900, 2);   // 2 × 1450 (тик), не × 1400
+        expect(inv.summary.value_eur).toBeCloseTo(2900, 2);
+    });
+
+    it("нет тика → стоимость по дневному курсу (E2 fallback, без регрессии)", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+            snapshots: [{ id: "s1", date: "2026-06-07", account_id: "eth-invest", amount: 2.0 }],
+            rates: [{ date: "2026-06-07", quote: "ETH", rate: 1 / 1400 }],
+        });
+        const inv = await getInvestments(env, { today: "2026-06-09" }) as any;
+        expect(inv.positions[0].value_eur).toBeCloseTo(2800, 2);   // 2 × 1400 (дневной)
     });
 });
 
