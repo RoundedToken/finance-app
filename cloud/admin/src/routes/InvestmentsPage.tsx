@@ -13,7 +13,7 @@ import { Select } from "@/components/Select";
 import { Sparkline } from "@/components/Sparkline";
 import { Currency, AccountOption } from "@/components/Currency";
 import { cn, formatAmount, formatDate, formatExchangeRate, formatRelativeTime, hoursSince, todayLocal } from "@/lib/utils";
-import { type Preset, PeriodPresets, presetRange, startOfMonthMinus, todayIso } from "@/components/PeriodPresets";
+import { type Preset, PeriodPresets, PRESETS_WITH_AUTO, presetRange, startOfMonthMinus, todayIso } from "@/components/PeriodPresets";
 import type { Account, InvestmentPosition, TransactionCreatePayload } from "@/api/types";
 
 const eur = (v: number | null | undefined) => v == null ? "—" : `${formatAmount(v, "EUR")} €`;
@@ -21,8 +21,8 @@ const usdt = (v: number | null | undefined) => v == null ? "—" : `${formatAmou
 const FORECAST_MONTHS = 3;
 
 export function InvestmentsPage() {
-    // SPEC-029: период графика (паритет с дашбордом) — окно value_series спарклайнов.
-    const [preset, setPreset] = useState<Preset>("12m");
+    // SPEC-029/030: период графика. Дефолт «Авто» — окно от первой операции (без пустоты).
+    const [preset, setPreset] = useState<Preset>("auto");
     const [cf, setCf] = useState<string>(startOfMonthMinus(11));
     const [ct, setCt] = useState<string>(todayIso());
     const { data, isLoading, isError, refetch } = useInvestments(presetRange(preset, cf, ct));
@@ -51,7 +51,7 @@ export function InvestmentsPage() {
                     </p>
                 </div>
                 <div className="flex items-start gap-2">
-                    <PeriodPresets preset={preset} setPreset={setPreset} cf={cf} ct={ct} setCf={setCf} setCt={setCt} />
+                    <PeriodPresets preset={preset} setPreset={setPreset} cf={cf} ct={ct} setCf={setCf} setCt={setCt} presets={PRESETS_WITH_AUTO} />
                     <button onClick={() => refetch()} className="btn-ghost self-start" title="Обновить" aria-label="Обновить">
                         <RefreshCw className="h-4 w-4" />
                     </button>
@@ -90,7 +90,8 @@ export function InvestmentsPage() {
                             tone={s!.cost_basis_known ? (s!.unrealized_pl_eur >= 0 ? "pos" : "neg") : undefined}
                             sub={s!.cost_basis_known && s!.unrealized_pl_pct != null ? `${s!.unrealized_pl_pct >= 0 ? "+" : ""}${s!.unrealized_pl_pct}%` : undefined} />
                         <KpiCard icon={Sprout} label="Доход стейкинга" value={eur(s!.staking_income_eur)}
-                            tone={s!.staking_income_eur > 0 ? "pos" : undefined} />
+                            tone={s!.staking_income_eur > 0 ? "pos" : undefined}
+                            sub={s!.staking_forecast_eur > 0 ? `прогноз +${eur(s!.staking_forecast_eur)} · ≈${eur(s!.staking_expected_annual_eur)}/год` : undefined} />
                     </div>
 
                     {/* Позиции */}
@@ -202,13 +203,27 @@ function PositionCard({ p, onBuy, onSnapshot, onStake }: {
                     </div>
                 )}
                 {p.is_staked && (
-                    <div className="flex justify-between">
-                        <span>Доход стейкинга{p.last_snapshot_date ? ` · факт на ${formatDate(p.last_snapshot_date)}` : ""}</span>
-                        <span className={cn("num tabular-nums", (p.staking_income_eur ?? 0) > 0 && "text-positive")}>
-                            {p.staking_income_eur != null ? `+${eur(p.staking_income_eur)}` : "—"}
-                            {p.staking_income_qty != null && p.staking_income_qty > 0 ? ` (+${formatAmount(p.staking_income_qty, p.currency)})` : ""}
-                        </span>
-                    </div>
+                    <>
+                        {p.staking_forecast_eur != null && (
+                            <div className="flex justify-between">
+                                <span className="inline-flex items-center gap-1.5">
+                                    Доход стейкинга <span className="text-primary text-[11px]">прогноз</span>
+                                    {p.staked_since && <span className="text-[10px] opacity-60">с {formatDate(p.staked_since)}{p.staking_apr_pct != null ? `, ${p.staking_apr_pct}%` : ""}</span>}
+                                </span>
+                                <span className="num tabular-nums text-primary">
+                                    +{eur(p.staking_forecast_eur)}
+                                    {p.staking_expected_annual_eur != null && <span className="opacity-70"> · ≈{eur(p.staking_expected_annual_eur)}/год</span>}
+                                </span>
+                            </div>
+                        )}
+                        <div className="flex justify-between">
+                            <span className="opacity-80">факт{p.last_snapshot_date ? ` (снапшот ${formatDate(p.last_snapshot_date)})` : ""}</span>
+                            <span className={cn("num tabular-nums", (p.staking_income_eur ?? 0) > 0 && "text-positive")}>
+                                {p.staking_income_eur != null ? `+${eur(p.staking_income_eur)}` : "—"}
+                                {p.staking_income_qty != null && p.staking_income_qty > 0 ? ` (+${formatAmount(p.staking_income_qty, p.currency)})` : ""}
+                            </span>
+                        </div>
+                    </>
                 )}
             </div>
 

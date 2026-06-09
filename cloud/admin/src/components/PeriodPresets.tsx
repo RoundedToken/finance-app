@@ -17,7 +17,7 @@ export function startOfMonthMinus(monthsBack: number): string {
     return iso(d);
 }
 
-export type Preset = "12m" | "6m" | "year" | "all" | "custom";
+export type Preset = "auto" | "12m" | "6m" | "year" | "all" | "custom";
 const PRESETS: { key: Preset; label: string }[] = [
     { key: "12m", label: "12 мес" },
     { key: "6m", label: "6 мес" },
@@ -25,11 +25,16 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: "all", label: "Всё" },
     { key: "custom", label: "Период" },
 ];
+// SPEC-030: набор с «Авто» (серверное окно от первой операции) — для инвестиций.
+export const PRESETS_WITH_AUTO: { key: Preset; label: string }[] = [
+    { key: "auto", label: "Авто" }, ...PRESETS,
+];
 
 /** Пресет → серверный диапазон {from?, to?} (YYYY-MM-DD). cf/ct — custom from/to. */
 export function presetRange(p: Preset, cf: string, ct: string): { from?: string; to?: string } {
     const today = todayIso();
     switch (p) {
+        case "auto": return {};   // SPEC-030: без from/to → сервер берёт окно от первой операции
         case "12m": return { from: startOfMonthMinus(11), to: today };
         case "6m": return { from: startOfMonthMinus(5), to: today };
         case "year": return { from: `${new Date().getFullYear()}-01-01`, to: today };
@@ -38,13 +43,14 @@ export function presetRange(p: Preset, cf: string, ct: string): { from?: string;
     }
 }
 
-export function PeriodPresets({ preset, setPreset, cf, ct, setCf, setCt }: {
+export function PeriodPresets({ preset, setPreset, cf, ct, setCf, setCt, presets = PRESETS }: {
     preset: Preset; setPreset: (p: Preset) => void; cf: string; ct: string; setCf: (s: string) => void; setCt: (s: string) => void;
+    presets?: { key: Preset; label: string }[];
 }) {
     return (
         <div className="flex flex-col items-end gap-2">
             <div className="inline-flex gap-1 p-1 bg-secondary/60 rounded-xl">
-                {PRESETS.map(p => (
+                {presets.map(p => (
                     <button key={p.key} type="button" aria-pressed={preset === p.key} onClick={() => setPreset(p.key)}
                         className={cn("py-1.5 px-3 rounded-lg text-xs font-medium transition-colors",
                             preset === p.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground")}>

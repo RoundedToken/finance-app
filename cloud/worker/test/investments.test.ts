@@ -385,54 +385,104 @@ describe("rates · Lido stETH APR (SPEC-027)", () => {
     });
 });
 
-describe("investments · value_series окно периода (SPEC-029)", () => {
-    const seedBasic = (d1: ReturnType<typeof makeEnv>["d1"]) => seed(d1, {
+describe("investments · авто-окно + адаптивная гранулярность value_series (SPEC-029/030)", () => {
+    const seedLong = (d1: ReturnType<typeof makeEnv>["d1"]) => seed(d1, {
         accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
         snapshots: [{ id: "s1", date: "2024-06-01", account_id: "eth-invest", amount: 1.0 }],
         rates: [{ date: "2024-06-01", quote: "ETH", rate: 1 / 2000 }],
     });
-
-    it("дефолт (без from/to) → 12 месячных точек, последняя ≤ today", async () => {
-        const { env, d1 } = makeEnv();
-        seedBasic(d1);
-        const inv = await getInvestments(env, { today: "2026-05-15" }) as any;
-        const s = inv.positions[0].value_series;
-        expect(s).toHaveLength(12);
-        expect(s[0].date.slice(0, 7)).toBe("2025-06");
-        expect(s.at(-1).date <= "2026-05-15").toBe(true);
+    const seedShort = (d1: ReturnType<typeof makeEnv>["d1"]) => seed(d1, {
+        accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+        transactions: [{ id: "t1", date: "2026-06-05", from_account_id: "usdt", to_account_id: "eth-invest",
+            from_amount: 1000, from_currency: "USDT", to_amount: 0.7, to_currency: "ETH" }],
+        rates: [{ date: "2026-06-05", quote: "ETH", rate: 1 / 1400 }, { date: "2026-06-05", quote: "USDT", rate: 1.1 }],
     });
 
-    it("from = 6 мес назад → 6 точек", async () => {
+    it("SPEC-030: дефолт (без from) → авто-окно от первой операции, не 12 мес пустоты", async () => {
         const { env, d1 } = makeEnv();
-        seedBasic(d1);
-        const inv = await getInvestments(env, { today: "2026-05-15", from: "2025-12-01", to: "2026-05-15" }) as any;
-        const s = inv.positions[0].value_series;
-        expect(s).toHaveLength(6);
-        expect(s[0].date.slice(0, 7)).toBe("2025-12");
+        seedLong(d1);
+        const s = (await getInvestments(env, { today: "2026-05-15" }) as any).positions[0].value_series;
+        expect(s[0].date).toBe("2024-06-01");        // от earliest (snapshot), не 2025-06
+        expect(s.at(-1).date).toBe("2026-05-15");    // до today
     });
 
-    it("custom прошлое окно (to < today) → границы по to", async () => {
+    it("SPEC-030: короткая история → дневные точки (4 дня = 5 точек, не плоско-пусто)", async () => {
         const { env, d1 } = makeEnv();
-        seedBasic(d1);
-        const inv = await getInvestments(env, { today: "2026-05-15", from: "2025-01-01", to: "2025-03-31" }) as any;
-        const s = inv.positions[0].value_series;
-        expect(s).toHaveLength(3);                       // янв/фев/мар 2025
-        expect(s[0].date.slice(0, 7)).toBe("2025-01");
-        expect(s.at(-1).date).toBe("2025-03-31");        // конец марта (≤ to)
+        seedShort(d1);
+        const s = (await getInvestments(env, { today: "2026-06-09" }) as any).positions[0].value_series;
+        expect(s[0].date).toBe("2026-06-05");
+        expect(s.at(-1).date).toBe("2026-06-09");
+        expect(s).toHaveLength(5);                    // 06-05/06/07/08/09 (дневная гранулярность)
+        expect(s.at(-1).value_eur).toBeGreaterThan(0);
     });
 
-    it("'all' длинная история не переполняет (cap 240)", async () => {
+    it("SPEC-030: длинная история → cap ≤46 точек, последняя = today", async () => {
         const { env, d1 } = makeEnv();
-        seedBasic(d1);
-        const inv = await getInvestments(env, { today: "2026-05-15", from: "2000-01-01", to: "2026-05-15" }) as any;
-        expect(inv.positions[0].value_series.length).toBeLessThanOrEqual(240);
-        expect(inv.positions[0].value_series.length).toBeGreaterThan(100);
+        seedLong(d1);
+        const s = (await getInvestments(env, { today: "2026-05-15" }) as any).positions[0].value_series;
+        expect(s.length).toBeLessThanOrEqual(46);
+        expect(s.length).toBeGreaterThan(20);
+        expect(s.at(-1).date).toBe("2026-05-15");
     });
 
-    it("мусорные from/to (не-ISO) → дефолт 12 мес (валидация)", async () => {
+    it("SPEC-029: явный from (период) переопределяет авто-окно", async () => {
         const { env, d1 } = makeEnv();
-        seedBasic(d1);
-        const inv = await getInvestments(env, { today: "2026-05-15", from: "garbage", to: "2026-13-99" }) as any;
-        expect(inv.positions[0].value_series).toHaveLength(12);
+        seedLong(d1);
+        const s = (await getInvestments(env, { today: "2026-05-15", from: "2026-03-01", to: "2026-05-15" }) as any).positions[0].value_series;
+        expect(s[0].date).toBe("2026-03-01");
+        expect(s.at(-1).date).toBe("2026-05-15");
+    });
+
+    it("SPEC-029: custom прошлое окно (to < today) → границы по to", async () => {
+        const { env, d1 } = makeEnv();
+        seedLong(d1);
+        const s = (await getInvestments(env, { today: "2026-05-15", from: "2025-01-01", to: "2025-03-31" }) as any).positions[0].value_series;
+        expect(s[0].date).toBe("2025-01-01");
+        expect(s.at(-1).date).toBe("2025-03-31");    // ≤ to
+    });
+
+    it("мусорные from/to (не-ISO) → авто-окно от earliest (не падает)", async () => {
+        const { env, d1 } = makeEnv();
+        seedLong(d1);
+        const s = (await getInvestments(env, { today: "2026-05-15", from: "garbage", to: "2026-13-99" }) as any).positions[0].value_series;
+        expect(s[0].date).toBe("2024-06-01");
+    });
+});
+
+describe("investments · прогноз стейкинга (SPEC-030)", () => {
+    const seedStaked = (d1: ReturnType<typeof makeEnv>["d1"]) => seed(d1, {
+        accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+        snapshots: [{ id: "s1", date: "2026-06-07", account_id: "eth-invest", amount: 1.0 }],
+        rates: [{ date: "2026-06-07", quote: "ETH", rate: 1 / 2000 }],   // ETH = 2000 EUR
+        investment_settings: [{ account_id: "eth-invest", staked_qty: 1.0, staking_apr_pct: 3.65, is_staked: 1 }],
+    });
+
+    it("expected_annual = stakedValue × apr", async () => {
+        const { env, d1 } = makeEnv();
+        seedStaked(d1);
+        const p = (await getInvestments(env, { today: "2026-06-09" }) as any).positions[0];
+        expect(p.staking_expected_annual_eur).toBeCloseTo(73, 0);   // 2000 × 3.65%
+    });
+
+    it("forecast накопления > 0 и растёт со временем (по APR с last_snapshot)", async () => {
+        const { env, d1 } = makeEnv();
+        seedStaked(d1);
+        const f2 = (await getInvestments(env, { today: "2026-06-09" }) as any).positions[0].staking_forecast_eur;
+        const f30 = (await getInvestments(env, { today: "2026-07-07" }) as any).positions[0].staking_forecast_eur;
+        expect(f2).toBeGreaterThan(0);
+        expect(f30).toBeGreaterThan(f2);
+        expect(f2).toBeCloseTo(2000 * (Math.pow(1.0365, 2 / 365) - 1), 1);   // 2 дня накопления
+    });
+
+    it("незастейканная позиция → forecast/annual = null", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "eth-invest", currency: "ETH", type: "crypto", form: "digital", sort_order: 90, is_investment: 1 }],
+            snapshots: [{ id: "s1", date: "2026-06-07", account_id: "eth-invest", amount: 1.0 }],
+            rates: [{ date: "2026-06-07", quote: "ETH", rate: 1 / 2000 }],
+        });
+        const p = (await getInvestments(env, { today: "2026-06-09" }) as any).positions[0];
+        expect(p.staking_forecast_eur).toBeNull();
+        expect(p.staking_expected_annual_eur).toBeNull();
     });
 });

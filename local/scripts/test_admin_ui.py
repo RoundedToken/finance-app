@@ -183,21 +183,24 @@ INVESTMENTS = {
     # SPEC-028: свежесть по времени фетча — «12 мин назад» (happy-path, не stale)
     "rate_fetched_at": (datetime.now(timezone.utc) - timedelta(minutes=12)).strftime("%Y-%m-%d %H:%M:%S"),
     "summary": {"value_eur": 3300.0, "value_usdt": 3828.0, "cost_basis_eur": 3010.0, "cost_basis_known": True,
-                "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6, "staking_income_eur": 42.0, "missing_rates": 0},
+                "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6, "staking_income_eur": 0.0,
+                "staking_forecast_eur": 0.19, "staking_expected_annual_eur": 35.0, "missing_rates": 0},
     "positions": [{
         "account_id": "eth-invest", "name": "ETH (инвест)", "currency": "ETH", "color": "#627eea",
         "qty": 1.05, "price_eur": 3142.86, "price_usdt": 3645.72, "value_eur": 3300.0, "value_usdt": 3828.0,
         "cost_basis_eur": 3010.0, "cost_basis_known": True,
         "unrealized_pl_eur": 290.0, "unrealized_pl_pct": 9.6,
         "is_staked": True, "staked_qty": 0.70, "liquid_qty": 0.35,
-        "staking_apr_pct": 2.5, "staking_apr_override": None, "staking_apr_auto": 2.5,
-        "staking_income_qty": 0.013, "staking_income_eur": 42.0,
+        "staking_apr_pct": 2.6, "staking_apr_override": None, "staking_apr_auto": 2.6,
+        "staking_income_qty": 0.0, "staking_income_eur": 0.0,
+        "staking_forecast_eur": 0.19, "staking_expected_annual_eur": 35.0, "staked_since": "2026-05-20",
         "note": "Bybit Lido", "last_snapshot_date": "2026-05-20",
+        # SPEC-030: короткая история → дневные точки (график не пустой за пару дней)
         "value_series": [
-            {"date": f"2025-{m:02d}-28" if m >= 6 else f"2026-{m:02d}-28", "value_eur": v, "qty": round(v / 3142.86, 4)}
-            for m, v in zip(
-                [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5],
-                [0, 0, 980, 1010, 1500, 1460, 2100, 2050, 2600, 3010, 3180, 3300],
+            {"date": f"2026-05-{d:02d}", "value_eur": v, "qty": round(v / 3142.86, 4)}
+            for d, v in zip(
+                range(15, 27),
+                [3010, 3050, 3090, 3120, 3180, 3150, 3220, 3260, 3240, 3290, 3270, 3300],
             )
         ],
     }],
