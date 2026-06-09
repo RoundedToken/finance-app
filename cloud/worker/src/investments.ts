@@ -242,11 +242,19 @@ export async function getInvestments(
         });
     }
 
+    // SPEC-028: время последнего тика курса (свежесть «по времени фетча») — max по позициям.
+    let rateFetchedAt: string | null = null;
+    for (const b of buckets) {
+        const f = rates.tickFetchedAt(b.currency);
+        if (f && (!rateFetchedAt || f > rateFetchedAt)) rateFetchedAt = f;
+    }
+
     return {
         ok: true,
         as_of: today,
         currency: "EUR",
         rates_date: rates.latestDate(),
+        rate_fetched_at: rateFetchedAt,   // SPEC-028: момент последнего фетча курса (свежесть)
         summary: {
             value_eur: r2(sumValue),
             value_usdt: r2(sumValueUsdt),

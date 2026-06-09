@@ -12,16 +12,33 @@ import type { Env } from "./types";
 const RATE_SOURCE = "google-sheets";
 const CRYPTO_SOURCE = "binance";
 
-// Крипто-котировки (SPEC-026). GOOGLEFINANCE крипту не умеет → берём с публичного
-// Binance API. Ключ — quote-валюта в нашей таблице rates, значение — символ Binance
-// (пара к EUR). stETH НЕ фетчим: пегуется к ETH 1:1 (Q4/NG1), стоимость по курсу ETH.
-const CRYPTO_SYMBOLS: Record<string, string> = { ETH: "ETHEUR" };
+// Крипто-котировки (SPEC-026/028). GOOGLEFINANCE крипту не умеет → берём с публичных spot-API.
+// Цепочка провайдеров (fallback): первый успешный побеждает — убирает SPOF (Binance гео-блокирует
+// Cloudflare-IP, риск R1 материализовался 2026-06-08: ETH перестал писаться, фиат шёл). Все отдают
+// EUR-цену за 1 единицу; инверсию (rate=1/price) делаем одинаково. stETH НЕ фетчим: пег к ETH 1:1 (Q4/NG1).
 const BINANCE_PRICE_URL = "https://api.binance.com/api/v3/ticker/price";
+
+interface CryptoProvider {
+    name: string;                   // тег источника → rates.source / rate_ticks.source
+    url: string;
+    parse: (body: any) => number;   // EUR-цена за 1 единицу
+}
+
+// Порядок = приоритет. Binance первый (точная торговая пара), дальше независимые Coinbase/CoinGecko
+// (другие политики гео-блокировки — выше шанс пройти с CF-IP).
+const CRYPTO_PROVIDERS: Record<string, CryptoProvider[]> = {
+    ETH: [
+        { name: "binance", url: `${BINANCE_PRICE_URL}?symbol=ETHEUR`, parse: (b) => parseFloat(b?.price) },
+        { name: "coinbase", url: "https://api.coinbase.com/v2/prices/ETH-EUR/spot", parse: (b) => parseFloat(b?.data?.amount) },
+        { name: "coingecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur", parse: (b) => Number(b?.ethereum?.eur) },
+    ],
+};
 
 export interface FetchedRates {
     base: string;
     date: string;
     rates: Record<string, number>;
+    provider?: string;              // SPEC-028: какой крипто-провайдер дал курс (видимость + source тика)
 }
 
 export async function fetchLatestRatesEUR(env: Env): Promise<FetchedRates> {
@@ -79,33 +96,84 @@ export async function saveRates(env: Env, payload: FetchedRates, source: string 
 }
 
 /**
- * Крипто-курсы (SPEC-026): ETH/EUR с публичного Binance API. Хранимая семантика
- * rates — «1 EUR = rate × quote», а Binance ETHEUR отдаёт EUR за 1 ETH (цена),
- * поэтому ИНВЕРТИРУЕМ: rate_ETH = 1 / price. Тогда toEurAt(qty,'ETH') = qty / rate
- * = qty × price (корректно). Дата — сегодня (UTC), как и у фиат-cron.
+ * EUR-цена за 1 единицу крипты по цепочке провайдеров (SPEC-028). Пробует по порядку,
+ * первый успешный (HTTP ok + finite положительная цена) побеждает. Все упали → бросает
+ * с агрегированной ошибкой (по провайдерам). Возвращает {price, provider}.
+ */
+async function fetchCryptoPrice(quote: string): Promise<{ price: number; provider: string }> {
+    const providers = CRYPTO_PROVIDERS[quote];
+    if (!providers?.length) throw new Error(`no crypto providers for ${quote}`);
+    const errors: string[] = [];
+    for (const p of providers) {
+        try {
+            const r = await fetch(p.url, {
+                // CF-specific RequestInit (cf.*) нет в DOM-типах → as any. Отключаем subrequest-кэш.
+                cf: { cacheTtl: 0, cacheTtlByStatus: { "200-299": 0, "300-399": 0, "400-599": 0 } } as any,
+                headers: { "Cache-Control": "no-cache" },
+            });
+            if (!r.ok) { errors.push(`${p.name} http ${r.status}`); continue; }
+            const price = p.parse(await r.json());
+            if (!isFinite(price) || price <= 0) { errors.push(`${p.name} bad price`); continue; }
+            return { price, provider: p.name };
+        } catch (e) {
+            errors.push(`${p.name} ${String((e as Error)?.message ?? e)}`);
+        }
+    }
+    throw new Error(`all crypto providers failed for ${quote}: ${errors.join("; ")}`);
+}
+
+/**
+ * Крипто-курсы (SPEC-026/028): ETH/EUR по цепочке провайдеров (Binance→Coinbase→CoinGecko).
+ * Хранимая семантика rates — «1 EUR = rate × quote», а провайдеры отдают EUR за 1 ETH (цена),
+ * поэтому ИНВЕРТИРУЕМ: rate_ETH = 1 / price. Тогда toEurAt(qty,'ETH') = qty / rate = qty × price.
+ * Дата — сегодня (UTC), как и у фиат-cron. provider — кто реально дал курс (видимость + source тика).
  *
- * Вызывается в scheduled/refresh-rates ОТДЕЛЬНО от фиата (изолированный try/catch):
- * падение Binance (гео-блок 451/403, таймаут) не должно ломать фиат-курсы. При
- * ошибке возвращает пустой rates → saveRates пропускает (курс остаётся вчерашним).
+ * Вызывается в scheduled/refresh-rates ОТДЕЛЬНО от фиата (изолированный try/catch): падение всей
+ * цепочки не должно ломать фиат-курсы. При ошибке → бросает, saveCryptoRates не вызывается (курс
+ * остаётся прежним), а refresh-rates вернёт crypto_error.
  */
 export async function fetchCryptoRatesEUR(date?: string): Promise<FetchedRates> {
     const d = date ?? new Date().toISOString().slice(0, 10);
     const rates: Record<string, number> = {};
-    for (const [quote, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
-        const r = await fetch(`${BINANCE_PRICE_URL}?symbol=${symbol}`, {
-            cf: { cacheTtl: 0, cacheTtlByStatus: { "200-299": 0, "300-399": 0, "400-599": 0 } } as any,
-            headers: { "Cache-Control": "no-cache" },
-        });
-        if (!r.ok) throw new Error(`binance ${symbol} http ${r.status}`);
-        const body = (await r.json()) as { symbol?: string; price?: string };
-        const price = parseFloat(body?.price ?? "");
-        if (!isFinite(price) || price <= 0) throw new Error(`binance ${symbol} bad price: ${body?.price}`);
+    let provider: string | undefined;
+    for (const quote of Object.keys(CRYPTO_PROVIDERS)) {
+        const { price, provider: p } = await fetchCryptoPrice(quote);
         rates[quote] = 1 / price;   // инверсия: EUR→ETH (quote per EUR)
+        provider = p;               // единственная монета ETH → одно поле провайдера
     }
-    return { base: "EUR", date: d, rates };
+    return { base: "EUR", date: d, rates, provider };
 }
 
-/** Тег источника крипто-курсов (для saveRates и тестов). */
+/**
+ * Сохранить крипто-курс в ОБА слоя (SPEC-028):
+ *  • rate_ticks — внутридневной тик (история, mark-to-market «сейчас», INSERT OR IGNORE);
+ *  • rates — дневной курс (закрытие дня, INSERT OR REPLACE; historical-серии).
+ * source = реальный провайдер. Возвращает число записанных quote.
+ */
+export async function saveCryptoRates(env: Env, payload: FetchedRates): Promise<number> {
+    const source = payload.provider ?? CRYPTO_SOURCE;
+    const stmts = [];
+    for (const [quote, rate] of Object.entries(payload.rates)) {
+        if (!isFinite(rate) || rate <= 0) continue;
+        stmts.push(
+            env.DB.prepare(
+                "INSERT OR IGNORE INTO rate_ticks (base, quote, rate, source, fetched_at) " +
+                "VALUES (?, ?, ?, ?, datetime('now'))",
+            ).bind(payload.base, quote, rate, source),
+        );
+        stmts.push(
+            env.DB.prepare(
+                "INSERT OR REPLACE INTO rates (date, base, quote, rate, source, fetched_at) " +
+                "VALUES (?, ?, ?, ?, ?, datetime('now'))",
+            ).bind(payload.date, payload.base, quote, rate, source),
+        );
+    }
+    if (!stmts.length) return 0;
+    await env.DB.batch(stmts);
+    return Object.keys(payload.rates).length;
+}
+
+/** Тег источника крипто-курсов (fallback source, если провайдер не указан). */
 export const CRYPTO_RATE_SOURCE = CRYPTO_SOURCE;
 
 const LIDO_APR_SMA_URL = "https://eth-api.lido.fi/v1/protocol/steth/apr/sma";
@@ -142,23 +210,42 @@ export async function fetchLidoStethApr(): Promise<number> {
     return apr;
 }
 
-/** Все курсы за последнюю доступную дату. Mini App забирает при старте. */
+/** Последний тик per quote (SPEC-028). Общий помощник для getLatestRates и loadRatesIndex. */
+async function latestTicksPerQuote(env: Env): Promise<Array<{ quote: string; rate: number; fetched_at: string }>> {
+    const r = await env.DB.prepare(
+        "SELECT quote, rate, fetched_at FROM rate_ticks rt WHERE base = 'EUR' AND fetched_at = " +
+        "(SELECT MAX(fetched_at) FROM rate_ticks WHERE quote = rt.quote AND base = 'EUR')",
+    ).all<{ quote: string; rate: number; fetched_at: string }>();
+    return r.results;
+}
+
+/** Все курсы за последнюю доступную дату (фиат + крипта-закрытие); крипту перезаписываем
+ *  последним внутридневным тиком (SPEC-028: свежесть по времени фетча). Mini App забирает при старте. */
 export async function getLatestRates(env: Env): Promise<{
     date: string | null;
     base: string;
     quotes: Record<string, number>;
+    fetched_at: string | null;     // момент последнего крипто-тика (свежесть)
 }> {
     const row = await env.DB.prepare(
         "SELECT MAX(date) AS d FROM rates",
     ).first<{ d: string | null }>();
     const date = row?.d ?? null;
-    if (!date) return { date: null, base: "EUR", quotes: {} };
-    const r = await env.DB.prepare(
-        "SELECT quote, rate FROM rates WHERE date = ? AND base = 'EUR'",
-    ).bind(date).all<{ quote: string; rate: number }>();
     const quotes: Record<string, number> = {};
-    for (const row of r.results) quotes[row.quote] = row.rate;
-    return { date, base: "EUR", quotes };
+    if (date) {
+        const r = await env.DB.prepare(
+            "SELECT quote, rate FROM rates WHERE date = ? AND base = 'EUR'",
+        ).bind(date).all<{ quote: string; rate: number }>();
+        for (const row of r.results) quotes[row.quote] = row.rate;
+    }
+    // SPEC-028: крипту берём из последнего тика (свежее дневного закрытия)
+    const ticks = await latestTicksPerQuote(env);
+    let fetchedAt: string | null = null;
+    for (const t of ticks) {
+        quotes[t.quote] = t.rate;
+        if (!fetchedAt || t.fetched_at > fetchedAt) fetchedAt = t.fetched_at;
+    }
+    return { date, base: "EUR", quotes, fetched_at: fetchedAt };
 }
 
 /** Курс на дату или ближайший раньше (для исторических трат). */
@@ -194,12 +281,20 @@ interface RatePoint { date: string; rate: number; }
 export class RatesIndex {
     private byQuote = new Map<string, RatePoint[]>();
     private maxDate: string | null = null;
+    // SPEC-028: последний внутридневной тик per quote (свежесть «сейчас» для mark-to-market)
+    private tickByQuote = new Map<string, { fetchedAt: string; rate: number }>();
 
     add(quote: string, date: string, rate: number): void {
         let arr = this.byQuote.get(quote);
         if (!arr) { arr = []; this.byQuote.set(quote, arr); }
         arr.push({ date, rate });
         if (!this.maxDate || date > this.maxDate) this.maxDate = date;
+    }
+
+    /** Внутридневной тик (SPEC-028): держим последний по fetched_at для quote. */
+    addTick(quote: string, fetchedAt: string, rate: number): void {
+        const cur = this.tickByQuote.get(quote);
+        if (!cur || fetchedAt > cur.fetchedAt) this.tickByQuote.set(quote, { fetchedAt, rate });
     }
 
     /** Отсортировать массивы по дате asc — вызвать после загрузки. */
@@ -209,10 +304,20 @@ export class RatesIndex {
         }
     }
 
-    /** Курс EUR→quote на дату (ближайший с date ≤ target). EUR→1, нет данных→null. */
+    /**
+     * Курс EUR→quote на дату. SPEC-028 tick-aware: для quote с внутридневным тиком и запросом
+     * «на сейчас/последнюю дату» (date ≥ последней дневной даты quote) возвращает свежий тик
+     * (mark-to-market по времени фетча); для прошлых дат — дневной historical (ближайший ≤ date).
+     * Фиат тиков не имеет → всегда дневной. EUR→1, нет данных→null.
+     */
     rateAt(quote: string, date: string): number | null {
         if (quote === "EUR") return 1;
         const arr = this.byQuote.get(quote);
+        const tick = this.tickByQuote.get(quote);
+        if (tick) {
+            const lastDaily = arr && arr.length ? arr[arr.length - 1].date : null;
+            if (lastDaily == null || date >= lastDaily) return tick.rate;
+        }
         if (!arr || !arr.length) return null;
         let lo = 0, hi = arr.length - 1, ans = -1;
         while (lo <= hi) {
@@ -246,6 +351,11 @@ export class RatesIndex {
     }
 
     latestDate(): string | null { return this.maxDate; }
+
+    /** Время последнего тика quote (SPEC-028: свежесть курса для UI). null если тиков нет. */
+    tickFetchedAt(quote: string): string | null {
+        return this.tickByQuote.get(quote)?.fetchedAt ?? null;
+    }
 }
 
 /** Грузит все EUR-курсы из D1 и строит date-aware индекс (один батч-запрос). */
@@ -255,6 +365,8 @@ export async function loadRatesIndex(env: Env): Promise<RatesIndex> {
     ).all<{ date: string; quote: string; rate: number }>();
     const idx = new RatesIndex();
     for (const row of r.results) idx.add(row.quote, row.date, row.rate);
+    // SPEC-028: последний тик per quote (свежесть «сейчас» для mark-to-market)
+    for (const t of await latestTicksPerQuote(env)) idx.addTick(t.quote, t.fetched_at, t.rate);
     idx.finalize();
     return idx;
 }
