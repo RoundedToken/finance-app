@@ -1,7 +1,7 @@
 ---
 id: SPEC-025
 title: Вклад в цель — поток (date-aware), а не псевдо-запас; честный free
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-01
 updated: 2026-06-13
@@ -97,15 +97,15 @@ Auth: JWT (Bearer) на всех — без изменений. **Важно:** 
 
 ## 9. Acceptance criteria
 
-- [ ] **AC1**: `income` 1000 RUB → цель (EUR) с датой D; при курсе RUB/EUR на D = r1 баланс = `1000·r1`; изменение **сегодняшнего** курса на r2 ≠ r1 НЕ меняет баланс цели.
-- [ ] **AC2**: после `exchange` из ведра с целевыми деньгами `goal.balance` не изменился (±0).
-- [ ] **AC3**: цепочка RUB → USDT → EUR не меняет `goal.balance`.
-- [ ] **AC4**: `free_eur` / `free_net_worth_eur` возвращаются **без клампа** и могут быть `< 0`, когда `net < targeted`.
-- [ ] **AC5**: `getGoalDetail` — `delta_in_target` каждой строки = конверсия по её `date`, не по `today`.
-- [ ] **AC6**: вклад на дату без курса (и без `≤`-fallback) → `balance_missing_rates++`.
-- [ ] **AC7**: валюта вклада == `target_currency` → `delta = amount` (identity) независимо от дат.
-- [ ] **AC8**: Admin показывает отрицательное «Свободно» с danger на **обеих** страницах (Dashboard, Accounts), light + dark.
-- [ ] **AC9**: docs обновлены — `data-model.md` (вклад = поток, инвариант free), `decisions.md` ADR-020, шапка `goals.ts`.
+- [x] **AC1**: `income` 1000 RUB → цель (EUR) с датой D; при курсе RUB/EUR на D = r1 баланс = `1000·r1`; изменение **сегодняшнего** курса на r2 ≠ r1 НЕ меняет баланс цели. → `goals.test.ts` AC1.
+- [x] **AC2**: после `exchange` из ведра с целевыми деньгами `goal.balance` не изменился (±0). → `goals.test.ts` AC2/AC3.
+- [x] **AC3**: цепочка RUB → USDT → EUR не меняет `goal.balance`. → `goals.test.ts` AC2/AC3.
+- [x] **AC4**: `free_eur` / `free_net_worth_eur` возвращаются **без клампа** и могут быть `< 0`, когда `net < targeted`. → `goals.test.ts` AC4 + `dashboard.test.ts` free-инвариант.
+- [x] **AC5**: `getGoalDetail` — `delta_in_target` каждой строки = конверсия по её `date`, не по `today`. → `goals.test.ts` AC5.
+- [x] **AC6**: вклад на дату без курса (и без `≤`-fallback) → `balance_missing_rates++`. → `goals.test.ts` AC6.
+- [x] **AC7**: валюта вклада == `target_currency` → `delta = amount` (identity) независимо от дат. → `goals.test.ts` AC7.
+- [x] **AC8**: Admin показывает отрицательное «Свободно» с danger на **обеих** страницах (Dashboard, Accounts), light + dark. → скриншоты `local/screenshots/admin-accounts-{light,dark}.png`, `admin-dashboard.png` (free<0 красным).
+- [x] **AC9**: docs обновлены — `data-model.md` (вклад = поток, инвариант free), `decisions.md` ADR-020, шапка `goals.ts`.
 
 ## 10. Test plan
 
@@ -130,3 +130,4 @@ Auth: JWT (Bearer) на всех — без изменений. **Важно:** 
 
 - 2026-06-01: создан в `draft`.
 - 2026-06-13: взято в работу → `in_progress`.
+- 2026-06-13: реализовано (goals.ts on-read поток по дате вклада), тесты AC1–AC7 + e2e free-инвариант на обмене, ADR-020, docs обновлены; ревью senior-qa + solution-architect (PASS/APPROVED, must-fix закрыт). Выкачено на прод (worker version 7b5d6ace) → `done`. R1: балансы целей с вкладами в не-целевых валютах пересчитаны по историческим курсам — ожидаемо.
