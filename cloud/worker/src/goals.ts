@@ -4,7 +4,7 @@
  * Goal balance = SUM(incomes.amount converted to goal.target_currency)
  *              + SUM(goal_contributions.amount converted to goal.target_currency).
  *
- * SPEC-025 / ADR-018: вклад в цель — это ПОТОК, а не запас. Конверсия каждого
+ * SPEC-025 / ADR-020: вклад в цель — это ПОТОК, а не запас. Конверсия каждого
  * вклада в `target_currency` фиксируется по курсу НА ДАТУ ВКЛАДА (`row.date`,
  * date-aware historical), а не по сегодняшнему. Так баланс цели в целевой валюте
  * не «дрожит» с дневным курсом и не переоценивается по курсу валюты, которой
@@ -20,7 +20,7 @@
  * (`effective_balance` учитывает обмены). Расхождение = сигнал обеспеченности,
  * `free` может быть отрицательным (нигде не клампится). EUR base.
  *
- * См. SPEC-007, SPEC-025, ADR-014, ADR-018.
+ * См. SPEC-007, SPEC-025, ADR-014, ADR-020.
  */
 
 import type { Env } from "./types";

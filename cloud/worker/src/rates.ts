@@ -269,10 +269,11 @@ export async function getRateAt(
 // CANONICAL: это единственный слой конвертации валют (ADR-014, SPEC-016).
 // Клиенты НЕ конвертируют — worker отдаёт готовые *_eur поля. Модель двух
 // классов задаёт, какую дату передавать:
-//   • Запас (баланс в моменте: вёдра, net worth, goal balance) → курс НА СЕГОДНЯ
-//     (mark-to-market): convertAt(..., today) / toEurAt(..., today).
-//   • Поток (операция на дату: расход, доход, day-total) → курс НА ДАТУ ОПЕРАЦИИ
-//     (date-aware historical): toEurAt(amount, ccy, operationDate).
+//   • Запас (баланс в моменте: вёдра, net worth, накопленное в target_currency →
+//     EUR) → курс НА СЕГОДНЯ (mark-to-market): convertAt(..., today) / toEurAt(..., today).
+//   • Поток (операция на дату: расход, доход, day-total, ВКЛАД В ЦЕЛЬ →
+//     target_currency) → курс НА ДАТУ ОПЕРАЦИИ (date-aware historical, ADR-020):
+//     toEurAt(amount, ccy, operationDate) / convertAt(..., row.date).
 // rateAt берёт ближайший курс с date ≤ target (нет точного — fallback назад),
 // поэтому устаревшие/неполные котировки не дают 0, а тянут последний известный.
 
