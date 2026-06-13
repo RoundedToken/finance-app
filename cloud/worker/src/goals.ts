@@ -3,11 +3,24 @@
  *
  * Goal balance = SUM(incomes.amount converted to goal.target_currency)
  *              + SUM(goal_contributions.amount converted to goal.target_currency).
- * Конверсия — canonical RatesIndex по курсу НА СЕГОДНЯ (mark-to-market: goal
- * balance это «сколько накоплено стоит сейчас» — запас, → today rate;
- * ADR-014, SPEC-016). EUR base.
  *
- * См. SPEC-007.
+ * SPEC-025 / ADR-020: вклад в цель — это ПОТОК, а не запас. Конверсия каждого
+ * вклада в `target_currency` фиксируется по курсу НА ДАТУ ВКЛАДА (`row.date`,
+ * date-aware historical), а не по сегодняшнему. Так баланс цели в целевой валюте
+ * не «дрожит» с дневным курсом и не переоценивается по курсу валюты, которой
+ * уже нет на руках после обмена (RUB → USDT → EUR). Это пересматривает SPEC-016
+ * R3 (mark-to-market goal balance): проблема обменов тогда не рассматривалась.
+ *
+ * Шаг «накопленное в target_currency → EUR» (`balance_eur`/`target_amount_eur`)
+ * ОСТАЁТСЯ mark-to-market по курсу НА СЕГОДНЯ — это запас для EUR-сводки
+ * (свести разные цели + net worth в одном табло). См. SPEC-025 §5 (NG3).
+ *
+ * Инвариант `free = net − targeted` честный: `targeted` зафиксирован в целевой
+ * валюте по датам вкладов, `net` следует за валютой, где деньги реально лежат
+ * (`effective_balance` учитывает обмены). Расхождение = сигнал обеспеченности,
+ * `free` может быть отрицательным (нигде не клампится). EUR base.
+ *
+ * См. SPEC-007, SPEC-025, ADR-014, ADR-020.
  */
 
 import type { Env } from "./types";
@@ -67,7 +80,9 @@ async function goalExists(env: Env, id: string): Promise<boolean> {
     return r !== null;
 }
 
-/** Сегодня (UTC, YYYY-MM-DD) — дата конверсии goal balance (mark-to-market). */
+/** Сегодня (UTC, YYYY-MM-DD) — дата конверсии накопленного в target_currency → EUR
+ *  (запас/mark-to-market: `balance_eur`, `target_amount_eur`). Сам вклад в
+ *  target_currency конвертируется по дате вклада (поток, SPEC-025), не отсюда. */
 function todayUtc(): string {
     return new Date().toISOString().slice(0, 10);
 }
@@ -141,23 +156,24 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
     const ids = goals.map(g => g.id);
     const placeholders = ids.map(() => "?").join(",");
 
-    // Suma contributions из incomes
+    // Suma contributions из incomes. SPEC-025: тянем `date` — вклад конвертируется
+    // в target_currency по курсу НА ДАТУ вклада (поток), не на сегодня.
     const incomeRows = await env.DB.prepare(
-        `SELECT goal_id, amount, currency_code FROM incomes
+        `SELECT goal_id, date, amount, currency_code FROM incomes
          WHERE deleted_at IS NULL AND goal_id IN (${placeholders})`,
-    ).bind(...ids).all<{ goal_id: string; amount: number; currency_code: string }>();
+    ).bind(...ids).all<{ goal_id: string; date: string; amount: number; currency_code: string }>();
 
     // Suma из goal_contributions
     const contribRows = await env.DB.prepare(
-        `SELECT goal_id, amount, currency_code FROM goal_contributions
+        `SELECT goal_id, date, amount, currency_code FROM goal_contributions
          WHERE deleted_at IS NULL AND goal_id IN (${placeholders})`,
-    ).bind(...ids).all<{ goal_id: string; amount: number; currency_code: string }>();
+    ).bind(...ids).all<{ goal_id: string; date: string; amount: number; currency_code: string }>();
 
     // Считаем balance + counters
     const balances = new Map<string, { sum: number; missing: number; count: number }>();
     for (const id of ids) balances.set(id, { sum: 0, missing: 0, count: 0 });
 
-    const aggregate = (rows: Array<{ goal_id: string; amount: number; currency_code: string }>) => {
+    const aggregate = (rows: Array<{ goal_id: string; date: string; amount: number; currency_code: string }>) => {
         for (const row of rows) {
             const goal = goals.find(g => g.id === row.goal_id);
             if (!goal) continue;
@@ -167,7 +183,9 @@ export async function listGoals(env: Env, opts: { status?: GoalStatus | "all" } 
             // записей без него — конверсия в EUR (нейтральный знаменатель), а
             // на фронте такая goal помечается как «требует редактирования».
             const target = goal.target_currency ?? "EUR";
-            const conv = rates.convertAt(row.amount, row.currency_code, target, today);
+            // SPEC-025: курс НА ДАТУ вклада (поток) — фиксируется, не зависит от
+            // будущих курсов и обменов. rateAt берёт ближайший ≤ дате (fallback назад).
+            const conv = rates.convertAt(row.amount, row.currency_code, target, row.date);
             if (conv == null) acc.missing += 1;
             else acc.sum += conv;
         }
@@ -200,7 +218,6 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
     if (!goalRow) return { goal: null, contributions: [] };
 
     const rates = await loadRatesIndex(env);
-    const today = todayUtc();
 
     const incomes = await env.DB.prepare(
         `SELECT id, date, amount, currency_code, account_id, note, created_at
@@ -215,17 +232,19 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
     ).bind(id).all<{ id: string; date: string; amount: number; currency_code: string; account_id: string | null; note: string | null; created_at: string }>();
 
     // SPEC-012: timeline только income + manual.
+    // SPEC-025: delta_in_target каждой строки фиксируется по курсу НА ЕЁ ДАТУ
+    // (поток), не на сегодня — баланс цели стабилен и не дрожит с курсом.
     let sum = 0, missing = 0;
     const allRows: any[] = [];
     for (const r of incomes.results) {
         const target = goalRow.target_currency ?? r.currency_code;
-        const conv = rates.convertAt(r.amount, r.currency_code, target, today);
+        const conv = rates.convertAt(r.amount, r.currency_code, target, r.date);
         if (conv == null) missing += 1; else sum += conv;
         allRows.push({ source: "income", income_id: r.id, ...r, delta_in_target: conv });
     }
     for (const r of manual.results) {
         const target = goalRow.target_currency ?? r.currency_code;
-        const conv = rates.convertAt(r.amount, r.currency_code, target, today);
+        const conv = rates.convertAt(r.amount, r.currency_code, target, r.date);
         if (conv == null) missing += 1; else sum += conv;
         allRows.push({ source: "manual", ...r, delta_in_target: conv });
     }

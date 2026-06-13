@@ -94,20 +94,22 @@ effective_balance(bucket, asOf) = last_manual_snapshot.amount   (date ≤ asOf)
 ### Конвертация в EUR (ADR-014, SPEC-016)
 
 Единственный слой — `RatesIndex` (`cloud/worker/src/rates.ts`). Клиенты не делят на курс, получают готовые `*_eur` поля. Модель двух классов:
-- **Запас** (баланс в моменте: вёдра, net worth, goal balance) → курс **на сегодня** (`rateAt(today)`, mark-to-market).
-- **Поток** (операция на дату: расход, доход, day-total; точка net-worth-series на конец месяца) → курс **на дату операции** (`rateAt(date)`, date-aware).
+- **Запас** (баланс в моменте: вёдра, net worth, накопленное в `target_currency` → EUR) → курс **на сегодня** (`rateAt(today)`, mark-to-market).
+- **Поток** (операция на дату: расход, доход, day-total; **вклад в цель**; точка net-worth-series на конец месяца) → курс **на дату операции** (`rateAt(date)`, date-aware).
 - `rateAt` берёт ближайший курс с `date ≤ target` (нет точного — fallback назад, не 0).
+
+**Вклад в цель — поток (ADR-020/SPEC-025).** Конверсия вклада (`incomes.goal_id`, `goal_contributions`) в `target_currency` фиксируется по курсу **на дату вклада** и дальше не меняется (раньше был mark-to-market по сегодняшнему курсу — псевдо-запас, ломался на обменах RUB→USDT→EUR). Шаг «накопленное в `target_currency` → EUR» (`balance_eur`, `targeted_eur`) остаётся запасом (today). Так прогресс цели в целевой валюте стабилен и не зависит от обменов (цель структурно не читает `transactions`).
 
 ### Net worth / Свободно / Целевые / Инвестиции (SPEC-013/015/026)
 
 ```
 net_worth   = Σ effective_balance(bucket) → EUR (today)
-targeted    = Σ goal.balance → EUR (today)
+targeted    = Σ goal.balance → EUR (today)       # goal.balance — поток в target_currency (фикс по дате вклада, ADR-020); → EUR по today
 invested    = Σ effective_balance(bucket WHERE is_investment=1) → EUR (today)   # SPEC-026
-free        = net_worth − targeted − invested
+free        = net_worth − targeted − invested    # без клампа: может быть < 0 (цели недообеспечены) — danger-сигнал в Admin
 ```
 
-`free = net − targeted − invested` сходится by-construction: все величины — запас по сегодняшнему курсу. **Инвариант:** каждый targeted-евро физически лежит в ведре (через `income.goal_id` или `goal_contribution.account_id`); `income.goal_id` и взнос `goal_contribution` на одни и те же деньги — взаимоисключающие. **SPEC-026:** инвест-ведро (`accounts.is_investment=1`) входит в `net_worth` (реальный актив), но вычитается из free как `invested`; `invested ⊆ net` (нет двойного счёта). Инвест-ведро **нельзя** использовать как backing цели (`goal_contribution.account_id`) — иначе `targeted` и `invested` пересеклись бы. Рост курса крипто-актива поднимает `net` и `invested` на одну сумму → `free` не меняется (нереализованная прибыль ≠ свободные деньги). На дашборде `prev_free` вычитает `prev_invested` (корректный Δ).
+**Инвариант (ADR-020/SPEC-025):** `targeted` зафиксирован в целевой валюте по датам вкладов, `net` следует за валютой, где деньги реально лежат (`effective_balance` учитывает обмены). Совпали валюты вклада и текущего нахождения — курс к EUR двигает `net` и `targeted` одинаково, `free` стабилен; разошлись (был обмен) — расхождение и есть сигнал обеспеченности. `free` **может быть отрицательным** (net < targeted) — это сигнал «доложить / пересмотреть цели», нигде не клампится на worker. Каждый targeted-евро физически лежит в ведре (через `income.goal_id` или `goal_contribution.account_id`); `income.goal_id` и взнос `goal_contribution` на одни и те же деньги — взаимоисключающие. **SPEC-026:** инвест-ведро (`accounts.is_investment=1`) входит в `net_worth` (реальный актив), но вычитается из free как `invested`; `invested ⊆ net` (нет двойного счёта). Инвест-ведро **нельзя** использовать как backing цели (`goal_contribution.account_id`) — иначе `targeted` и `invested` пересеклись бы. Рост курса крипто-актива поднимает `net` и `invested` на одну сумму → `free` не меняется (нереализованная прибыль ≠ свободные деньги). На дашборде `prev_free` вычитает `prev_invested` (корректный Δ).
 
 ### Инвестиции (SPEC-026)
 
