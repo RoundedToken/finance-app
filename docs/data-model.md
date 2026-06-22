@@ -53,6 +53,8 @@
 | `note`, `source`, `source_record_id` | | `source`: `mini_app` \| `telegram_bot` \| `csv_ok_import` \| `migration` |
 | `created_at`, `updated_at`, `deleted_at` | | |
 
+**Инвариант валюта↔счёт (SPEC-032):** для траты со счётом `expenses.currency == accounts.currency` (ведро денoминировано в одной валюте; `effective_balance` вычитает расход в native-валюте ведра — рассогласование тихо искажает баланс). Энфорсится в `createExpense`/`updateExpense` (`db.ts:currencyMismatchError`): account-bound `currency != account.currency` без флага `allow_currency_mismatch` → 400. Трата «без счёта» (`account_id IS NULL` — бот, CSV-импорт, ручной выбор «Без счёта») валюту имеет свободную (используется только для EUR-конверсии/репортинга). Mini App предотвращает рассогласование auto-bind'ом (выбор счёта ставит его валюту) + осознанным override.
+
 **`incomes`** — доходы (Web Admin). `id, date, account_id, amount(>0), currency_code, category_id, source, note, goal_id?(FK→goals), created_at, updated_at, deleted_at`. `goal_id` — привязка дохода к цели (единственный способ «отложить в цель» после SPEC-012).
 
 **`transactions`** — обмены/переводы (Web Admin). `type CHECK IN ('exchange','transfer')`, `from_account_id`, `to_account_id`, `from_amount(>0)`, `from_currency`, `to_amount(>0)`, `to_currency`, `fee_amount?(>=0)`, `fee_currency?`, `note`, `created_at`, `updated_at`, `deleted_at`.

@@ -111,4 +111,5 @@ export interface ExpenseInput {
     account_id?: string | null;
     note?: string | null;
     created_at?: string;
+    allow_currency_mismatch?: boolean;   // SPEC-032: осознанный override валюты ≠ валюты счёта
 }

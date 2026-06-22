@@ -21,7 +21,7 @@ export interface State {
 export type Action =
     | { t: "key"; k: string }            // numpad-клавиша
     | { t: "currency"; v: string }
-    | { t: "account"; v: string | null }
+    | { t: "account"; v: string | null; ccy?: string | null }   // ccy: валюта счёта для auto-bind (SPEC-032)
     | { t: "date"; v: string }
     | { t: "note"; v: string }
     | { t: "category"; v: string | null }
@@ -33,13 +33,17 @@ export type Action =
 
 const BASE_KEY = "mini.baseCurrency";
 const ACC_KEY = "mini.lastAccount";
+const ACC_CCY_KEY = "mini.lastAccountCcy";   // SPEC-032: валюта липкого счёта — чтобы дефолтный драфт был консистентным
 
 type Draft = Pick<State, "amount" | "currency" | "accountId" | "date" | "note" | "categoryId" | "editingId">;
 
 function freshDraft(): Draft {
     return {
         amount: "0",
-        currency: "RSD",
+        // SPEC-032: дефолт валюты = валюта липкого счёта (а не захардкоженный RSD), чтобы новый
+        // драфт сразу был согласован со счётом. Если счёта нет — fallback RSD. Финальная сверка
+        // с реальным справочником — reconcile-эффект в MainScreen (чинит легаси-localStorage).
+        currency: localStorage.getItem(ACC_CCY_KEY) || "RSD",
         accountId: localStorage.getItem(ACC_KEY) || null,
         date: todayISO(),
         note: "",
@@ -57,8 +61,15 @@ function reducer(s: State, a: Action): State {
         case "key": return { ...s, amount: applyNumpadKey(s.amount, a.k) };
         case "currency": return { ...s, currency: a.v, modal: null };
         case "account":
-            if (a.v) localStorage.setItem(ACC_KEY, a.v); else localStorage.removeItem(ACC_KEY);
-            return { ...s, accountId: a.v, modal: null };
+            // SPEC-032 auto-bind: выбор счёта сразу ставит его валюту (трата со счётом обязана
+            // быть в валюте ведра). «Без счёта» (v=null) валюту не трогает — она становится свободной.
+            if (a.v) {
+                localStorage.setItem(ACC_KEY, a.v);
+                if (a.ccy) localStorage.setItem(ACC_CCY_KEY, a.ccy);
+            } else {
+                localStorage.removeItem(ACC_KEY);
+            }
+            return { ...s, accountId: a.v, currency: a.v && a.ccy ? a.ccy : s.currency, modal: null };
         case "date": return { ...s, date: a.v, modal: null };
         case "note": return { ...s, note: a.v };
         case "category": return { ...s, categoryId: a.v };

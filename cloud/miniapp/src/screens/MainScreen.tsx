@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, History as HistoryIcon, Calendar, MessageSquare, Wallet } from "lucide-react";
 import { useBootstrap, useCreateExpense, useDeleteExpense } from "@/api/queries";
 import { useApp, amountValue } from "@/store";
@@ -23,8 +23,22 @@ export function MainScreen() {
     const budgetByCat = new Map((data?.budgets?.categories ?? []).map(b => [b.category_id, b] as const));
     // SPEC-023: read-only lens конверта для lumpy-категорий (вместо месячного остатка).
     const envelopeByCat = new Map((data?.budget_envelopes ?? []).map(e => [e.category_id, e] as const));
-    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external" && a.is_active !== 0);
+    // SPEC-032: привязанный счёт резолвим из ПОЛНОГО (не-external) списка, включая неактивные —
+    // иначе легаси-трата на деактивированном счёте даёт UI-тупик (amber/override недоступны, а
+    // сервер всё равно вернёт 400, т.к. валидирует по deleted_at, без is_active). Пикер при этом
+    // предлагает только активные (отдельный фильтр в AccountPicker).
+    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external");
     const account = accounts.find(a => a.id === s.accountId) ?? null;
+
+    // SPEC-032: пока драфт не тронут, держим валюту согласованной с липким счётом. Чинит
+    // легаси-localStorage (счёт без сохранённой валюты) — первый драфт после деплоя не наследует
+    // старый рассинхрон. amount==="0" страхует от перетирания осознанного override в процессе ввода.
+    useEffect(() => {
+        if (account && s.amount === "0" && !s.editingId && s.currency !== account.currency) {
+            d({ t: "account", v: account.id, ccy: account.currency });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [account?.id, account?.currency]);
 
     const save = (categoryId: string) => {
         const amount = amountValue(s);
@@ -32,7 +46,9 @@ export function MainScreen() {
         const catName = cats.find(c => c.id === categoryId)?.name ?? "";
         create.mutate(
             // created_at не шлём: сервер ставит datetime('now') (SPEC-024 G3); s.date — локальный день.
-            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null },
+            // SPEC-032: allow_currency_mismatch=true только при реальном осознанном рассогласовании (через override-гейт).
+            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null,
+              allow_currency_mismatch: !!account && s.currency !== account.currency },
             {
                 onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
                 onError: (e) => { haptic("error"); toast(e instanceof Error ? e.message : "Ошибка сохранения", "err"); },
@@ -44,7 +60,7 @@ export function MainScreen() {
         <div className="min-h-screen flex flex-col">
             <header className="flex items-center justify-between px-4 py-3">
                 <IconBtn label="Меню" onClick={() => d({ t: "modal", v: "menu" })}><Menu className="h-5 w-5" /></IconBtn>
-                <Display />
+                <Display account={account} />
                 <IconBtn label="История" onClick={() => d({ t: "screen", v: "history" })}><HistoryIcon className="h-5 w-5" /></IconBtn>
             </header>
 
@@ -59,13 +75,25 @@ export function MainScreen() {
     );
 }
 
-function Display() {
+function Display({ account }: { account: Account | null }) {
     const { s, d } = useApp();
+    const mismatch = !!account && s.currency !== account.currency;
+    // SPEC-032: валюта привязана к счёту. Открыть пикер можно только через осознанное
+    // подтверждение (когда валюта пока совпадает со счётом). При уже-рассогласованной
+    // (легаси-правка) или «без счёта» — пикер открывается сразу.
+    const openCurrency = async () => {
+        haptic("light");
+        if (account && !mismatch) {
+            const ok = await confirmDialog(`Валюта привязана к счёту «${account.name}» (${account.currency}). Записать в другой валюте? Так бывает редко.`);
+            if (!ok) return;
+        }
+        d({ t: "modal", v: "currency" });
+    };
     return (
-        <button onClick={() => { haptic("light"); d({ t: "modal", v: "currency" }); }} className="flex flex-col items-center min-w-0">
+        <button onClick={openCurrency} className="flex flex-col items-center min-w-0">
             <span className={cn("text-4xl font-semibold num tabular-nums leading-none truncate max-w-[60vw]", s.amount === "0" && "text-hint")}>{s.amount}</span>
-            <span className="mt-1 inline-flex items-center gap-1 text-sm text-hint">
-                <CurrencyFlag code={s.currency} /> {s.currency}
+            <span className={cn("mt-1 inline-flex items-center gap-1 text-sm", mismatch ? "text-amber-500 font-medium" : "text-hint")}>
+                <CurrencyFlag code={s.currency} /> {s.currency}{mismatch && " ⚠"}
             </span>
         </button>
     );
@@ -73,25 +101,38 @@ function Display() {
 
 function SideActions({ account, hasNote }: { account: Account | null; hasNote: boolean }) {
     const { s, d } = useApp();
+    const mismatch = !!account && s.currency !== account.currency;
     return (
-        <div className="grid grid-cols-3 gap-2 px-4 mt-3">
-            <ActionChip icon={<Calendar className="h-4 w-4" />} label={humanDay(s.date)} onClick={() => d({ t: "modal", v: "date" })} />
-            <ActionChip
-                icon={<Wallet className="h-4 w-4" />}
-                label={account ? <span className="inline-flex items-center gap-1"><CurrencyFlag code={account.currency} />{account.name}</span> : "Счёт"}
-                active={!!account}
-                onClick={() => d({ t: "modal", v: "account" })}
-            />
-            <ActionChip icon={<MessageSquare className="h-4 w-4" />} label={hasNote ? "Описание ✓" : "Описание"} active={hasNote} onClick={() => d({ t: "screen", v: "note" })} />
-        </div>
+        <>
+            <div className="grid grid-cols-3 gap-2 px-4 mt-3">
+                <ActionChip icon={<Calendar className="h-4 w-4" />} label={humanDay(s.date)} onClick={() => d({ t: "modal", v: "date" })} />
+                <ActionChip
+                    icon={<Wallet className="h-4 w-4" />}
+                    label={account ? <span className="inline-flex items-center gap-1"><CurrencyFlag code={account.currency} />{account.name}</span> : "Счёт"}
+                    active={!!account}
+                    danger={mismatch}
+                    onClick={() => d({ t: "modal", v: "account" })}
+                />
+                <ActionChip icon={<MessageSquare className="h-4 w-4" />} label={hasNote ? "Описание ✓" : "Описание"} active={hasNote} onClick={() => d({ t: "screen", v: "note" })} />
+            </div>
+            {/* SPEC-032: видимый сигнал рассогласования валюта↔счёт (осознанный override / правка легаси). */}
+            {mismatch && account && (
+                <div className="px-4 mt-2">
+                    <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-500/10 rounded-lg px-3 py-2">
+                        <span aria-hidden>⚠️</span>
+                        <span>Счёт в {account.currency}, а валюта траты — {s.currency}</span>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
 
-function ActionChip({ icon, label, active, onClick }: { icon: React.ReactNode; label: React.ReactNode; active?: boolean; onClick: () => void }) {
+function ActionChip({ icon, label, active, danger, onClick }: { icon: React.ReactNode; label: React.ReactNode; active?: boolean; danger?: boolean; onClick: () => void }) {
     return (
         <button onClick={() => { haptic("light"); onClick(); }}
             className={cn("flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-medium truncate transition-colors active:animate-pop",
-                active ? "bg-accent/15 text-accent" : "bg-secondary-bg text-hint")}>
+                danger ? "bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/40" : active ? "bg-accent/15 text-accent" : "bg-secondary-bg text-hint")}>
             {icon}<span className="truncate">{label}</span>
         </button>
     );

@@ -44,6 +44,11 @@ describe("SPEC-019 Zod schemas — shape-валидация", () => {
     it("expenseCreate: принимает валидный (account_id опционален)", () => {
         expect(expenseCreateSchema.safeParse({ id: "u", date: "2026-05-01", amount: 5, currency: "EUR" }).success).toBe(true);
     });
+    it("expenseCreate: allow_currency_mismatch — boolean ок, иное отклоняется (SPEC-032)", () => {
+        const base = { id: "u", date: "2026-05-01", amount: 5, currency: "EUR" };
+        expect(expenseCreateSchema.safeParse({ ...base, allow_currency_mismatch: true }).success).toBe(true);
+        expect(expenseCreateSchema.safeParse({ ...base, allow_currency_mismatch: "true" }).success).toBe(false);
+    });
 
     it("contributionCreate: отклоняет без account_id (AC4 / L4)", () => {
         expect(contributionCreateSchema.safeParse({ goal_id: "g", date: "2026-05-01", amount: 100 }).success).toBe(false);
