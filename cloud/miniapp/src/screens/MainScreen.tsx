@@ -227,7 +227,9 @@ function RecentDays() {
                             <DayTotal rows={rows} base={s.baseCurrency} />
                         </div>
                         <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
-                            {rows.slice(0, 6).map(e => <RecentRow key={e.id} e={e} />)}
+                            {/* SPEC-033: показываем ВСЕ траты дня — иначе итог DayTotal (по всем) не
+                                сходится с обрезанным списком. История остаётся для кросс-дневного просмотра. */}
+                            {rows.map(e => <RecentRow key={e.id} e={e} />)}
                         </div>
                     </div>
                 );
