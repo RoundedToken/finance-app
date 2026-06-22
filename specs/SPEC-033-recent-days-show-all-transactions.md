@@ -1,7 +1,7 @@
 ---
 id: SPEC-033
 title: Фикс — итог дня на главной не сходится со списком (обрезка recent до 6 строк)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-22
 updated: 2026-06-22
@@ -66,3 +66,7 @@ bootstrap отдаёт все траты (`limit=20000`), т.е. все 16 на 
 ## 7. Changelog
 
 - 2026-06-22: диагноз (прод: 16 трат = 21 660 RSD, обрезка `slice(0,6)`), спека, фикс. status → in_progress.
+- 2026-06-22: убрана обрезка `RecentDays`. Playwright light/dark (9 трат → все 9 строк, итог 4 500 RSD =
+  сумма строк, 0 console errors); tsc + build чисто. PR #19 squash-merge (CI зелёный). Деплой Mini App
+  Pages (`index-OArmqcO5.js`); Worker/D1 не затронуты. Прод отдаёт новый билд. AC1–AC4 выполнены.
+  status → done (выкачено на прод).
