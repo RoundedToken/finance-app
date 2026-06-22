@@ -301,7 +301,8 @@ async function handleUpdateExpense(request: Request, env: Env, id: string): Prom
     const parsed = await readBody(request, env, expenseUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateExpense(env, id, auth.userId!, parsed.data);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);   // SPEC-032: рассогласование валюта↔счёт
+    return json({ ok: true, updated: r.updated }, 200, request, env);
 }
 
 async function handleDeleteExpense(request: Request, env: Env, id: string): Promise<Response> {

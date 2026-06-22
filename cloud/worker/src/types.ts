@@ -31,4 +31,5 @@ export interface ExpensePayload {
     source?: string;
     source_record_id?: string | null;
     created_at?: string;          // принимается, но ИГНОРИРУЕТСЯ: createExpense ставит серверный datetime('now') (SPEC-024). Используется только в bulkInsertExpenses (импорт).
+    allow_currency_mismatch?: boolean;   // SPEC-032: осознанный override — трата со счётом в валюте ≠ валюты счёта. Без флага рассогласование отклоняется (400).
 }
