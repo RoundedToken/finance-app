@@ -53,7 +53,7 @@ function AccountPicker({ open }: { open: boolean }) {
                     <X className="h-4 w-4" /> <span className="text-sm">Без счёта</span>
                 </button>
                 {accounts.map(a => (
-                    <button key={a.id} onClick={() => { haptic("light"); d({ t: "account", v: a.id }); }}
+                    <button key={a.id} onClick={() => { haptic("light"); d({ t: "account", v: a.id, ccy: a.currency }); }}
                         className={cn("w-full flex items-center justify-between py-3 px-3 rounded-xl active:animate-pop transition-colors text-left",
                             s.accountId === a.id ? "bg-accent/15 text-accent ring-1 ring-accent/40" : "bg-secondary-bg")}>
                         <span className="text-sm inline-flex items-center gap-2"><Currency code={a.currency} flagOnly className="text-lg" />{a.name}</span>

@@ -27,6 +27,7 @@ export const expenseCreateSchema = z.object({
     source: z.string().optional(),
     source_record_id: optStr,
     created_at: z.string().optional(),
+    allow_currency_mismatch: z.boolean().optional(),   // SPEC-032: осознанный override валюты ≠ счёта
 });
 export const expenseUpdateSchema = z.object({
     date: isoDate.optional(),
@@ -35,6 +36,7 @@ export const expenseUpdateSchema = z.object({
     category_id: optStr,
     account_id: optStr,
     note: optStr,
+    allow_currency_mismatch: z.boolean().optional(),   // SPEC-032
 });
 
 // ── Incomes ─────────────────────────────────────────────────────────────────

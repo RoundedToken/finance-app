@@ -32,7 +32,32 @@ export async function isAuthorizedUser(env: Env, telegramId: string): Promise<bo
 
 // ─── Expenses CRUD ──────────────────────────────────────────────────────────
 
+/**
+ * SPEC-032: согласованность валюта↔счёт. Трата со счётом обязана быть в native-валюте
+ * ведра — баланс (`effective_balance`, SPEC-011) вычитает её именно в этой валюте, иначе
+ * «999 RSD на RUB-ведре» тихо искажает баланс. Возвращает текст ошибки, если счёт задан,
+ * его валюта известна и ≠ валюте траты, а осознанный override не выставлен; иначе null
+ * (всё ок / нет счёта / ведро не найдено → не блокируем первичный flow).
+ */
+async function currencyMismatchError(
+    env: Env,
+    accountId: string | null | undefined,
+    currency: string,
+    allowMismatch?: boolean,
+): Promise<string | null> {
+    if (!accountId || allowMismatch) return null;
+    const acc = await env.DB
+        .prepare("SELECT name, currency FROM accounts WHERE id = ? AND deleted_at IS NULL")
+        .bind(accountId)
+        .first<{ name: string; currency: string }>();
+    if (!acc || acc.currency === currency) return null;
+    return `валюта траты (${currency}) не совпадает с валютой счёта «${acc.name}» (${acc.currency})`;
+}
+
 export async function createExpense(env: Env, userId: string, e: ExpensePayload): Promise<{ ok: true; inserted: boolean } | { ok: false; error: string }> {
+    // SPEC-032: трата со счётом обязана быть в валюте ведра (см. currencyMismatchError).
+    const ccyErr = await currencyMismatchError(env, e.account_id, e.currency, e.allow_currency_mismatch);
+    if (ccyErr) return { ok: false, error: ccyErr };
     // Overdraft (L1, SPEC-011 §G6): не даём ведру уйти в минус — но ТОЛЬКО если у
     // ведра есть manual baseline (без него нет ground truth, чтобы судить о минусе;
     // первичный flow Mini App без снапшота не ломаем). asOf = дата траты.
@@ -67,7 +92,23 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
     return { ok: true, inserted: (r.meta.changes ?? 0) > 0 };
 }
 
-export async function updateExpense(env: Env, id: string, userId: string, patch: any): Promise<{ updated: boolean }> {
+export async function updateExpense(env: Env, id: string, userId: string, patch: any): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
+    // SPEC-032: валидируем согласованность валюта↔счёт по РЕЗУЛЬТИРУЮЩИМ значениям, но только
+    // если патч реально трогает валюту или счёт (иначе инвариант измениться не может — экономим
+    // лишний SELECT в горячем пути правки note/amount/date). COALESCE-семантика ниже меняет
+    // account_id/currency лишь при непустом patch-значении, поэтому resulting = patch.X ?? existing.X.
+    if (patch.account_id !== undefined || patch.currency !== undefined) {
+        const existing = await env.DB
+            .prepare("SELECT account_id, currency FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+            .bind(id, userId)
+            .first<{ account_id: string | null; currency: string }>();
+        if (existing) {
+            const resAccount = patch.account_id ?? existing.account_id;
+            const resCurrency = patch.currency ?? existing.currency;
+            const ccyErr = await currencyMismatchError(env, resAccount, resCurrency, patch.allow_currency_mismatch);
+            if (ccyErr) return { ok: false, error: ccyErr };
+        }
+    }
     // PATCH-семантика: отсутствие ключа → оставить старое; явный null → стереть.
     // Для note различаем "не передан" и "стереть" через hasOwnProperty.
     const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
@@ -91,7 +132,7 @@ export async function updateExpense(env: Env, id: string, userId: string, patch:
     if (hasNote) params.push(patch.note ?? null);
     params.push(id, userId);
     const r = await env.DB.prepare(sql).bind(...params).run();
-    return { updated: (r.meta.changes ?? 0) > 0 };
+    return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
 }
 
 export async function deleteExpense(env: Env, id: string, userId: string): Promise<{ deleted: boolean }> {

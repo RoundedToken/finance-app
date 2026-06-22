@@ -20,18 +20,33 @@ export function EditScreen() {
     const toast = useToast();
 
     const cats = (data?.categories ?? []).filter(c => c.type === "expense" && c.is_active);
-    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external" && a.is_active !== 0);
+    // SPEC-032: счёт резолвим из полного (не-external) списка, включая неактивные — чтобы правка
+    // легаси-записи на деактивированном счёте показывала amber/override, а не упиралась в 400.
+    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external");
     const account = accounts.find(a => a.id === s.accountId) ?? null;
     const busy = upd.isPending || del.isPending;
+    const mismatch = !!account && s.currency !== account.currency;   // SPEC-032
 
     const back = () => { d({ t: "resetDraft" }); d({ t: "screen", v: "main" }); };
+
+    // SPEC-032: валюта привязана к счёту — пикер только через осознанное подтверждение.
+    // При уже-рассогласованной (легаси) записи или «без счёта» — открываем сразу.
+    const openCurrency = async () => {
+        haptic("light");
+        if (account && !mismatch) {
+            const ok = await confirmDialog(`Валюта привязана к счёту «${account.name}» (${account.currency}). Записать в другой валюте? Так бывает редко.`);
+            if (!ok) return;
+        }
+        d({ t: "modal", v: "currency" });
+    };
 
     const save = () => {
         const amt = amountValue(s);
         if (amt <= 0) { haptic("error"); toast("Введите сумму", "err"); return; }
         if (!s.editingId) return;
         upd.mutate(
-            { id: s.editingId, patch: { amount: amt, currency: s.currency, date: s.date, note: s.note || null, category_id: s.categoryId, account_id: s.accountId } },
+            // SPEC-032: allow_currency_mismatch=true только при реальном рассогласовании (осознанно/легаси).
+            { id: s.editingId, patch: { amount: amt, currency: s.currency, date: s.date, note: s.note || null, category_id: s.categoryId, account_id: s.accountId, allow_currency_mismatch: mismatch } },
             { onSuccess: () => { haptic("success"); toast("Сохранено"); back(); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } },
         );
     };
@@ -47,9 +62,9 @@ export function EditScreen() {
                     className="h-9 w-9 grid place-items-center rounded-full active:bg-secondary-bg">
                     <ArrowLeft className="h-5 w-5" />
                 </button>
-                <button onClick={() => { haptic("light"); d({ t: "modal", v: "currency" }); }} className="flex flex-col items-center">
+                <button onClick={openCurrency} className="flex flex-col items-center">
                     <span className={cn("text-3xl font-semibold num tabular-nums leading-none", s.amount === "0" && "text-hint")}>{s.amount}</span>
-                    <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-hint"><CurrencyFlag code={s.currency} /> {s.currency}</span>
+                    <span className={cn("mt-0.5 inline-flex items-center gap-1 text-xs", mismatch ? "text-amber-500 font-medium" : "text-hint")}><CurrencyFlag code={s.currency} /> {s.currency}{mismatch && " ⚠"}</span>
                 </button>
                 <span className="w-9" />
             </header>
@@ -58,9 +73,18 @@ export function EditScreen() {
 
             <div className="grid grid-cols-3 gap-2 px-4 mt-3">
                 <Chip icon={<Calendar className="h-4 w-4" />} label={humanDay(s.date)} onClick={() => d({ t: "modal", v: "date" })} />
-                <Chip icon={<Wallet className="h-4 w-4" />} label={account ? account.name : "Счёт"} active={!!account} onClick={() => d({ t: "modal", v: "account" })} />
+                <Chip icon={<Wallet className="h-4 w-4" />} label={account ? account.name : "Счёт"} active={!!account} danger={mismatch} onClick={() => d({ t: "modal", v: "account" })} />
                 <Chip icon={<MessageSquare className="h-4 w-4" />} label={s.note ? "Описание ✓" : "Описание"} active={!!s.note} onClick={() => d({ t: "screen", v: "note" })} />
             </div>
+            {/* SPEC-032: видимый сигнал рассогласования валюта↔счёт (осознанный override / правка легаси). */}
+            {mismatch && account && (
+                <div className="px-4 mt-2">
+                    <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-500/10 rounded-lg px-3 py-2">
+                        <span aria-hidden>⚠️</span>
+                        <span>Счёт в {account.currency}, а валюта траты — {s.currency}</span>
+                    </div>
+                </div>
+            )}
 
             <div className="px-4 mt-4">
                 <span className="text-xs text-hint mb-1.5 block">Категория</span>
@@ -85,11 +109,11 @@ export function EditScreen() {
     );
 }
 
-function Chip({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
+function Chip({ icon, label, active, danger, onClick }: { icon: React.ReactNode; label: string; active?: boolean; danger?: boolean; onClick: () => void }) {
     return (
         <button onClick={() => { haptic("light"); onClick(); }}
             className={cn("flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-medium truncate transition-colors active:animate-pop",
-                active ? "bg-accent/15 text-accent" : "bg-secondary-bg text-hint")}>
+                danger ? "bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/40" : active ? "bg-accent/15 text-accent" : "bg-secondary-bg text-hint")}>
             {icon}<span className="truncate">{label}</span>
         </button>
     );
