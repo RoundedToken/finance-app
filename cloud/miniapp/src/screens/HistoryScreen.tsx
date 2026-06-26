@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useBootstrap, useExpenses, useDeleteExpense } from "@/api/queries";
 import { useApp } from "@/store";
@@ -19,13 +19,16 @@ export function HistoryScreen() {
     const cats = boot.data?.categories ?? [];
     const accounts = boot.data?.accounts ?? [];
 
-    const byDay = new Map<string, typeof expenses>();
-    for (const e of expenses) {
-        const a = byDay.get(e.date) ?? [];
-        a.push(e);
-        byDay.set(e.date, a);
-    }
-    const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : -1));
+    const { byDay, days } = useMemo(() => {
+        const byDay = new Map<string, Expense[]>();
+        for (const e of expenses) {
+            const a = byDay.get(e.date) ?? [];
+            a.push(e);
+            byDay.set(e.date, a);
+        }
+        const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : -1));
+        return { byDay, days };
+    }, [expenses]);
 
     // SPEC-034: day-level windowing — в DOM только видимые блоки-дни + overscan.
     // DayTotal каждого дня считается из ПОЛНОГО набора трат дня (byDay), окно влияет только на рендер → SPEC-033 не нарушен.
@@ -40,7 +43,7 @@ export function HistoryScreen() {
 
     return (
         <div className="h-full flex flex-col">
-            <header className="shrink-0 bg-bg/90 backdrop-blur flex items-center gap-2 px-4 py-3 z-10">
+            <header className="shrink-0 bg-bg flex items-center gap-2 px-4 py-3">
                 <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
                     className="h-9 w-9 grid place-items-center rounded-full active:bg-secondary-bg transition-colors">
                     <ArrowLeft className="h-5 w-5" />

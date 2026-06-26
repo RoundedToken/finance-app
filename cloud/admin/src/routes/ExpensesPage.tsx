@@ -125,7 +125,7 @@ export function ExpensesPage() {
         data: filtered,
         columns,
         state: { sorting, globalFilter },
-        onSortingChange: setSorting,
+        onSortingChange: u => { setSorting(u); scrollRef.current?.scrollTo({ top: 0 }); },
         onGlobalFilterChange: setGlobalFilter,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -222,8 +222,8 @@ export function ExpensesPage() {
 
             <div className="card overflow-hidden">
                 <div ref={scrollRef} className="overflow-auto max-h-[calc(100vh-360px)] min-h-[320px]">
-                    <table className="w-full text-sm">
-                        <thead className="border-b">
+                    <table className="w-full text-sm table-fixed">
+                        <thead>
                             {table.getHeaderGroups().map(hg => (
                                 <tr key={hg.id}>
                                     {hg.headers.map(h => {
@@ -233,7 +233,7 @@ export function ExpensesPage() {
                                             <th key={h.id}
                                                 style={{ width: h.getSize() }}
                                                 className={cn(
-                                                    "sticky top-0 z-10 bg-secondary px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap",
+                                                    "sticky top-0 z-10 bg-secondary border-b px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap",
                                                     sortable && "cursor-pointer select-none hover:text-foreground",
                                                 )}
                                                 onClick={sortable ? h.column.getToggleSortingHandler() : undefined}
@@ -251,16 +251,16 @@ export function ExpensesPage() {
                         </thead>
                         <tbody>
                             {isLoading && (
-                                <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
+                                <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">Загрузка…</td></tr>
                             )}
                             {isError && (
-                                <tr><td colSpan={6} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить расходы" /></td></tr>
+                                <tr><td colSpan={columns.length} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить расходы" /></td></tr>
                             )}
                             {!isLoading && !isError && tableRows.length === 0 && (
-                                <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Нет записей под текущие фильтры.</td></tr>
+                                <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-muted-foreground">Нет записей под текущие фильтры.</td></tr>
                             )}
                             {showRows && paddingTop > 0 && (
-                                <tr aria-hidden><td colSpan={6} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
+                                <tr aria-hidden><td colSpan={columns.length} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
                             )}
                             {showRows && virtualRows.map(vr => {
                                 const r = tableRows[vr.index];
@@ -278,7 +278,7 @@ export function ExpensesPage() {
                                 );
                             })}
                             {showRows && paddingBottom > 0 && (
-                                <tr aria-hidden><td colSpan={6} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>
+                                <tr aria-hidden><td colSpan={columns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>
                             )}
                         </tbody>
                     </table>
