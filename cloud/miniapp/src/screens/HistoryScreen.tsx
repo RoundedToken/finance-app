@@ -109,7 +109,7 @@ export function HistoryScreen() {
     };
 
     const periodLabel = mode === "month" ? `${MONTHS_NOM[month]} ${year}` : mode === "year" ? `${year}` : "Всё время";
-    const emptyLabel = mode === "month" ? "В этом месяце трат нет" : mode === "year" ? "В этом году трат нет" : "Пока нет трат";
+    const emptyLabel = !bounds ? "Пока нет трат" : mode === "month" ? "В этом месяце трат нет" : mode === "year" ? "В этом году трат нет" : "Пока нет трат";
 
     return (
         <div className="min-h-screen">
@@ -125,7 +125,7 @@ export function HistoryScreen() {
                 {/* Сегмент Месяц / Год / Всё */}
                 <div className="grid grid-cols-3 gap-1 rounded-xl bg-secondary-bg p-1" role="tablist" aria-label="Период">
                     {MODES.map(m => (
-                        <button key={m.key} role="tab" aria-selected={mode === m.key} onClick={() => pickMode(m.key)}
+                        <button key={m.key} role="tab" aria-selected={mode === m.key} aria-controls="history-list" onClick={() => pickMode(m.key)}
                             className={cn(
                                 "py-1.5 rounded-lg text-sm font-medium transition-colors active:animate-pop",
                                 mode === m.key ? "bg-accent text-accent-fg shadow-sm" : "text-hint",
@@ -140,12 +140,12 @@ export function HistoryScreen() {
                     {mode !== "all" ? (
                         <div className="flex items-center gap-0.5">
                             <button aria-label="Предыдущий период" disabled={prevDisabled} onClick={() => step(-1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-25 active:bg-secondary-bg transition-colors">
+                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronLeft className="h-5 w-5" />
                             </button>
-                            <span className="text-sm font-semibold text-center min-w-[8rem] whitespace-nowrap">{periodLabel}</span>
+                            <span aria-live="polite" className="text-sm font-semibold text-center min-w-[8rem] whitespace-nowrap">{periodLabel}</span>
                             <button aria-label="Следующий период" disabled={nextDisabled} onClick={() => step(1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-25 active:bg-secondary-bg transition-colors">
+                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronRight className="h-5 w-5" />
                             </button>
                         </div>
@@ -167,7 +167,7 @@ export function HistoryScreen() {
                 </div>
             </div>
 
-            <div className="px-4 pb-10">
+            <div id="history-list" role="tabpanel" className="px-4 pb-10">
                 {isLoading && <p className="text-center text-hint py-10 animate-pulse">Загрузка…</p>}
                 {!isLoading && !days.length && <p className="text-center text-hint py-12">{emptyLabel}</p>}
                 {days.length > 0 && (
