@@ -56,6 +56,19 @@ export function applyNumpadKey(amount: string, key: string): string {
 
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
+/** Номинатив месяца для подписи периода: «Май 2026». */
+export const MONTHS_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+/** Русское склонение по числу: plural(1,['трата','траты','трат']) → 'трата'. */
+export function plural(n: number, forms: [string, string, string]): string {
+    const a = Math.abs(n) % 100;
+    const b = a % 10;
+    if (a > 10 && a < 20) return forms[2];
+    if (b > 1 && b < 5) return forms[1];
+    if (b === 1) return forms[0];
+    return forms[2];
+}
+
 /** «Сегодня» / «Вчера» / «12 мая» / «12 мая 2025». */
 export function humanDay(iso: string): string {
     const today = todayISO();

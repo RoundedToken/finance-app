@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useBootstrap, useExpenses, useDeleteExpense } from "@/api/queries";
@@ -7,9 +7,17 @@ import { useToast } from "@/components/Toast";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Amount } from "@/components/Amount";
 import { DayTotal } from "@/components/DayTotal";
-import { humanDay } from "@/lib/utils";
+import { cn, humanDay, todayISO, MONTHS_NOM, plural } from "@/lib/utils";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import type { Expense, Category, Account } from "@/api/types";
+
+type Mode = "month" | "year" | "all";
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const MODES: { key: Mode; label: string }[] = [
+    { key: "month", label: "Месяц" },
+    { key: "year", label: "Год" },
+    { key: "all", label: "Всё" },
+];
 
 export function HistoryScreen() {
     const { s, d } = useApp();
@@ -19,52 +27,149 @@ export function HistoryScreen() {
     const cats = boot.data?.categories ?? [];
     const accounts = boot.data?.accounts ?? [];
 
+    // SPEC-035: дефолтный период — текущий месяц (локальная дата).
+    const today = todayISO();
+    const curY = Number(today.slice(0, 4));
+    const curM = Number(today.slice(5, 7)) - 1; // 0-11
+    const [mode, setMode] = useState<Mode>("month");
+    const [year, setYear] = useState(curY);
+    const [month, setMonth] = useState(curM); // 0-11
+
+    // Границы данных (самый ранний месяц/год с тратами) — для блокировки навигации (E2).
+    const bounds = useMemo(() => {
+        if (!expenses.length) return null;
+        let min = expenses[0].date;
+        for (const e of expenses) if (e.date < min) min = e.date;
+        return { minY: Number(min.slice(0, 4)), minYM: min.slice(0, 7) };
+    }, [expenses]);
+
+    // Клиентский фильтр периода поверх уже загруженного набора (без обращения к серверу).
+    const filtered = useMemo(() => {
+        if (mode === "all") return expenses;
+        const prefix = mode === "month" ? `${year}-${pad2(month + 1)}` : `${year}`;
+        return expenses.filter(e => e.date.startsWith(prefix));
+    }, [expenses, mode, year, month]);
+
     const { byDay, days } = useMemo(() => {
         const byDay = new Map<string, Expense[]>();
-        for (const e of expenses) {
+        for (const e of filtered) {
             const a = byDay.get(e.date) ?? [];
             a.push(e);
             byDay.set(e.date, a);
         }
         const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : -1));
         return { byDay, days };
-    }, [expenses]);
+    }, [filtered]);
 
-    // SPEC-034: day-level windowing на ОКОННОМ (document) скролле — надёжно в Telegram
-    // webview, не зависит от высоты внутреннего контейнера (старая История скроллилась
-    // именно документом). В DOM только видимые блоки-дни + overscan.
+    // SPEC-016: итог периода = Σ amount_eur (date-aware, с worker). EUR-эквивалент.
+    const totalEur = useMemo(() => filtered.reduce((sum, e) => sum + (e.amount_eur ?? 0), 0), [filtered]);
+
+    // SPEC-034: day-level windowing на ОКОННОМ (document) скролле — надёжно в Telegram webview.
     // DayTotal каждого дня считается из ПОЛНОГО набора трат дня (byDay) → SPEC-033 не нарушен.
     const listRef = useRef<HTMLDivElement>(null);
     const [scrollMargin, setScrollMargin] = useState(0);
     useLayoutEffect(() => {
         setScrollMargin(listRef.current?.offsetTop ?? 0);
-    }, [days.length]);
+    }, [days.length, mode]);
     const virtualizer = useWindowVirtualizer({
         count: days.length,
-        estimateSize: () => 132, // заголовок дня + ~1–2 строки + отступ; уточняется measureElement
+        estimateSize: () => 132,
         overscan: 4,
         scrollMargin,
     });
     const virtualDays = virtualizer.getVirtualItems();
-    // Временный счётчик-доказательство windowing: сколько трат реально сейчас в DOM.
-    const domRows = virtualDays.reduce((sum, vd) => sum + (byDay.get(days[vd.index])?.length ?? 0), 0);
+
+    // Навигация по периоду + границы (E2): не листаем в будущее и раньше самых ранних данных.
+    const ymCur = `${year}-${pad2(month + 1)}`;
+    const prevDisabled = !bounds || (mode === "month" ? ymCur <= bounds.minYM : mode === "year" ? year <= bounds.minY : true);
+    const nextDisabled = !bounds || (mode === "month" ? ymCur >= today.slice(0, 7) : mode === "year" ? year >= curY : true);
+
+    const scrollTop = () => window.scrollTo(0, 0);
+    const step = (delta: number) => {
+        haptic("light");
+        if (mode === "month") {
+            let m = month + delta, y = year;
+            while (m < 0) { m += 12; y -= 1; }
+            while (m > 11) { m -= 12; y += 1; }
+            setYear(y); setMonth(m);
+        } else if (mode === "year") {
+            setYear(year + delta);
+        }
+        scrollTop();
+    };
+    const pickMode = (next: Mode) => {
+        haptic("light");
+        if (next !== "all") {
+            const y = mode === "all" ? curY : year;
+            setYear(y);
+            if (next === "month") setMonth(y === curY ? curM : 11);
+        }
+        setMode(next);
+        scrollTop();
+    };
+
+    const periodLabel = mode === "month" ? `${MONTHS_NOM[month]} ${year}` : mode === "year" ? `${year}` : "Всё время";
+    const emptyLabel = !bounds ? "Пока нет трат" : mode === "month" ? "В этом месяце трат нет" : mode === "year" ? "В этом году трат нет" : "Пока нет трат";
 
     return (
         <div className="min-h-screen">
-            <header className="sticky top-0 bg-bg flex items-center gap-2 px-4 py-3 z-10">
-                <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
-                    className="h-9 w-9 grid place-items-center rounded-full active:bg-secondary-bg transition-colors">
-                    <ArrowLeft className="h-5 w-5" />
-                </button>
-                <h1 className="text-lg font-semibold">История</h1>
-                {expenses.length > 0 && (
-                    <span className="ml-auto text-[11px] text-hint tabular-nums">DOM {domRows}/{expenses.length}</span>
-                )}
-            </header>
+            <div className="sticky top-0 z-20 bg-bg/95 backdrop-blur px-4 pt-3 pb-2 space-y-2.5">
+                <div className="flex items-center gap-2">
+                    <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
+                        className="h-9 w-9 grid place-items-center rounded-full -ml-1 active:bg-secondary-bg transition-colors">
+                        <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <h1 className="text-lg font-semibold">История</h1>
+                </div>
 
-            <div className="px-4 pb-10">
+                {/* Сегмент Месяц / Год / Всё */}
+                <div className="grid grid-cols-3 gap-1 rounded-xl bg-secondary-bg p-1" role="tablist" aria-label="Период">
+                    {MODES.map(m => (
+                        <button key={m.key} role="tab" aria-selected={mode === m.key} aria-controls="history-list" onClick={() => pickMode(m.key)}
+                            className={cn(
+                                "py-1.5 rounded-lg text-sm font-medium transition-colors active:animate-pop",
+                                mode === m.key ? "bg-accent text-accent-fg shadow-sm" : "text-hint",
+                            )}>
+                            {m.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Степпер периода + итог за период */}
+                <div className="flex items-center justify-between gap-2 min-h-[2rem]">
+                    {mode !== "all" ? (
+                        <div className="flex items-center gap-0.5">
+                            <button aria-label="Предыдущий период" disabled={prevDisabled} onClick={() => step(-1)}
+                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                <ChevronLeft className="h-5 w-5" />
+                            </button>
+                            <span aria-live="polite" className="text-sm font-semibold text-center min-w-[8rem] whitespace-nowrap">{periodLabel}</span>
+                            <button aria-label="Следующий период" disabled={nextDisabled} onClick={() => step(1)}
+                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                <ChevronRight className="h-5 w-5" />
+                            </button>
+                        </div>
+                    ) : (
+                        <span className="text-sm font-semibold pl-1">Всё время</span>
+                    )}
+
+                    {filtered.length > 0 && (
+                        <div className="text-right leading-tight">
+                            <span className="inline-flex items-center gap-1 text-sm font-semibold">
+                                <span className="text-hint font-normal">≈</span>
+                                <Amount amount={totalEur} currency="EUR" />
+                            </span>
+                            <span className="block text-[11px] text-hint tabular-nums">
+                                {filtered.length} {plural(filtered.length, ["трата", "траты", "трат"])}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div id="history-list" role="tabpanel" className="px-4 pb-10">
                 {isLoading && <p className="text-center text-hint py-10 animate-pulse">Загрузка…</p>}
-                {!isLoading && !days.length && <p className="text-center text-hint py-10">Пока нет трат</p>}
+                {!isLoading && !days.length && <p className="text-center text-hint py-12">{emptyLabel}</p>}
                 {days.length > 0 && (
                     <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
                         {virtualDays.map(vd => {
