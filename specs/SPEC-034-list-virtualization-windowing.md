@@ -1,7 +1,7 @@
 ---
 id: SPEC-034
 title: Виртуализация длинных списков (windowing) — Admin Расходы + Mini App История
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-26
 updated: 2026-06-26
@@ -108,16 +108,16 @@ links:
 
 ## 9. Acceptance criteria
 
-- [ ] AC1: Admin `/expenses` при N строк ≫ высоты окна — в DOM число строк-`<tr>` (исключая спейсеры/заголовок) близко к (видимые + overscan), а не N.
-- [ ] AC2: Admin — сортировка по клику на «Дата»/«Сумма»/«EUR-эквив.» работает по всему набору; окно перерисовывается корректно.
-- [ ] AC3: Admin — фильтр по категории/валюте/периоду и поиск пересчитывают список и KPI (`totalEur`, `byCurrency`, «Записей») по полному отфильтрованному набору (значения совпадают с до-виртуализационным поведением).
-- [ ] AC4: Admin — `<thead>` остаётся видимым (sticky) при вертикальном скролле тела; ширины колонок не «прыгают».
-- [ ] AC5: Admin — loading/error(`ErrorState`+retry)/empty отображаются как раньше; hover-подсветка строки сохранена.
-- [ ] AC6: Mini App — История рендерит только видимые блоки-дни (+overscan) в DOM; при скролле новые дни появляются без пустот.
-- [ ] AC7: Mini App — `DayTotal` каждого дня = сумма по **всем** тратам дня (SPEC-033 не нарушен), независимо от того, какие дни сейчас в окне.
-- [ ] AC8: Mini App — swipe-delete и tap-to-edit работают на виртуализированных строках; шапка «История» остаётся сверху.
-- [ ] AC9: Worker/D1/миграции/контракты API без изменений (diff не трогает `cloud/worker`, `migrations`).
-- [ ] AC10: `npm run build`/typecheck зелёные в `cloud/admin` и `cloud/miniapp`; существующие vitest (worker) не затронуты и зелёные.
+- [x] AC1: Admin `/expenses` при N строк ≫ высоты окна — в DOM число строк-`<tr>` (исключая спейсеры/заголовок) близко к (видимые + overscan), а не N.
+- [x] AC2: Admin — сортировка по клику на «Дата»/«Сумма»/«EUR-эквив.» работает по всему набору; окно перерисовывается корректно.
+- [x] AC3: Admin — фильтр по категории/валюте/периоду и поиск пересчитывают список и KPI (`totalEur`, `byCurrency`, «Записей») по полному отфильтрованному набору (значения совпадают с до-виртуализационным поведением).
+- [x] AC4: Admin — `<thead>` остаётся видимым (sticky) при вертикальном скролле тела; ширины колонок не «прыгают».
+- [x] AC5: Admin — loading/error(`ErrorState`+retry)/empty отображаются как раньше; hover-подсветка строки сохранена.
+- [x] AC6: Mini App — История рендерит только видимые блоки-дни (+overscan) в DOM; при скролле новые дни появляются без пустот.
+- [x] AC7: Mini App — `DayTotal` каждого дня = сумма по **всем** тратам дня (SPEC-033 не нарушен), независимо от того, какие дни сейчас в окне.
+- [x] AC8: Mini App — swipe-delete и tap-to-edit работают на виртуализированных строках; шапка «История» остаётся сверху.
+- [x] AC9: Worker/D1/миграции/контракты API без изменений (diff не трогает `cloud/worker`, `migrations`).
+- [x] AC10: `npm run build`/typecheck зелёные в `cloud/admin` и `cloud/miniapp`; существующие vitest (worker) не затронуты и зелёные.
 
 ## 10. Test plan
 
@@ -144,3 +144,4 @@ links:
 ## 13. Changelog spec'а
 
 - 2026-06-26: создан сразу в `in_progress` (scope зафиксирован двумя ответами владельца: windowing-only; Admin Расходы + Mini App История). Discovery — фоновый workflow из 4 Explore-агентов.
+- 2026-06-26: `done` — выкачено на прод (Pages: finances-admin + finances-miniapp; worker/D1 не тронуты). Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES (0 must-fix). Сошедшиеся nice-to-have применены fix-коммитом (`table-fixed` против прыжка ширин, colSpan→columns.length, border на th, scroll-to-top при сортировке, useMemo, чистка header). Локальный визуал-тест Playwright light/dark: Admin 19→35 DOM-строк из 400 (sticky 0px, KPI/sort по полному набору); Mini App 11→14 блоков-дней из 140 (DayTotal сходится). PR #20. Отложено (nice-to-have, в tech-debt roadmap): живой iOS-swipe тест на виртуализированных строках (структурно безопасно, R4); пре-существующая неконсистентность KPI↔поиск (NG2, не из этой фичи); разовый «подскок» скролла у дня с bulk-импортом (E3, осознанно).
