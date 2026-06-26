@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
     createColumnHelper,
     flexRender,
@@ -8,6 +8,7 @@ import {
     useReactTable,
     type SortingState,
 } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useExpenses, useReferences } from "@/api/queries";
 import { ErrorState } from "@/components/ErrorState";
@@ -152,6 +153,23 @@ export function ExpensesPage() {
     const currencies = refs?.currencies ?? [];
     const categories = refs?.categories ?? [];
 
+    // SPEC-034: windowing — в DOM только видимые строки + overscan-буфер.
+    // Фильтры/сортировка/KPI выше считаются по полному набору (см. filtered/totalEur), окно влияет только на рендер.
+    const tableRows = table.getRowModel().rows;
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const rowVirtualizer = useVirtualizer({
+        count: tableRows.length,
+        getScrollElement: () => scrollRef.current,
+        estimateSize: () => 44, // ~ высота строки (px-4 py-2.5); измеряется точно через measureElement
+        overscan: 12,
+    });
+    const virtualRows = rowVirtualizer.getVirtualItems();
+    const showRows = !isLoading && !isError && tableRows.length > 0;
+    const paddingTop = showRows && virtualRows.length ? virtualRows[0].start : 0;
+    const paddingBottom = showRows && virtualRows.length
+        ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+        : 0;
+
     return (
         <div className="space-y-6">
             <div>
@@ -203,9 +221,9 @@ export function ExpensesPage() {
             </div>
 
             <div className="card overflow-hidden">
-                <div className="overflow-x-auto">
+                <div ref={scrollRef} className="overflow-auto max-h-[calc(100vh-360px)] min-h-[320px]">
                     <table className="w-full text-sm">
-                        <thead className="bg-secondary/50 border-b">
+                        <thead className="border-b">
                             {table.getHeaderGroups().map(hg => (
                                 <tr key={hg.id}>
                                     {hg.headers.map(h => {
@@ -215,7 +233,7 @@ export function ExpensesPage() {
                                             <th key={h.id}
                                                 style={{ width: h.getSize() }}
                                                 className={cn(
-                                                    "px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap",
+                                                    "sticky top-0 z-10 bg-secondary px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap",
                                                     sortable && "cursor-pointer select-none hover:text-foreground",
                                                 )}
                                                 onClick={sortable ? h.column.getToggleSortingHandler() : undefined}
@@ -238,18 +256,30 @@ export function ExpensesPage() {
                             {isError && (
                                 <tr><td colSpan={6} className="px-4 py-8"><ErrorState onRetry={() => refetch()} label="Не удалось загрузить расходы" /></td></tr>
                             )}
-                            {!isLoading && !isError && table.getRowModel().rows.length === 0 && (
+                            {!isLoading && !isError && tableRows.length === 0 && (
                                 <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">Нет записей под текущие фильтры.</td></tr>
                             )}
-                            {table.getRowModel().rows.map(r => (
-                                <tr key={r.id} className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
-                                    {r.getVisibleCells().map(c => (
-                                        <td key={c.id} className="px-4 py-2.5 align-middle">
-                                            {flexRender(c.column.columnDef.cell, c.getContext())}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
+                            {showRows && paddingTop > 0 && (
+                                <tr aria-hidden><td colSpan={6} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
+                            )}
+                            {showRows && virtualRows.map(vr => {
+                                const r = tableRows[vr.index];
+                                return (
+                                    <tr key={r.id}
+                                        data-index={vr.index}
+                                        ref={rowVirtualizer.measureElement}
+                                        className="border-b last:border-b-0 hover:bg-secondary/30 transition-colors">
+                                        {r.getVisibleCells().map(c => (
+                                            <td key={c.id} className="px-4 py-2.5 align-middle">
+                                                {flexRender(c.column.columnDef.cell, c.getContext())}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                );
+                            })}
+                            {showRows && paddingBottom > 0 && (
+                                <tr aria-hidden><td colSpan={6} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>
+                            )}
                         </tbody>
                     </table>
                 </div>

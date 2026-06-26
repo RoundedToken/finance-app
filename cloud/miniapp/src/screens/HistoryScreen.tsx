@@ -1,4 +1,6 @@
 import { ArrowLeft } from "lucide-react";
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useBootstrap, useExpenses, useDeleteExpense } from "@/api/queries";
 import { useApp } from "@/store";
 import { useToast } from "@/components/Toast";
@@ -25,9 +27,20 @@ export function HistoryScreen() {
     }
     const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : -1));
 
+    // SPEC-034: day-level windowing — в DOM только видимые блоки-дни + overscan.
+    // DayTotal каждого дня считается из ПОЛНОГО набора трат дня (byDay), окно влияет только на рендер → SPEC-033 не нарушен.
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const virtualizer = useVirtualizer({
+        count: days.length,
+        getScrollElement: () => scrollRef.current,
+        estimateSize: () => 132, // заголовок дня + ~1–2 строки + отступ; уточняется measureElement
+        overscan: 4,
+    });
+    const virtualDays = virtualizer.getVirtualItems();
+
     return (
-        <div className="min-h-screen">
-            <header className="sticky top-0 bg-bg/90 backdrop-blur flex items-center gap-2 px-4 py-3 z-10">
+        <div className="h-full flex flex-col">
+            <header className="shrink-0 bg-bg/90 backdrop-blur flex items-center gap-2 px-4 py-3 z-10">
                 <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
                     className="h-9 w-9 grid place-items-center rounded-full active:bg-secondary-bg transition-colors">
                     <ArrowLeft className="h-5 w-5" />
@@ -35,23 +48,32 @@ export function HistoryScreen() {
                 <h1 className="text-lg font-semibold">История</h1>
             </header>
 
-            <div className="px-4 pb-10 space-y-4">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-10">
                 {isLoading && <p className="text-center text-hint py-10 animate-pulse">Загрузка…</p>}
                 {!isLoading && !days.length && <p className="text-center text-hint py-10">Пока нет трат</p>}
-                {days.map(day => {
-                    const rows = byDay.get(day)!;
-                    return (
-                        <div key={day}>
-                            <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
-                                <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
-                                <DayTotal rows={rows} base={s.baseCurrency} />
-                            </div>
-                            <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
-                                {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} accounts={accounts} />)}
-                            </div>
-                        </div>
-                    );
-                })}
+                {days.length > 0 && (
+                    <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+                        {virtualDays.map(vd => {
+                            const day = days[vd.index];
+                            const rows = byDay.get(day)!;
+                            return (
+                                <div key={day}
+                                    data-index={vd.index}
+                                    ref={virtualizer.measureElement}
+                                    style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vd.start}px)` }}
+                                    className="pb-4">
+                                    <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
+                                        <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
+                                        <DayTotal rows={rows} base={s.baseCurrency} />
+                                    </div>
+                                    <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
+                                        {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} accounts={accounts} />)}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         </div>
     );
