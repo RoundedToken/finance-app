@@ -218,6 +218,27 @@ def main() -> int:
             page.get_by_text("Кафе", exact=True).first.click(timeout=2000); page.wait_for_timeout(400); shot("11_edit_modal")
         except Exception as e: print(f"  ! edit: {e}")
 
+        # ── Статистика (SPEC-036) ──
+        page.goto(base, wait_until="networkidle"); page.wait_for_timeout(600)
+        try:
+            page.get_by_label("Меню").click(timeout=2000); page.wait_for_timeout(300)
+            page.get_by_text("Статистика", exact=True).first.click(timeout=2000); page.wait_for_timeout(500)
+            shot("12_stats_default")  # дефолт = текущий реальный месяц (в моке данных нет → empty-state)
+            # шаг назад на месяц с данными (мок: траты по 2026-05)
+            try: page.get_by_label("Предыдущий период").click(timeout=1500); page.wait_for_timeout(450)
+            except Exception: pass
+            shot("13_stats_month")
+            page.wait_for_timeout(200); page.screenshot(path=str(OUT_DIR / "13b_stats_month_full.png"), full_page=True); print("  ✓ 13b_stats_month_full")
+            try: page.get_by_role("tab", name="Год", exact=True).click(timeout=2000); page.wait_for_timeout(500); shot("14_stats_year")
+            except Exception as e: print(f"  ! stats year: {e}")
+            try: page.get_by_role("tab", name="Всё", exact=True).click(timeout=2000); page.wait_for_timeout(500); shot("15_stats_all")
+            except Exception as e: print(f"  ! stats all: {e}")
+            # drill-down: тап по категории в списке
+            try:
+                page.get_by_text("Еда", exact=True).first.click(timeout=2000); page.wait_for_timeout(500); shot("16_stats_drilldown"); esc()
+            except Exception as e: print(f"  ! stats drilldown: {e}")
+        except Exception as e: print(f"  ! stats: {e}")
+
         browser.close()
 
     server.shutdown()
