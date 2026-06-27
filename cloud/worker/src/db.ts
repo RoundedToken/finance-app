@@ -3,7 +3,7 @@
  * для всех expenses. Mini App пишет напрямую через CRUD endpoints.
  */
 import type { Env, ExpensePayload } from "./types";
-import { loadRatesIndex } from "./rates";
+import { loadRatesIndex, type RatesIndex } from "./rates";
 import { getEffectiveBalance } from "./snapshots";
 import { roundMoney, canonicalTs } from "./ledger";
 import { getBudgetsWithProgress } from "./budgets";
@@ -146,7 +146,7 @@ export async function deleteExpense(env: Env, id: string, userId: string): Promi
     return { deleted: (r.meta.changes ?? 0) > 0 };
 }
 
-export async function listExpenses(env: Env, options: { limit?: number; from?: string }): Promise<any[]> {
+export async function listExpenses(env: Env, options: { limit?: number; from?: string }, rates?: RatesIndex): Promise<any[]> {
     const limit = Math.min(options.limit ?? 10000, 20000);
     let sql = "SELECT id, date, account_id, amount, currency, category_id, note, source, created_at, updated_at " +
               "FROM expenses WHERE deleted_at IS NULL";
@@ -162,9 +162,10 @@ export async function listExpenses(env: Env, options: { limit?: number; from?: s
 
     // EUR-эквивалент date-aware (по курсу на дату траты — расход это поток,
     // ADR-014/SPEC-016). Покрывает Mini App day-total + Admin /expenses + bootstrap.
-    const rates = await loadRatesIndex(env);
+    // SPEC-038: rates можно передать (bootstrap грузит индекс 1× и шарит), иначе грузим.
+    const idx = rates ?? await loadRatesIndex(env);
     for (const row of rows) {
-        const eur = rates.toEurAt(row.amount, row.currency, row.date);
+        const eur = idx.toEurAt(row.amount, row.currency, row.date);
         row.amount_eur = eur == null ? null : Math.round(eur * 100) / 100;
     }
     return rows;
@@ -264,18 +265,22 @@ export async function replaceReferences(env: Env, payload: ReferencePayload): Pr
 export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean; withBudgets?: boolean } = {}) {
     const withExpenses = opts.withExpenses ?? true;
     const withBudgets = opts.withBudgets ?? true;   // refs (Admin) не нужны бюджеты-подсказки
+    // SPEC-038: RatesIndex = скан всей таблицы rates. Грузим ОДИН раз и шарим в
+    // listExpenses/getBudgetsWithProgress/getEnvelopesForBootstrap (раньше — 3× за bootstrap).
+    // refs (Admin: оба флага false) индекс не нужен — пропускаем загрузку.
+    const ratesIdx = withExpenses || withBudgets ? await loadRatesIndex(env) : undefined;
     const [accounts, categories, currencies, expenses, ratesMaxDate, budgets, envelopes] = await Promise.all([
         env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
         // Все категории (вкл. неактивные) — чтобы история сохраняла подпись после
         // деактивации (SPEC-017 AC4); выбор фильтрует is_active на клиенте.
         env.DB.prepare("SELECT * FROM categories ORDER BY sort_order, name").all(),
         env.DB.prepare("SELECT * FROM currencies").all(),
-        withExpenses ? listExpenses(env, { limit: 20000 }) : Promise.resolve([] as any[]),   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
+        withExpenses ? listExpenses(env, { limit: 20000 }, ratesIdx) : Promise.resolve([] as any[]),   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
         // SPEC-020: read-only бюджет-подсказка «осталось X» при вводе траты в Mini App.
-        withBudgets ? getBudgetsWithProgress(env) : Promise.resolve(null),
+        withBudgets ? getBudgetsWithProgress(env, {}, ratesIdx) : Promise.resolve(null),
         // SPEC-023: read-only lens годового конверта для lumpy-категорий.
-        withBudgets ? getEnvelopesForBootstrap(env) : Promise.resolve([] as any[]),
+        withBudgets ? getEnvelopesForBootstrap(env, ratesIdx) : Promise.resolve([] as any[]),
     ]);
     const date = ratesMaxDate?.d ?? null;
     let rates: Record<string, number> = {};

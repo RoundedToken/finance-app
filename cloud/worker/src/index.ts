@@ -279,7 +279,7 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
 async function handleListExpenses(request: Request, env: Env, url: URL): Promise<Response> {
     const auth = await authenticateMiniApp(request, env);
     if (!auth.ok) return auth.response;
-    const limit = parseInt(url.searchParams.get("limit") ?? "500", 10);
+    const limit = parseLimit(url.searchParams.get("limit"), 500);
     const from = url.searchParams.get("from") ?? undefined;
     const rows = await listExpenses(env, { limit, from });
     return json({ expenses: rows }, 200, request, env);
@@ -323,7 +323,7 @@ async function handleGetRates(request: Request, env: Env): Promise<Response> {
 async function handleWebExpenses(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const limit = parseInt(url.searchParams.get("limit") ?? "20000", 10);
+    const limit = parseLimit(url.searchParams.get("limit"), 20000);
     const from = url.searchParams.get("from") ?? undefined;
     const rows = await listExpenses(env, { limit, from });
     return json({ expenses: rows }, 200, request, env);
@@ -347,6 +347,16 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function resolveToday(url: URL): string {
     const t = url.searchParams.get("today");
     return t && ISO_DATE_RE.test(t) ? t : new Date().toISOString().slice(0, 10);
+}
+
+/** Безопасный парс ?limit (SPEC-038): NaN/≤0/пусто → def, клампим к max — иначе
+ *  `?limit=abc` уходит в SQL как `LIMIT NaN`, а огромный — как полная выгрузка. */
+export const MAX_LIST_LIMIT = 20000;
+export const MAX_BULK_RATES = 5000;   // SPEC-038: cap на /v1/admin/bulk-rates payload
+export function parseLimit(raw: string | null, def: number, max: number = MAX_LIST_LIMIT): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return def;
+    return Math.min(Math.floor(n), max);
 }
 
 async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<Response> {
@@ -415,7 +425,7 @@ async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<
 async function handleWebSnapshotsList(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const limit = parseInt(url.searchParams.get("limit") ?? "1000", 10);
+    const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const from = url.searchParams.get("from") ?? undefined;
     const accountId = url.searchParams.get("account_id") ?? undefined;
     const rows = await listSnapshots(env, { limit, from, accountId });
@@ -507,7 +517,7 @@ async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: s
 async function handleWebIncomesList(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const limit = parseInt(url.searchParams.get("limit") ?? "1000", 10);
+    const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const from = url.searchParams.get("from") ?? undefined;
     const to = url.searchParams.get("to") ?? undefined;
     const accountId = url.searchParams.get("account_id") ?? undefined;
@@ -633,7 +643,7 @@ async function handleWebContributionsDelete(request: Request, env: Env, id: stri
 async function handleWebTransactionsList(request: Request, env: Env, url: URL): Promise<Response> {
     const session = await requireAdminSession(request, env);
     if (!session.ok) return session.response;
-    const limit = parseInt(url.searchParams.get("limit") ?? "1000", 10);
+    const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const rows = await listTransactions(env, {
         limit,
         from: url.searchParams.get("from") ?? undefined,
@@ -837,16 +847,26 @@ async function handleBulkRates(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
     const body = (await request.json().catch(() => ({}))) as any;
     const items = Array.isArray(body.rates) ? body.rates : [];
-    if (!items.length) return json({ ok: true, inserted: 0 }, 200, request, env);
-    const stmts = items.map((r: any) =>
+    if (!items.length) return json({ ok: true, inserted: 0, attempted: 0, skipped: 0 }, 200, request, env);
+    // SPEC-038: cap размера payload (анти-DoS на системном эндпоинте; backfill батчит по 500).
+    if (items.length > MAX_BULK_RATES) {
+        return json({ error: `too many rates (max ${MAX_BULK_RATES})`, received: items.length }, 400, request, env);
+    }
+    // Пропускаем мусорные элементы (нет/неверный формат date, пустой quote, нерациональный rate) — остальные вставляем.
+    const valid = items.filter((r: any) =>
+        r && typeof r.date === "string" && ISO_DATE_RE.test(r.date) && typeof r.quote === "string" && r.quote !== ""
+        && Number.isFinite(Number(r.rate)) && Number(r.rate) > 0);
+    const skipped = items.length - valid.length;
+    if (!valid.length) return json({ ok: true, inserted: 0, attempted: 0, skipped }, 200, request, env);
+    const stmts = valid.map((r: any) =>
         env.DB.prepare(
             "INSERT OR REPLACE INTO rates (date, base, quote, rate, source, fetched_at) " +
             "VALUES (?, ?, ?, ?, ?, datetime('now'))",
-        ).bind(r.date, r.base ?? "EUR", r.quote, r.rate, r.source ?? "backfill"),
+        ).bind(r.date, r.base ?? "EUR", r.quote, Number(r.rate), r.source ?? "backfill"),
     );
     const results = await env.DB.batch(stmts);
     const changes = results.reduce((acc, r) => acc + (r.meta.changes ?? 0), 0);
-    return json({ ok: true, inserted: changes, attempted: stmts.length }, 200, request, env);
+    return json({ ok: true, inserted: changes, attempted: stmts.length, skipped }, 200, request, env);
 }
 
 async function handleMigrate(request: Request, env: Env): Promise<Response> {
