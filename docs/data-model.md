@@ -1,6 +1,6 @@
 # Модель данных
 
-> Актуально на Стадию 2 (после ADR-011/012/014). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0013`.
+> Актуально на post-MVP (после ADR-011/012/014…021). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0017`.
 >
 > `local/finances.db` и `local/migrations/` — наследие до-D1-эпохи (см. `local/legacy/`), **не источник правды**.
 
@@ -123,7 +123,7 @@ free        = net_worth − targeted − invested    # без клампа: мо
 
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0016`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса).
+D1: `cloud/worker/migrations/0001…0017`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса); `0017` = fix `created_at` импортированных снапшотов против двойного учёта (SPEC-031).
 
 | Миграция | Что |
 |---|---|
@@ -142,3 +142,4 @@ D1: `cloud/worker/migrations/0001…0016`, применять через `wrangl
 | 0014 | `accounts.is_investment` + `investment_settings` + валюта ETH (SPEC-026) |
 | 0015 | `investment_settings.staked_qty` + `app_config` (SPEC-027) |
 | 0016 | `rate_ticks` — внутридневные тики курса (SPEC-028) |
+| 0017 | fix `created_at` импортированных снапшотов — устранение двойного учёта (SPEC-031) |

@@ -3,7 +3,7 @@
 ## Цель
 Personal finance system для одного пользователя, без VPS/подписок, под полным контролем разработчика-владельца. **D1 (Cloudflare SQLite) — единственный источник правды**, MacBook — только daily backup. Два клиентских канала:
 
-- **Mini App в Telegram** — ввод расходов с iPhone (закрытый scope: только ввод; аналитика расходов — в Web Admin, см. CLAUDE.md правило 11).
+- **Mini App в Telegram** — ввод расходов с iPhone + read-only аналитика расходов (экран «📊 Статистика», ADR-021/SPEC-036); глубокая аналитика — в Web Admin, см. CLAUDE.md правило 11.
 - **Web Admin (React SPA)** — снапшоты, доходы, обмены, дашборды, портфель (растущий scope).
 
 См. ADR-011 (D1-centric pivot) и ADR-012 (Web Admin как второй канал).
@@ -41,9 +41,10 @@ Personal finance system для одного пользователя, без VPS
         │  │  - /tg                webhook Telegram    │  │
         │  │  - /v1/auth/google/*  OAuth flow          │  │
         │  │  - /v1/expenses/...   Mini App CRUD       │  │
-        │  │  - /v1/admin/...      Web Admin CRUD      │  │
+        │  │  - /v1/web/*          Web Admin CRUD (JWT)│  │
+        │  │  - /v1/admin/*        sys-миграции (SYNC) │  │
         │  │  - /v1/rates/...      курсы               │  │
-        │  │  - cron               daily rates pull    │  │
+        │  │  - cron               4×/сутки rates pull │  │
         │  └──────────────────┬────────────────────────┘  │
         │  ┌──────────────────▼────────────────────────┐  │
         │  │ D1 — ИСТОЧНИК ПРАВДЫ                      │  │
@@ -97,10 +98,11 @@ Personal finance system для одного пользователя, без VPS
 4. Если 401 — SPA чистит token и показывает /login.
 
 ### Поток 4: курсы валют (cron)
-1. Cloudflare Cron Trigger срабатывает раз в сутки.
-2. Worker делает `fetch(GOOGLE_RATES_LATEST_CSV)`, парсит CSV (см. ADR-006).
-3. `INSERT OR REPLACE INTO rates (date, base, quote, rate)` для каждой валюты.
-4. Mini App и Web Admin читают актуальные курсы из D1 при bootstrap.
+1. Cloudflare Cron Trigger срабатывает **4×/сутки** (`0 */6 * * *`).
+2. **Фиат** (EUR/USD/RUB/RSD/USDT/TRY): Worker делает `fetch(GOOGLE_RATES_LATEST_CSV)`, парсит CSV (см. ADR-006).
+3. **Крипто** (ETH/EUR): цепочка провайдеров Binance→Coinbase→CoinGecko (fallback при гео-блоке CF-IP, ADR-019/SPEC-028).
+4. `INSERT OR REPLACE INTO rates (date, base, quote, rate)` для каждой валюты; крипто пишет ещё и внутридневной тик в `rate_ticks`.
+5. Mini App и Web Admin читают актуальные курсы из D1 при bootstrap.
 
 ### Поток 5: backup MacBook (раз в день)
 1. launchd-агент запускает `local/scripts/backup_d1.py`.
@@ -154,8 +156,9 @@ Personal finance system для одного пользователя, без VPS
 
 ## Эволюция
 
-См. `docs/roadmap.md` для актуального состояния. Кратко:
+См. `docs/roadmap.md` и `docs/post-mvp-roadmap.md` для актуального состояния. Кратко (всё ниже — на проде):
 - **Stage 0-2**: инфра + Mini App MVP (закрыто).
 - **Stage 3**: курсы валют + аналитика в Mini App (закрыто).
-- **Stage 4**: **Web Admin Bootstrap** — Google OAuth + read-only expenses (в работе).
-- **Stage 5+**: снапшоты, доходы, обмены, дашборды, инвестиции — всё в Web Admin.
+- **Stage 4**: **Web Admin Bootstrap** — Google OAuth + read-only expenses (закрыто).
+- **Stage 5-8**: снапшоты, доходы, обмены, цели, дашборды — всё в Web Admin (закрыто).
+- **MVP финализирован 2026-05-29**, дальше post-MVP (на проде): бюджеты (SPEC-020/023), инвестиции/крипто-портфель (Stage 9 — SPEC-026…030), виртуализация списков (SPEC-034), статистика Mini App (SPEC-036). Открыто: AI Coach (Stage 10), мобильный ввод дохода/снапшота, график прогресса цели.
