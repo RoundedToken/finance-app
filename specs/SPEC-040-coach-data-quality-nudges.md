@@ -1,7 +1,7 @@
 ---
 id: SPEC-040
 title: Coach — детерминированные нуджи по качеству данных в Telegram (AI-трек, шаг 1)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-27
 updated: 2026-06-27
