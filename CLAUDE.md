@@ -4,14 +4,14 @@
 
 ## TL;DR для агента (актуальная архитектура — см. ADR-011, ADR-012)
 - **D1 (Cloudflare SQLite)** — **единственный источник правды**. Не локальный SQLite.
-- **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` (Mini App), `/v1/admin/*` (Web Admin), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates/*`.
-- **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone. **Закрытый scope: только ввод, дальше не растёт** (аналитика расходов — в Web Admin). Auth: Telegram `initData` HMAC.
+- **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` (Mini App), `/v1/web/*` (Web Admin CRUD, JWT), `/v1/admin/*` (системные миграции, SYNC_TOKEN), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates/*`.
+- **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone + read-only аналитика расходов (экран «📊 Статистика», SPEC-036/ADR-021). Глубокая аналитика (доходы/снапшоты/портфель/net worth) — в Web Admin. Auth: Telegram `initData` HMAC.
 - **Web Admin** (`cloud/admin/`) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля, инвестиций (крипто-портфель ETH/стейкинг, SPEC-026) **и аналитики расходов**. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`. Свободные деньги: `free = net − targeted − invested` (инвест-ведро `accounts.is_investment=1` входит в net, исключается из free).
 - **MacBook** — только daily backup D1 через `wrangler d1 export`. Может быть выключен неделями.
 - Всё на Cloudflare Pages + Workers + D1 — **бесплатно**, без VPS.
 
 ## Текущий этап
-Единственный источник истины о стадии — `docs/roadmap.md` (не дублируем номер здесь, чтобы не дрейфил). Кратко: базовые потоки закрыты, идёт **Стадия 2 — глубокий рефакторинг перед закрытием MVP** (план: `docs/review-mvp-stage1.md`). Mini App — «полировка по запросу».
+Единственный источник истины о стадии — `docs/roadmap.md` (не дублируем номер здесь, чтобы не дрейфил). Кратко: **MVP финализирован (2026-05-29), идёт post-MVP** (live-статус — `docs/post-mvp-roadmap.md`). Mini App — «полировка по запросу».
 
 ## Структура репозитория
 
@@ -21,7 +21,7 @@ excel/                            # имя корня — historical; см. ADR-
 ├── docs/                         ← вся архитектурная документация
 │   ├── architecture.md           — общая архитектура и диаграммы
 │   ├── data-model.md             — SQLite-схемы (D1)
-│   ├── decisions.md              — ADR-001…012
+│   ├── decisions.md              — ADR-001…021
 │   ├── setup.md                  — как поднять проект с нуля
 │   ├── stack.md                  — технологический стек
 │   └── roadmap.md                — план этапов и текущий статус
@@ -48,8 +48,9 @@ excel/                            # имя корня — historical; см. ADR-
 │   │   ├── src/                  — index.ts, bot.ts, auth.ts, auth-google.ts, jwt.ts, db.ts, rates.ts, types.ts
 │   │   ├── schema.sql, migrations/
 │   │   └── wrangler.toml, package.json
-│   ├── miniapp/                  — Telegram Mini App (HTML/CSS/JS, vanilla)
-│   │   └── public/
+│   ├── miniapp/                  — Telegram Mini App (React + Vite + TS, SPEC-014)
+│   │   ├── src/                  — App.tsx, screens/ (Main/History/Stats/Edit/Note), components/, api/, lib/
+│   │   └── index.html, vite.config.ts, tailwind.config.ts, postcss.config.js
 │   └── admin/                    — Web Admin (React + Vite + TanStack + shadcn/ui)
 │       ├── src/                  — main.tsx, App.tsx, routes/, components/, api/
 │       ├── index.html, vite.config.ts, tsconfig.json
