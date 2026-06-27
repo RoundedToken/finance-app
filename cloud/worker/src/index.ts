@@ -50,7 +50,7 @@ import {
     createIncomeCategory,
     updateIncomeCategory,
 } from "./categories";
-import { handleGoogleStart, handleGoogleCallback, handleAdminMe, requireAdminSession } from "./auth-google";
+import { handleGoogleStart, handleGoogleCallback, requireAdminSession } from "./auth-google";
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
     listSnapshots,
@@ -167,8 +167,16 @@ export default {
             if (path === "/v1/auth/google/start" && request.method === "GET") return handleGoogleStart(request, env);
             if (path === "/v1/auth/google/callback" && request.method === "GET") return handleGoogleCallback(request, env);
 
-            // ── Web Admin API (Bearer JWT) ───────────────────────────────────
-            if (path === "/v1/web/me" && request.method === "GET") return handleAdminMe(request, env);
+            // ── Web Admin API (Bearer JWT) — единый guard на префиксе (SPEC-039) ──
+            // ВСЕ /v1/web/* требуют admin-сессию; проверка здесь ОДИН раз → новый
+            // хендлер структурно не может «забыть» авторизацию (инвариант). Сами
+            // хендлеры чистые (без своего requireAdminSession). /v1/web/me берёт
+            // уже проверенную сессию (единственный потребитель session.email).
+            if (path.startsWith("/v1/web/")) {
+                const session = await requireAdminSession(request, env);
+                if (!session.ok) return session.response;
+                if (path === "/v1/web/me" && request.method === "GET") return json({ ok: true, email: session.email }, 200, request, env);
+            }
             if (path === "/v1/web/expenses" && request.method === "GET") return handleWebExpenses(request, env, url);
             if (path === "/v1/web/references" && request.method === "GET") return handleWebReferences(request, env);
             if (path === "/v1/web/accounts" && request.method === "GET") return handleWebAccounts(request, env, url);
@@ -321,8 +329,6 @@ async function handleGetRates(request: Request, env: Env): Promise<Response> {
 
 // ── Web Admin handlers ─────────────────────────────────────────────────────
 async function handleWebExpenses(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const limit = parseLimit(url.searchParams.get("limit"), 20000);
     const from = url.searchParams.get("from") ?? undefined;
     const rows = await listExpenses(env, { limit, from });
@@ -330,8 +336,6 @@ async function handleWebExpenses(request: Request, env: Env, url: URL): Promise<
 }
 
 async function handleWebReferences(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const bootstrap = await getBootstrapData(env, { withExpenses: false, withBudgets: false });   // refs не используют ни траты (Фаза 1.8), ни бюджеты (SPEC-020)
     return json({
         accounts: bootstrap.accounts,
@@ -360,8 +364,6 @@ export function parseLimit(raw: string | null, def: number, max: number = MAX_LI
 }
 
 async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     // SPEC-011: balance computed on-demand. Manual snapshot — отдельное поле.
     // SPEC-016: EUR-эквивалент (запас → курс НА СЕГОДНЯ, mark-to-market) считаем
     // на worker через canonical RatesIndex per-quote — клиент не конвертирует.
@@ -423,8 +425,6 @@ async function handleWebAccounts(request: Request, env: Env, url: URL): Promise<
 }
 
 async function handleWebSnapshotsList(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const from = url.searchParams.get("from") ?? undefined;
     const accountId = url.searchParams.get("account_id") ?? undefined;
@@ -433,8 +433,6 @@ async function handleWebSnapshotsList(request: Request, env: Env, url: URL): Pro
 }
 
 async function handleWebSnapshotsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, snapshotCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createSnapshot(env, parsed.data);
@@ -443,8 +441,6 @@ async function handleWebSnapshotsCreate(request: Request, env: Env): Promise<Res
 }
 
 async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, snapshotUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateSnapshot(env, id, parsed.data);
@@ -452,23 +448,17 @@ async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string):
 }
 
 async function handleWebSnapshotsDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteSnapshot(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 // ── Web Admin · category management (SPEC-017) ────────────────────────────
 async function handleWebCategoriesList(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const includeInactive = url.searchParams.get("include_inactive") === "1";
     return json({ categories: await listExpenseCategories(env, includeInactive) }, 200, request, env);
 }
 
 async function handleWebCategoriesCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, categoryCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createExpenseCategory(env, parsed.data);
@@ -477,8 +467,6 @@ async function handleWebCategoriesCreate(request: Request, env: Env): Promise<Re
 }
 
 async function handleWebCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, categoryUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateExpenseCategory(env, id, parsed.data);
@@ -488,15 +476,11 @@ async function handleWebCategoriesUpdate(request: Request, env: Env, id: string)
 
 // ── Web Admin · incomes ───────────────────────────────────────────────────
 async function handleWebIncomeCategories(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const includeInactive = url.searchParams.get("include_inactive") === "1";
     return json({ categories: await listIncomeCategories(env, includeInactive) }, 200, request, env);
 }
 
 async function handleWebIncomeCategoriesCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, categoryCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createIncomeCategory(env, parsed.data);
@@ -505,8 +489,6 @@ async function handleWebIncomeCategoriesCreate(request: Request, env: Env): Prom
 }
 
 async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, categoryUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateIncomeCategory(env, id, parsed.data);
@@ -515,8 +497,6 @@ async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: s
 }
 
 async function handleWebIncomesList(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const from = url.searchParams.get("from") ?? undefined;
     const to = url.searchParams.get("to") ?? undefined;
@@ -528,8 +508,6 @@ async function handleWebIncomesList(request: Request, env: Env, url: URL): Promi
 }
 
 async function handleWebIncomesCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, incomeCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createIncome(env, parsed.data);
@@ -538,8 +516,6 @@ async function handleWebIncomesCreate(request: Request, env: Env): Promise<Respo
 }
 
 async function handleWebIncomesUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, incomeUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateIncome(env, id, parsed.data);
@@ -548,16 +524,12 @@ async function handleWebIncomesUpdate(request: Request, env: Env, id: string): P
 }
 
 async function handleWebIncomesDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteIncome(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 // ── Web Admin · goals ─────────────────────────────────────────────────────
 async function handleWebGoalsList(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const statusRaw = url.searchParams.get("status") ?? "active";
     const ALLOWED = ["active", "achieved", "archived", "all"] as const;
     if (!ALLOWED.includes(statusRaw as any)) {
@@ -568,16 +540,12 @@ async function handleWebGoalsList(request: Request, env: Env, url: URL): Promise
 }
 
 async function handleWebGoalsDetail(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const data = await getGoalDetail(env, id);
     if (!data.goal) return json({ error: "not found" }, 404, request, env);
     return json(data, 200, request, env);
 }
 
 async function handleWebGoalsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, goalCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createGoal(env, parsed.data);
@@ -586,8 +554,6 @@ async function handleWebGoalsCreate(request: Request, env: Env): Promise<Respons
 }
 
 async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, goalUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateGoal(env, id, parsed.data);
@@ -596,8 +562,6 @@ async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Pro
 }
 
 async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, goalStatusSchema);
     if (!parsed.ok) return parsed.response;
     const r = await setGoalStatus(env, id, parsed.data.status);
@@ -606,15 +570,11 @@ async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): 
 }
 
 async function handleWebGoalsDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteGoal(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 async function handleWebContributionsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, contributionCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createContribution(env, parsed.data);
@@ -623,8 +583,6 @@ async function handleWebContributionsCreate(request: Request, env: Env): Promise
 }
 
 async function handleWebContributionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, contributionUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateContribution(env, id, parsed.data);
@@ -633,16 +591,12 @@ async function handleWebContributionsUpdate(request: Request, env: Env, id: stri
 }
 
 async function handleWebContributionsDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteContribution(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 // ── Web Admin · transactions ──────────────────────────────────────────────
 async function handleWebTransactionsList(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const limit = parseLimit(url.searchParams.get("limit"), 1000);
     const rows = await listTransactions(env, {
         limit,
@@ -655,8 +609,6 @@ async function handleWebTransactionsList(request: Request, env: Env, url: URL): 
 }
 
 async function handleWebTransactionsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, transactionCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createTransaction(env, parsed.data);
@@ -665,8 +617,6 @@ async function handleWebTransactionsCreate(request: Request, env: Env): Promise<
 }
 
 async function handleWebTransactionsUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, transactionUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateTransaction(env, id, parsed.data);
@@ -675,16 +625,12 @@ async function handleWebTransactionsUpdate(request: Request, env: Env, id: strin
 }
 
 async function handleWebTransactionsDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteTransaction(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 // ── Web Admin · dashboard (SPEC-013) ──────────────────────────────────────
 async function handleWebDashboard(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     try {
         const data = await getDashboard(env, {
             from: url.searchParams.get("from") ?? undefined,
@@ -701,8 +647,6 @@ async function handleWebDashboard(request: Request, env: Env, url: URL): Promise
 
 // ── Web Admin · investments (SPEC-026) ────────────────────────────────────
 async function handleWebInvestments(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     try {
         // SPEC-029: окно value_series — from/to (как /dashboard); getInvestments валидирует ISO.
         const from = url.searchParams.get("from") ?? undefined;
@@ -716,8 +660,6 @@ async function handleWebInvestments(request: Request, env: Env, url: URL): Promi
 }
 
 async function handleWebInvestmentSettings(request: Request, env: Env, accountId: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, investmentSettingsSchema);
     if (!parsed.ok) return parsed.response;
     const r = await upsertInvestmentSettings(env, accountId, parsed.data);
@@ -727,14 +669,10 @@ async function handleWebInvestmentSettings(request: Request, env: Env, accountId
 
 // ── Web Admin · budgets (SPEC-020) ────────────────────────────────────────
 async function handleWebBudgetsList(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     return json(await getBudgetsWithProgress(env), 200, request, env);
 }
 
 async function handleWebBudgetsCreate(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, budgetCreateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await createBudget(env, parsed.data);
@@ -743,8 +681,6 @@ async function handleWebBudgetsCreate(request: Request, env: Env): Promise<Respo
 }
 
 async function handleWebBudgetsUpdate(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, budgetUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateBudget(env, id, parsed.data);
@@ -753,30 +689,22 @@ async function handleWebBudgetsUpdate(request: Request, env: Env, id: string): P
 }
 
 async function handleWebBudgetsDelete(request: Request, env: Env, id: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const r = await deleteBudget(env, id);
     return json({ ok: true, ...r }, 200, request, env);
 }
 
 // ── Web Admin · adaptive budgets RBAR (SPEC-023) ───────────────────────────
 async function handleWebBudgetRecommendations(request: Request, env: Env, url: URL): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const period = url.searchParams.get("period") ?? undefined;
     const valid = period === undefined || /^\d{4}-\d{2}$/.test(period);
     return json(await getRecommendations(env, { period: valid ? period : undefined }), 200, request, env);
 }
 
 async function handleWebBudgetArchetypes(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     return json(await getArchetypes(env), 200, request, env);
 }
 
 async function handleWebBudgetSettingsUpdate(request: Request, env: Env, categoryId: string): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, budgetSettingsSchema);
     if (!parsed.ok) return parsed.response;
     const r = await upsertBudgetSettings(env, categoryId, parsed.data);
@@ -785,8 +713,6 @@ async function handleWebBudgetSettingsUpdate(request: Request, env: Env, categor
 }
 
 async function handleWebBudgetDecision(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
     const parsed = await readBody(request, env, budgetDecisionSchema);
     if (!parsed.ok) return parsed.response;
     const r = await logRecommendationDecision(env, parsed.data);
