@@ -1,7 +1,7 @@
 ---
 id: SPEC-036
 title: Mini App — экран «📊 Статистика» (воскрешение аналитики на телефоне)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-27
 updated: 2026-06-27
@@ -252,3 +252,4 @@ drill-down (модал):
 - 2026-06-27: Phase 2 — реализованы `lib/stats.ts` (чистая математика) + `screens/StatsScreen.tsx` (KPI/donut/список/тренд/drill-down), роут в `App.tsx`, пункт меню в `Modals.tsx`, keyframes в `index.css`; stats-сценарии 12-16 в `test_miniapp_react.py`. Build (tsc+vite) зелёный.
 - 2026-06-27: Phase 3 — Playwright light+dark, 0 console-ошибок, все AC визуально подтверждены. Ревью: solution-architect = APPROVED_WITH_NICES (0 must-fix), senior-qa = PASS_WITH_NICES (1 must-fix). Закрыты: must-fix DST off-by-one в `daysInclusive` (парсинг в UTC) + ценные nice-to-have — подавление Δ при `total==0 & count>0`, единый целочисленный формат EUR (KPI = центр donut = список = тренд через `fmtEur0`), dedup `pad2` в `utils`. Отложено как tech-debt (не блокеры): извлечение общего `usePeriodNav` (2 копии History↔Stats), перф year/all-бакетинга (NG3), клавиатурная a11y сегментов donut (список даёт доступные кнопки), цвет CHART_OTHER≠CHART_TAIL для хвоста.
 - Сознательно: KPI-итог округляется до целого евро (паритет с центром donut), История показывает копейки — значение Σ amount_eur тождественно (R1).
+- 2026-06-27: Phase 4 — merge в `main` (#23, CI зелёный: miniapp/admin/worker tsc + worker test), деплой `finances-miniapp` Pages из merged main, проверено на проде (бандл `index-DUapkM3G.js` содержит экран). `status: done`.
