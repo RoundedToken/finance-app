@@ -269,3 +269,10 @@ CREATE TABLE IF NOT EXISTS app_config (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- SPEC-040: coach cooldown (нуджи по качеству данных).
+CREATE TABLE IF NOT EXISTS coach_state (
+    signal_key  TEXT PRIMARY KEY,
+    last_fired  TEXT NOT NULL,
+    last_detail TEXT
+);

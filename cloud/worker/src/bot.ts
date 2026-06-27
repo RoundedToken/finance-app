@@ -113,7 +113,8 @@ function parseExpense(text: string): { amount: number; currency: string; categor
     };
 }
 
-async function sendMessage(env: Env, chatId: number, text: string): Promise<void> {
+/** Возвращает true при успешной доставке (для coach: при false не помечаем cooldown, SPEC-040 E6). */
+export async function sendMessage(env: Env, chatId: number, text: string): Promise<boolean> {
     const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
     const body = {
         chat_id: chatId,
@@ -128,7 +129,9 @@ async function sendMessage(env: Env, chatId: number, text: string): Promise<void
     });
     if (!r.ok) {
         console.error("sendMessage failed", await r.text());
+        return false;
     }
+    return true;
 }
 
 function escapeHtml(s: string): string {
