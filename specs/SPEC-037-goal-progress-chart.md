@@ -1,7 +1,7 @@
 ---
 id: SPEC-037
 title: Web Admin — график прогресса цели на /goals/:id (накопление + target + ETA)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-27
 updated: 2026-06-27
