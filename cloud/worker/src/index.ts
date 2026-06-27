@@ -86,6 +86,10 @@ import {
     deleteTransaction,
 } from "./transactions";
 import { getDashboard } from "./dashboard";
+import { runDailyNudge } from "./coach";
+
+/** SPEC-040: cron coach-нуджа. Якорь к wrangler.toml `crons` — менять синхронно. */
+const COACH_CRON = "0 7 * * *";
 import {
     getBudgetsWithProgress,
     createBudget,
@@ -109,8 +113,19 @@ import {
 import type { z } from "zod";
 
 export default {
-    /** Cron Trigger — ежедневно тянет курсы (фиат из Google Sheets + крипта из Binance). */
-    async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    // Cron Trigger — курсы (cron `0 */6 * * *`) + coach-нудж (COACH_CRON, SPEC-040). Ветвимся по event.cron.
+    async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+        // SPEC-040: утренний coach-нудж — отдельный cron, изолирован от rates.
+        if (event.cron === COACH_CRON) {
+            try {
+                const today = new Date(event.scheduledTime).toISOString().slice(0, 10);
+                const r = await runDailyNudge(env, today);
+                console.log(`coach nudge: sent=${r.sent} signals=${r.signals}`);
+            } catch (e) {
+                console.error("coach nudge failed:", e);
+            }
+            return;
+        }
         try {
             const payload = await fetchLatestRatesEUR(env);
             const n = await saveRates(env, payload);
