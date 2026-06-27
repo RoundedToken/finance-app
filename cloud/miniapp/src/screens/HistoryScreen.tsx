@@ -7,12 +7,11 @@ import { useToast } from "@/components/Toast";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Amount } from "@/components/Amount";
 import { DayTotal } from "@/components/DayTotal";
-import { cn, humanDay, todayISO, MONTHS_NOM, plural } from "@/lib/utils";
+import { cn, humanDay, todayISO, MONTHS_NOM, plural, pad2 } from "@/lib/utils";
 import { haptic, confirmDialog } from "@/lib/telegram";
 import type { Expense, Category, Account } from "@/api/types";
 
 type Mode = "month" | "year" | "all";
-const pad2 = (n: number) => String(n).padStart(2, "0");
 const MODES: { key: Mode; label: string }[] = [
     { key: "month", label: "Месяц" },
     { key: "year", label: "Год" },
