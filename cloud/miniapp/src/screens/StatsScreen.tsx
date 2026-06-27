@@ -122,7 +122,9 @@ export function StatsScreen() {
                 </div>
 
                 {/* Степпер периода + итог */}
-                <div className="flex items-center justify-between gap-2 min-h-[2rem]">
+                {/* Степпер периода. В отличие от Истории, тут нет итога справа (он в KPI),
+                    поэтому центрируем степпер, иначе justify-between прижимает его влево. */}
+                <div className="flex items-center justify-center gap-2 min-h-[2rem]">
                     {mode !== "all" ? (
                         <div className="flex items-center gap-0.5">
                             <button aria-label="Предыдущий период" disabled={prevDisabled} onClick={() => step(-1)}
@@ -136,7 +138,7 @@ export function StatsScreen() {
                             </button>
                         </div>
                     ) : (
-                        <span className="text-sm font-semibold pl-1">Всё время</span>
+                        <span className="text-sm font-semibold">Всё время</span>
                     )}
                 </div>
             </div>
