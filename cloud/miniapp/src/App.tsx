@@ -4,6 +4,7 @@ import { AppProvider, useApp } from "@/store";
 import { ToastProvider } from "@/components/Toast";
 import { MainScreen } from "@/screens/MainScreen";
 import { HistoryScreen } from "@/screens/HistoryScreen";
+import { StatsScreen } from "@/screens/StatsScreen";
 import { EditScreen } from "@/screens/EditScreen";
 import { NoteScreen } from "@/screens/NoteScreen";
 import { Modals } from "@/components/Modals";
@@ -31,6 +32,7 @@ function Shell() {
         <>
             {s.screen === "main" && <MainScreen />}
             {s.screen === "history" && <HistoryScreen />}
+            {s.screen === "stats" && <StatsScreen />}
             {s.screen === "edit" && <EditScreen />}
             {s.screen === "note" && <NoteScreen />}
             <Modals />

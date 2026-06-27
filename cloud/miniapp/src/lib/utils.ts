@@ -15,6 +15,14 @@ export function fmt(amount: number, currency = "EUR"): string {
     return amount.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+/** `01`, `09`, `12` — двузначный паддинг (даты/время). Единая точка (SPEC-036 review). */
+export const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Целое EUR с ru-RU разделителями для агрегатов статистики (без копеек): 1234.56 → «1 235». */
+export function fmtEur0(amount: number): string {
+    return Math.round(amount).toLocaleString("ru-RU");
+}
+
 /** 'YYYY-MM-DD' в ЛОКАЛЬНОЙ зоне устройства (не UTC) — дата траты должна быть днём
  *  пользователя, иначе ночная трата уезжает на соседний календарный день (SPEC-024). */
 function isoLocal(d: Date): string {

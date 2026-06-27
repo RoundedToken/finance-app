@@ -101,9 +101,9 @@ function MenuModal({ open }: { open: boolean }) {
                     className="w-full flex items-center gap-3 py-3 px-3 rounded-xl bg-secondary-bg text-sm active:animate-pop">
                     <HistoryIcon className="h-4 w-4" /> История
                 </button>
-                <button disabled
-                    className="w-full flex items-center gap-3 py-3 px-3 rounded-xl bg-secondary-bg/50 text-sm text-hint/60 cursor-not-allowed">
-                    <BarChart3 className="h-4 w-4" /> Статистика <span className="ml-auto text-xs">скоро</span>
+                <button onClick={() => { haptic("light"); d({ t: "screen", v: "stats" }); }}
+                    className="w-full flex items-center gap-3 py-3 px-3 rounded-xl bg-secondary-bg text-sm active:animate-pop">
+                    <BarChart3 className="h-4 w-4" /> Статистика
                 </button>
             </div>
         </Modal>
