@@ -1,7 +1,7 @@
 ---
 id: SPEC-038
 title: Worker hardening — parseLimit + cap, budget limit cap, bootstrap rates-dedup
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-27
 updated: 2026-06-27
