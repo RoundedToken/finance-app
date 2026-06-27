@@ -107,11 +107,8 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
     return new Response(null, { status: 302, headers });
 }
 
-export async function handleAdminMe(request: Request, env: Env): Promise<Response> {
-    const session = await requireAdminSession(request, env);
-    if (!session.ok) return session.response;
-    return jsonResponse({ ok: true, email: session.email }, 200, request, env);
-}
+// SPEC-039: handleAdminMe удалён — /v1/web/me заинлайнен в единый префикс-guard
+// роутера (index.ts), который и так держит проверенную сессию (session.email).
 
 /** Middleware-style helper. Возвращает либо успех с email, либо готовый 401-Response. */
 export async function requireAdminSession(
