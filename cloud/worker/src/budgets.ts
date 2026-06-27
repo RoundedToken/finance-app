@@ -168,7 +168,7 @@ export function computeBudgetProgress(
  * Грузит активные бюджеты (категорийные — только для активных расходных
  * категорий, AC7) + траты текущего месяца + индекс курсов, считает прогресс.
  */
-export async function getBudgetsWithProgress(env: Env, opts: { month?: string } = {}): Promise<BudgetsResult> {
+export async function getBudgetsWithProgress(env: Env, opts: { month?: string } = {}, ratesArg?: RatesIndex): Promise<BudgetsResult> {
     const month = opts.month ?? todayUtc().slice(0, 7);
     const from = month + "-01";
     const to = endOfMonth(month);
@@ -186,7 +186,7 @@ export async function getBudgetsWithProgress(env: Env, opts: { month?: string } 
             `SELECT date, amount, currency, category_id FROM expenses
               WHERE deleted_at IS NULL AND date >= ? AND date <= ?`,
         ).bind(from, to).all<ExpenseLite>(),
-        loadRatesIndex(env),
+        ratesArg ? Promise.resolve(ratesArg) : loadRatesIndex(env),   // SPEC-038: bootstrap шарит индекс
     ]);
 
     return computeBudgetProgress(budgetsR.results, expR.results, rates, month);
