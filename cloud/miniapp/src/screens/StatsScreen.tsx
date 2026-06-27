@@ -257,9 +257,11 @@ function Donut({ agg, palette, onTapCat }: {
                         <title>{s.isOther ? "Прочее" : ""}</title>
                     </circle>
                 ))}
-                <text x="50" y="49" textAnchor="middle" fontSize={fs} fontWeight="700"
+                {/* dominantBaseline="central" → y задаёт ВЕРТИКАЛЬНЫЙ ЦЕНТР текста (а не базовую
+                    линию), иначе число «висит» выше середины кольца при любом fontSize. */}
+                <text x="50" y="48" textAnchor="middle" dominantBaseline="central" fontSize={fs} fontWeight="700"
                     fill="hsl(var(--foreground))" className="tabular-nums" style={{ pointerEvents: "none" }}>{totalStr}</text>
-                <text x="50" y="61" textAnchor="middle" fontSize="7" fill="hsl(var(--muted-foreground))" style={{ pointerEvents: "none" }}>EUR</text>
+                <text x="50" y="64" textAnchor="middle" dominantBaseline="central" fontSize="7" fill="hsl(var(--muted-foreground))" style={{ pointerEvents: "none" }}>EUR</text>
             </svg>
         </div>
     );

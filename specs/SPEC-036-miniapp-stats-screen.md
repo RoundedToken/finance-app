@@ -254,3 +254,4 @@ drill-down (модал):
 - Сознательно: KPI-итог округляется до целого евро (паритет с центром donut), История показывает копейки — значение Σ amount_eur тождественно (R1).
 - 2026-06-27: Phase 4 — merge в `main` (#23, CI зелёный: miniapp/admin/worker tsc + worker test), деплой `finances-miniapp` Pages из merged main, проверено на проде (бандл `index-DUapkM3G.js` содержит экран). `status: done`.
 - 2026-06-27: hotfix вёрстки — степпер периода был прижат влево (`justify-between` с одним ребёнком, т.к. итог перенесён в KPI). Заменил на `justify-center`.
+- 2026-06-27: hotfix вёрстки — число в центре donut «висело» выше середины (SVG `<text> y` = базовая линия, не центр). Добавил `dominant-baseline="central"` → `y` задаёт вертикальный центр при любом fontSize.
