@@ -112,7 +112,7 @@ GOALS = [
     {"id": "g1", "name": "Стартовый депозит на квартиру", "emoji": "🏠", "color": "#a78bfa",
      "target_amount": 5_000_000, "target_currency": "RUB", "deadline": "2027-06-01",
      "note": "Однушка в Белграде", "status": "active", "sort_order": 10,
-     "balance": 2_100_000, "balance_eur": 25414.50, "target_amount_eur": 60510.71, "balance_missing_rates": 0, "contribution_count": 3,
+     "balance": 2_100_000, "balance_eur": 25414.50, "target_amount_eur": 60510.71, "balance_missing_rates": 0, "contribution_count": 6,
      "created_at": "2026-01-15 10:00:00", "updated_at": "2026-05-15 14:00:00"},
     {"id": "g2", "name": "Отпуск 2026", "emoji": "✈️", "color": "#34d399",
      "target_amount": 5000, "target_currency": "EUR", "deadline": "2026-09-15",
@@ -145,16 +145,24 @@ TRANSACTIONS = [
      "created_at": "2026-05-22 14:00:00", "updated_at": "2026-05-22 14:00:00"},
 ]
 
+# SPEC-037: delta_in_target = вклад в target_currency (RUB→RUB = amount). Помесячно,
+# Σ = goal.balance (2_100_000) → последняя точка графика совпадает с прогресс-баром (R1).
 GOAL_DETAIL = {
     "g1": {
         "goal": GOALS[0],
         "contributions": [
-            {"id": "c1", "source": "manual", "date": "2025-12-25", "amount": 2_000_000,
-             "currency_code": "RUB", "account_id": "rub-bank", "note": "От родителей на новый год",
-             "created_at": "2025-12-25 18:00:00"},
-            {"id": "i1", "source": "income", "income_id": "i1", "date": "2026-05-15",
-             "amount": 100_000, "currency_code": "RUB", "account_id": "rub-bank",
-             "note": "За первую половину мая", "created_at": "2026-05-15 10:11:12"},
+            {"id": "c6", "source": "income", "income_id": "i1", "date": "2026-05-15", "amount": 400_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "Зп за май", "delta_in_target": 400_000, "created_at": "2026-05-15 10:11:12"},
+            {"id": "c5", "source": "manual", "date": "2026-04-15", "amount": 300_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": None, "delta_in_target": 300_000, "created_at": "2026-04-15 12:00:00"},
+            {"id": "c4", "source": "income", "income_id": "i9", "date": "2026-03-15", "amount": 350_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "Зп за март", "delta_in_target": 350_000, "created_at": "2026-03-15 10:00:00"},
+            {"id": "c3", "source": "manual", "date": "2026-02-18", "amount": 250_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "Отложил", "delta_in_target": 250_000, "created_at": "2026-02-18 09:00:00"},
+            {"id": "c2", "source": "income", "income_id": "i8", "date": "2026-01-20", "amount": 300_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "Премия", "delta_in_target": 300_000, "created_at": "2026-01-20 11:00:00"},
+            {"id": "c1", "source": "manual", "date": "2025-12-25", "amount": 500_000,
+             "currency_code": "RUB", "account_id": "rub-bank", "note": "От родителей на новый год", "delta_in_target": 500_000, "created_at": "2025-12-25 18:00:00"},
         ],
     },
 }
@@ -611,12 +619,20 @@ async def scenario_goals_list(page, base: str) -> None:
 
 
 async def scenario_goal_detail(page, base: str) -> None:
+    # SPEC-037: страница цели с графиком прогресса (накопление + target + дедлайн + ETA).
     await page.goto(f"{base}/goals/g1", wait_until="networkidle")
     await page.wait_for_selector("text=Стартовый депозит", timeout=5000)
-    await page.wait_for_timeout(400)
-    out = OUT_DIR / "admin-goal-detail.png"
-    await page.screenshot(path=str(out), full_page=True)
-    print(f"  ✓ {out.name}")
+    await page.wait_for_selector("text=Прогресс", timeout=5000)   # дождаться карточки графика
+    for scheme in ("light", "dark"):
+        if scheme == "dark":
+            await page.evaluate("document.documentElement.classList.add('dark')")
+        else:
+            await page.evaluate("document.documentElement.classList.remove('dark')")
+        await page.wait_for_timeout(700)                          # рендер ECharts canvas
+        out = OUT_DIR / f"admin-goal-detail-{scheme}.png"
+        await page.screenshot(path=str(out), full_page=True)
+        print(f"  ✓ {out.name}")
+    await page.evaluate("document.documentElement.classList.remove('dark')")
 
 
 async def scenario_full_page(page, base: str, route: str, fname: str, label: str) -> None:
@@ -854,6 +870,15 @@ async def run(headed: bool) -> int:
             browser = await p.chromium.launch(headless=not headed)
             ctx = await browser.new_context(viewport={"width": 1920, "height": 1080})
             page = await ctx.new_page()
+            # Собираем только реальные JS-ошибки/варнинги. «Failed to load resource» —
+            # это HTTP-status логи браузера от намеренных mock-5xx/4xx (toast/list/dash-error
+            # сценарии), не код-ошибки → фильтруем, иначе вечный шум в сводке.
+            console_errors: list[str] = []
+            def _on_console(m):
+                if m.type in ("error", "warning") and "Failed to load resource" not in m.text:
+                    console_errors.append(f"{m.type}: {m.text[:200]}")
+            page.on("console", _on_console)
+            page.on("pageerror", lambda e: console_errors.append(f"pageerror: {str(e)[:200]}"))
             await inject_auth(page, base)
             await setup_mocks(page, base)
 
@@ -882,6 +907,12 @@ async def run(headed: bool) -> int:
 
             await browser.close()
 
+    print("\n── console ──")
+    if console_errors:
+        for l in console_errors[:40]:
+            print("  ", l)
+    else:
+        print("  ✓ нет ошибок")
     print(f"\nscreenshots → {OUT_DIR.relative_to(ROOT)}/admin-*.png")
     return 0
 

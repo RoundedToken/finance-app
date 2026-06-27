@@ -12,6 +12,7 @@ import {
     useDeleteContribution,
 } from "@/api/queries";
 import { Currency, AccountOption } from "@/components/Currency";
+import { GoalProgressChart } from "@/components/GoalProgressChart";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
 import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
@@ -184,6 +185,10 @@ export function GoalDetailPage() {
                     )}
                 </div>
             </div>
+
+            {!needsCurrency && contributions.length > 0 && (
+                <GoalProgressChart goal={goal} contributions={contributions} />
+            )}
 
             <div className="card overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b">
