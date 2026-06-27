@@ -1,7 +1,7 @@
 ---
 id: SPEC-039
 title: Admin auth invariant — единый guard на /v1/web/* (post-mvp 2.7, часть 1)
-status: in_progress
+status: done
 owner: stepan
 created: 2026-06-27
 updated: 2026-06-27
