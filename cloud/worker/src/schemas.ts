@@ -145,14 +145,17 @@ export const contributionUpdateSchema = z.object({
 });
 
 // ── Budgets (SPEC-020; бизнес-правила scope/FK/uniqueness — в budgets.ts) ───
+// SPEC-038: верхняя граница — ловит fat-finger (лишний ноль), 1M EUR/мес заведомо
+// выше любого личного месячного лимита; бамп тривиален.
+const budgetLimit = z.number().positive("amount must be positive").max(1_000_000, "limit_eur too large");
 export const budgetCreateSchema = z.object({
     id: z.string().optional(),
     scope: z.enum(["category", "total"]).optional(),   // default 'category' в домене
     category_id: optStr,                               // обязателен при scope='category' (проверка в домене)
-    limit_eur: posAmount,
+    limit_eur: budgetLimit,
 });
 export const budgetUpdateSchema = z.object({
-    limit_eur: posAmount,
+    limit_eur: budgetLimit,
 });
 
 // ── Adaptive budgets (SPEC-023; домен RBAR в rbar.ts) ───────────────────────

@@ -573,12 +573,12 @@ function todayUtc(): string {
     return new Date().toISOString().slice(0, 10);
 }
 
-async function loadCommon(env: Env, period: string) {
+async function loadCommon(env: Env, period: string, ratesArg?: RatesIndex) {
     const [exp, rates, cats, budgetsR, settingsR, dismissedR] = await Promise.all([
         env.DB.prepare(
             "SELECT date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL",
         ).all<ExpenseLite>(),
-        loadRatesIndex(env),
+        ratesArg ? Promise.resolve(ratesArg) : loadRatesIndex(env),   // SPEC-038: bootstrap шарит индекс
         env.DB.prepare(
             "SELECT id, name, emoji, color FROM categories WHERE type = 'expense' AND is_active = 1 ORDER BY sort_order, name",
         ).all<CategoryRef>(),
@@ -651,9 +651,9 @@ export async function getArchetypes(env: Env): Promise<{
 }
 
 /** Lumpy-конверты для read-only lens в Mini App (bootstrap). */
-export async function getEnvelopesForBootstrap(env: Env): Promise<Array<{ category_id: string; accrued_eur: number; annual_eur: number }>> {
+export async function getEnvelopesForBootstrap(env: Env, ratesArg?: RatesIndex): Promise<Array<{ category_id: string; accrued_eur: number; annual_eur: number }>> {
     const period = todayUtc().slice(0, 7);
-    const common = await loadCommon(env, period);
+    const common = await loadCommon(env, period, ratesArg);
     const lastClosed = prevMonth(period);
     const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed, period);
 
