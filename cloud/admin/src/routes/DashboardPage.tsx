@@ -157,6 +157,9 @@ type Lens = "free" | "total";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+/** Подпись окна KPI (SPEC-041): «медиана за N полных мес»; N=0 — истории ещё нет. */
+const windowLabel = (n: number) => (n > 0 ? `медиана за ${n} полных мес` : "нет полных месяцев истории");
+
 function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const k = data.kpi;
     const free = lens === "free";
@@ -164,7 +167,7 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
     const hasInvested = k.invested_eur > 0.005;
     const hasGoals = k.targeted_eur > 0.005 || hasInvested;   // SPEC-026: показываем разбивку и при инвестициях
 
-    // Цвет spark = цвет Δ-бейджа: считается по тем же cur/prev (3-мес окно), чтобы KPI
+    // Цвет spark = цвет Δ-бейджа: считается по тем же cur/prev (окно WIN=6 мес, SPEC-041), чтобы KPI
     // читался как ОДИН сигнал «хорошо/плохо» — нет конфликта между линией и бейджем.
     // goodUp=true — вверх хорошо (Net worth / Доход / Норма / Runway);
     // goodUp=false — вниз хорошо (Траты).
@@ -227,12 +230,12 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
             <KpiCard icon={TrendingDown} label="Траты / мес" value={eur(k.monthly_burn_eur)}
                 delta={<DeltaBadge cur={k.monthly_burn_eur} prev={k.prev_monthly_burn_eur} goodUp={false} />}
                 spark={<Sparkline values={burnSpark} color={sparkTone(k.monthly_burn_eur, k.prev_monthly_burn_eur, false)} inProgressTail={1} />}
-                sub={`все траты, ср. за ${k.burn_window_months} полных мес`} />
+                sub={`все траты, ${windowLabel(k.burn_window_months)}`} />
 
             <KpiCard icon={TrendingUp} label="Доход / мес" value={eur(inc)}
                 delta={<DeltaBadge cur={inc} prev={prevInc} />}
                 spark={<Sparkline values={incSpark} color={sparkTone(inc, prevInc, true)} inProgressTail={1} />}
-                sub={free ? `свободный доход, ср. за ${k.burn_window_months} полных мес` : `весь доход, ср. за ${k.burn_window_months} полных мес`} />
+                sub={`${free ? "свободный доход" : "весь доход"}, ${windowLabel(k.burn_window_months)}`} />
 
             <KpiCard icon={PiggyBank} label="Норма сбережений" value={sr == null ? "—" : pct(sr)}
                 positive={(sr ?? 0) > 0} negative={(sr ?? 1) < 0}
@@ -329,8 +332,12 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
         // SPEC-018: линза «Свободные» вычитает текущее targeted_eur (аппроксимация —
         // историч. goal balance не реконструируем). Применяется только когда форма-
         // фильтр не активен — иначе сдвиг искажает разбивку по выбранным вёдрам.
-        const shift = lens === "free" && forms.size === 0 ? data.kpi.targeted_eur + data.kpi.invested_eur : 0;   // SPEC-026
-        const hist = data.net_worth_series.map(p => Math.max(0, Math.round(sumBuckets(p, ids) - shift)));
+        // SPEC-041 (G3): invested вычитается ПО-ТОЧЕЧНО (как в KPI-спарклайне) —
+        // константный вычет занижал историю на сегодняшние инвестиции и давал
+        // спарклайну и большой линии противоположный наклон в месяц покупки.
+        const freeLens = lens === "free" && forms.size === 0;
+        const hist = data.net_worth_series.map(p =>
+            Math.max(0, Math.round(sumBuckets(p, ids) - (freeLens ? data.kpi.targeted_eur + (p.invested_eur ?? 0) : 0))));
         series = [{
             name: "Net worth", type: "line", smooth: true, showSymbol: false,
             lineStyle: { width: 2.5 }, color: t.positive,   // линия без заливки: с non-zero базой заливка-от-нуля врёт о магнитуде
@@ -342,7 +349,8 @@ function NetWorthChart({ data, mode, forms, lens, project = false, projectRate =
             proj.push(last);   // стыкуем пунктир с последней фактической точкой
             for (let i = 1; i <= futureMonths.length; i++) proj.push(Math.round(last + projectRate * i));
             series.push({
-                name: "Прогноз", type: "line", smooth: false, showSymbol: false,
+                // N динамический: при истории короче окна легенда не врёт про «6 мес»
+                name: `Прогноз (медиана ${data.kpi.burn_window_months} мес)`, type: "line", smooth: false, showSymbol: false,
                 lineStyle: { width: 2, type: "dashed", color: t.muted }, color: t.muted, data: proj,
             });
         }
@@ -491,7 +499,7 @@ function GoalsForecastSection({ monthlySavings }: { monthlySavings: number }) {
         <section className="space-y-3">
             <SectionTitle>Цели — прогноз достижения</SectionTitle>
             <p className="text-xs text-muted-foreground -mt-1">
-                Прогноз по текущему темпу свободных сбережений (доход − траты). Линейная оценка, не гарантия.
+                Прогноз по типичному темпу свободных сбережений (медиана 6 мес, доход − траты). Линейная оценка, не гарантия.
                 {goals.length > 1 && " ETA каждой цели — при условии, что весь свободный поток идёт в неё; несколько активных целей делят один поток, реальные сроки дальше."}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

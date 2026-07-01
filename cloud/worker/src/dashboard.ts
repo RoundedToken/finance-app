@@ -18,6 +18,7 @@ import type { Env } from "./types";
 import { listGoals } from "./goals";
 import { loadRatesIndex } from "./rates";
 import { reconstructBalance, feePayerBucket } from "./ledger";
+import { median } from "./stats";   // SPEC-041: робастный центр для «типичного месяца»
 
 // ── Date helpers (UTC, строки YYYY-MM-DD / YYYY-MM) ────────────────────────
 
@@ -196,32 +197,40 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
     // SPEC-015: считаем окно дважды — текущее (shift=0) и предыдущее (shift=WIN),
     // для Δ к прошлому периоду. income_free = доход без goal-помеченного (линза
     // «свободные деньги»). missing считаем в net worth/period (overlap), не здесь.
+    // SPEC-041: «типичный месяц» = МЕДИАНА помесячных сумм, не среднее — одна
+    // разовая крупная трата не должна на всё окно ломать savings rate, runway
+    // и пунктир-прогноз. Месяцы окна без операций участвуют как легитимные
+    // нули; месяцы раньше первого месяца с данными (M2) в ряд не входят.
     const curMonth = monthKey(today);
-    const WIN = 3;
+    const WIN = 6;
     const earliestMonth = monthKey(earliest);
     const windowSums = (shift: number) => {
-        const start = addMonths(curMonth, -(WIN + shift)) + "-01";
-        const end = endOfMonth(addMonths(curMonth, -(1 + shift)));
-        let burn = 0, income = 0, incomeFree = 0;
+        const byMonth = new Map<string, { burn: number; income: number; incomeFree: number }>();
+        for (let i = 1 + shift; i <= WIN + shift; i++) {
+            const m = addMonths(curMonth, -i);
+            if (m >= earliestMonth) byMonth.set(m, { burn: 0, income: 0, incomeFree: 0 });
+        }
         for (const e of expR.results) {
-            if (e.date < start || e.date > end) continue;
+            const cell = byMonth.get(monthKey(e.date));
+            if (!cell) continue;
             const v = toEurAt(e.amount, e.currency, e.date);
-            if (v != null) burn += v;
+            if (v != null) cell.burn += v;
         }
         for (const i of incR.results) {
-            if (i.date < start || i.date > end) continue;
+            const cell = byMonth.get(monthKey(i.date));
+            if (!cell) continue;
             const v = toEurAt(i.amount, i.currency_code, i.date);
             if (v == null) continue;
-            income += v;
-            if (i.goal_id == null) incomeFree += v;   // свободный доход — не отложенный в цель
+            cell.income += v;
+            if (i.goal_id == null) cell.incomeFree += v;   // свободный доход — не отложенный в цель
         }
-        // M2: знаменатель = число месяцев окна, попадающих в историю данных
-        // (>= первого месяца с данными). Деление на фикс. WIN при неполной истории
-        // занижало бы средние (и завышало runway) в первые недели ведения.
-        let monthsCovered = 0;
-        for (let i = 1; i <= WIN; i++) if (addMonths(curMonth, -(i + shift)) >= earliestMonth) monthsCovered++;
-        const denom = Math.max(1, monthsCovered);
-        return { burn: burn / denom, income: income / denom, incomeFree: incomeFree / denom, months: denom };
+        const cells = [...byMonth.values()];
+        return {
+            burn: median(cells.map(c => c.burn)),
+            income: median(cells.map(c => c.income)),
+            incomeFree: median(cells.map(c => c.incomeFree)),
+            months: cells.length,
+        };
     };
     const cur = windowSums(0);
     const prev = windowSums(WIN);
