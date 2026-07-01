@@ -240,8 +240,11 @@ def _build_dashboard() -> dict:
     }
     for i, m in enumerate(months):
         total = round(nw_free[i] + TARGETED, 2)
+        # SPEC-041 (G3): invested по точкам ВАРЬИРУЕТСЯ (0 → 3300) — иначе харнес
+        # не отличит per-point вычитание от константного и не поймает регрессию.
+        invested_i = round(3300.0 * max(0.0, (i - 5)) / (len(months) - 6), 2) if len(months) > 6 else 3300.0
         net_worth_series.append({
-            "month": m, "total_eur": total, "invested_eur": 3300.0,
+            "month": m, "total_eur": total, "invested_eur": invested_i,
             "by_bucket": {"rub-bank": round(total * 0.40, 2), "rsd-bank": round(total * 0.20, 2),
                           "eur-bank": round(total * 0.25, 2), "usdt": round(total * 0.15, 2)},
             "by_bucket_native": {bid: round(NATIVE_END[bid] * NATIVE_SHAPE[bid][i], 2) for bid in NATIVE_END},
@@ -261,7 +264,7 @@ def _build_dashboard() -> dict:
             "invested_eur": 3300.0, "prev_invested_eur": 3000.0,
             "monthly_burn_eur": 2566.71, "monthly_income_eur": 3629.93,
             "savings_rate": 0.29, "runway_months": 3.1, "runway_months_total": 4.0,
-            "burn_window_months": 3, "buckets_without_baseline": 2, "missing_rates": 0,
+            "burn_window_months": 6, "buckets_without_baseline": 2, "missing_rates": 0,   # SPEC-041: медиана за 6 полных мес
             # SPEC-015: линза «свободные» + Δ к предыдущему окну (под реальный скрин: free −12%, траты −31%, доход +10%)
             "monthly_income_free_eur": 3629.93, "savings_rate_free": 0.29,
             "prev_monthly_burn_eur": 3720.0, "prev_monthly_income_eur": 3300.0,

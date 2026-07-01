@@ -21,7 +21,7 @@ excel/                            # имя корня — historical; см. ADR-
 ├── docs/                         ← вся архитектурная документация
 │   ├── architecture.md           — общая архитектура и диаграммы
 │   ├── data-model.md             — SQLite-схемы (D1)
-│   ├── decisions.md              — ADR-001…021
+│   ├── decisions.md              — ADR-001…022
 │   ├── setup.md                  — как поднять проект с нуля
 │   ├── stack.md                  — технологический стек
 │   └── roadmap.md                — план этапов и текущий статус
@@ -116,7 +116,7 @@ excel/                            # имя корня — historical; см. ADR-
 | Спецификации фич | `specs/SPEC-NNN-*.md` |
 | Общая архитектура, диаграмма потоков | `docs/architecture.md` |
 | Какие таблицы и поля в D1 | `docs/data-model.md` |
-| Почему такие решения | `docs/decisions.md` (ADR-001…021) |
+| Почему такие решения | `docs/decisions.md` (ADR-001…022) |
 | Как поднять проект с нуля | `docs/setup.md` |
 | Полный список зависимостей и версий | `docs/stack.md` |
 | Что сейчас делаем, что дальше | `docs/roadmap.md` |
