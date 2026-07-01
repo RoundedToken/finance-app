@@ -1,7 +1,7 @@
 ---
 id: SPEC-041
 title: Робастный месячный темп — медиана 6 мес для KPI и прогноза
-status: in_progress
+status: done
 owner: stepan
 created: 2026-07-01
 updated: 2026-07-01
@@ -107,3 +107,4 @@ Shape `GET /v1/web/dashboard` **не меняется** — те же поля `
 - 2026-07-01: создан в `draft` по итогам диагностики «net worth падает при профиците» (сессия 2026-07-01); owner-решения: алгоритм = медиана 6 мес, охват = все потребители темпа.
 - 2026-07-01: `in_progress` — направление одобрено owner'ом (AskUserQuestion), реализация в этой же сессии.
 - 2026-07-01: Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES. Must-fix (битая ADR-ссылка) исправлен; применённые nice-to-have: median переиспользована из stats.ts, динамическая легенда пунктира, windowLabel для N=0, тест AC4 на покрытое prev-окно, мок харнеса (per-point invested, окно 6), подписи/комментарии.
+- 2026-07-01: `done` — PR #30 смержен (squash), Worker + Admin задеплоены на прод. Prod smoke: `/v1/web/dashboard` без токена → 401 (гард жив); AC2/AC3 сверены расчётом медиан из D1-данных (окно янв–июн 2026): значения сверены (вне публичного репо). Отметка 2.12 в post-mvp-roadmap.
