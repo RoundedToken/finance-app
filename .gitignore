@@ -77,3 +77,6 @@ local/screenshots/
 # Personal admin .env (Web Admin локальный конфиг)
 cloud/admin/.env
 cloud/admin/.env.local
+
+# Внутренние аудит-отчёты — живут локально (решение о публикации принимается отдельно)
+docs/audits/2026-07-full-audit/
