@@ -1,6 +1,13 @@
--- D1 schema (текущий снапшот после миграций 0001-0013).
+-- D1 schema (текущий снапшот после миграций 0001-0018), выровнен с фактическим
+-- прод-DDL (аудит 2026-07, DB-02: PRAGMA-дифф prod vs этот файл — структурных
+-- расхождений нет; отличие только в порядке колонок после исторических ALTER).
 -- Source of truth для всех финансовых данных (ADR-011).
--- Для свежей базы — применить этот файл; для существующей — миграции из migrations/.
+--
+-- ⚠ Bootstrap НОВОЙ базы — НЕ через этот файл, а импортом дампа
+--   (см. local/README.md § Restore-runbook): цепочка миграций начинается не
+--   с нуля (справочники созданы до 0001), а сиды справочников живут только
+--   в данных. Этот файл — документация текущей структуры + основа тест-моков.
+-- Для существующей базы — только нумерованные миграции из migrations/.
 
 -- ─── Whitelist Telegram-пользователей (ADR-009) ────────────────────────────
 CREATE TABLE IF NOT EXISTS authorized_users (
@@ -48,36 +55,41 @@ CREATE TABLE IF NOT EXISTS currencies (
 );
 
 -- ─── Transactional: расходы ────────────────────────────────────────────────
+-- ⚠ FK на accounts/categories в проде НЕТ (миграция 0003 создала колонки без
+-- REFERENCES) — ссылки логические, целостность держат клиенты + серверные
+-- guard'ы (см. аудит 2026-07 DB-02/DB-03). Не дописывать FK сюда без миграции
+-- пересоздания таблицы в проде.
 CREATE TABLE IF NOT EXISTS expenses (
     id                TEXT PRIMARY KEY,           -- UUID v4 от Mini App
     user_id           TEXT NOT NULL,              -- Telegram user ID
     date              TEXT NOT NULL,              -- YYYY-MM-DD
-    account_id        TEXT REFERENCES accounts(id),
+    account_id        TEXT,                       -- nullable, логически → accounts(id)
     amount            REAL NOT NULL,
     currency          TEXT NOT NULL,
-    category_id       TEXT REFERENCES categories(id),
+    category_id       TEXT,                       -- nullable, логически → categories(id)
     note              TEXT,
-    source            TEXT NOT NULL DEFAULT 'mini_app',
+    source            TEXT NOT NULL,              -- 'mini_app' | 'telegram' | 'csv_ok_import' | ... (дефолт ставит сервер, не схема)
     source_record_id  TEXT,                       -- идемпотентность импортов
     created_at        TEXT NOT NULL,              -- 'YYYY-MM-DD HH:MM:SS' (UTC), ставит сервер datetime('now'); канон SPEC-024 (миграция 0013)
     updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
     deleted_at        TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_expenses_date     ON expenses(date);
-CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);
-CREATE INDEX IF NOT EXISTS idx_expenses_active   ON expenses(date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_expenses_date      ON expenses(date DESC);
+CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_expenses_updated   ON expenses(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_expenses_deleted   ON expenses(deleted_at);
 
 -- ─── Курсы валют (ADR-006) ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rates (
     date        TEXT NOT NULL,                   -- YYYY-MM-DD
-    base        TEXT NOT NULL DEFAULT 'EUR',
+    base        TEXT NOT NULL,                   -- 'EUR' (без DEFAULT в проде — значение ставит писатель)
     quote       TEXT NOT NULL,
     rate        REAL NOT NULL,                   -- 1 base = rate * quote
-    source      TEXT NOT NULL DEFAULT 'google-sheets',
+    source      TEXT NOT NULL,                   -- 'google-sheets' | 'manual' | 'derived' (без DEFAULT в проде)
     fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (date, base, quote)
 );
-CREATE INDEX IF NOT EXISTS idx_rates_quote_date ON rates(quote, date);
+CREATE INDEX IF NOT EXISTS idx_rates_quote_date ON rates(quote, date DESC);
 
 -- ─── Внутридневные тики курса (SPEC-028) ──────────────────────────────────
 -- Свежесть «по времени фетча» для mark-to-market. Дневная rates остаётся
