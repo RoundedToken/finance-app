@@ -68,6 +68,10 @@ export function parseLatestCsv(text: string): { date: string; rates: Record<stri
     if (header[0].toLowerCase() !== "date") throw new Error("rates csv: first column must be 'date'");
 
     const date = values[0]; // ожидается YYYY-MM-DD из =TEXT(TODAY(),"YYYY-MM-DD")
+    // WRK-04 (SPEC-043): мусорная дата («25/05/2026», #N/A) лексикографически больше ISO
+    // и необратимо портит MAX(date) → все «свежие курсы» пиняются к ней. Валим весь фетч —
+    // cron изолирован try/catch, останется вчерашний курс (штатная деградация).
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`rates csv: bad date "${date.slice(0, 20)}"`);
     const rates: Record<string, number> = {};
     for (let i = 1; i < header.length; i++) {
         const col = header[i];                     // например "EURUSD"

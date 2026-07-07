@@ -284,15 +284,23 @@ export async function createGoal(env: Env, payload: GoalPayload): Promise<Result
 }
 
 export async function updateGoal(env: Env, id: string, patch: Partial<GoalPayload>): Promise<Result<{ updated: boolean }>> {
-    // Если в patch есть target_amount/target_currency/color/deadline — валидируем.
-    if (Object.keys(patch).length > 0) {
-        const merged: GoalPayload = {
-            name: patch.name ?? (await loadGoalRow(env, id))?.name ?? "",
-            ...patch,
-        };
-        const v = await validateGoalPayload(env, merged);
-        if (!v.ok) return v;
-    }
+    // WRK-06 (SPEC-043): merged собирается из ПОЛНОЙ строки БД, patch перекрывает только
+    // присутствующие ключи (вкл. явный null). Раньше из БД дотягивался лишь name — и
+    // легитимный частичный PUT ({note}) падал ложным 400 «target_currency is required».
+    const row = await loadGoalRow(env, id);
+    if (!row) return { ok: false, error: "goal not found" };
+    const merged: GoalPayload = {
+        name: row.name,
+        emoji: row.emoji,
+        color: row.color,
+        target_amount: row.target_amount,
+        target_currency: row.target_currency,
+        deadline: row.deadline,
+        note: row.note,
+        ...patch,
+    };
+    const v = await validateGoalPayload(env, merged);
+    if (!v.ok) return v;
 
     const hasEmoji = Object.prototype.hasOwnProperty.call(patch, "emoji");
     const hasColor = Object.prototype.hasOwnProperty.call(patch, "color");

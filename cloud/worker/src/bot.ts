@@ -134,6 +134,9 @@ export async function sendMessage(env: Env, chatId: number, text: string): Promi
     return true;
 }
 
-function escapeHtml(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Экранирование для text-node Telegram HTML. Экспорт — coach.ts вставляет имена
+ *  категорий/целей/вёдер в HTML-нудж (WRK-13/SPEC-043: имя с «<» валило sendMessage,
+ *  cooldown не записывался и cron падал ежедневно). Кавычки — на случай атрибутов. */
+export function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

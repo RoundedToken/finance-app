@@ -72,6 +72,17 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
     // вставкой — повтор дал бы ложное «недостаточно средств»).
     const dup = await env.DB.prepare("SELECT 1 FROM expenses WHERE id = ?").bind(e.id).first();
     if (dup) return { ok: true, inserted: false };
+    // DB-03 (SPEC-043): FK у expenses в проде НЕТ (миграция 0003) — существование
+    // справочников проверяет сервер, иначе трата с опечаткой в id молча выпадает
+    // из effective_balance/аналитики (образец: incomes.ts, transactions.ts).
+    if (e.account_id) {
+        const acc = await env.DB.prepare("SELECT 1 FROM accounts WHERE id = ? AND deleted_at IS NULL").bind(e.account_id).first();
+        if (!acc) return { ok: false, error: "unknown account_id" };
+    }
+    if (e.category_id) {
+        const cat = await env.DB.prepare("SELECT 1 FROM categories WHERE id = ?").bind(e.category_id).first();
+        if (!cat) return { ok: false, error: "unknown category_id" };
+    }
     // SPEC-032: трата со счётом обязана быть в валюте ведра (см. currencyMismatchError).
     const ccyErr = await currencyMismatchError(env, e.account_id, e.currency, e.allow_currency_mismatch);
     if (ccyErr) return { ok: false, error: ccyErr };
@@ -119,22 +130,48 @@ export async function updateExpense(env: Env, id: string, userId: string, patch:
     const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
     const hasAccount = Object.prototype.hasOwnProperty.call(patch, "account_id");
     const hasCategory = Object.prototype.hasOwnProperty.call(patch, "category_id");
-    // SPEC-032: валидируем согласованность валюта↔счёт по РЕЗУЛЬТИРУЮЩИМ значениям, но только
-    // если патч реально трогает валюту или счёт (иначе инвариант измениться не может — экономим
-    // лишний SELECT в горячем пути правки note/amount/date).
-    if (hasAccount || patch.currency !== undefined) {
+    // Гарды по РЕЗУЛЬТИРУЮЩИМ значениям, только если патч способен изменить инвариант
+    // (экономим SELECT в горячем пути правки note).
+    const touchesGuards = hasAccount || patch.currency !== undefined || patch.amount !== undefined || patch.date !== undefined;
+    if (touchesGuards) {
         const existing = await env.DB
-            .prepare("SELECT account_id, currency FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+            .prepare("SELECT account_id, currency, amount, date FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
             .bind(id, userId)
-            .first<{ account_id: string | null; currency: string }>();
+            .first<{ account_id: string | null; currency: string; amount: number; date: string }>();
         if (existing) {
             const resAccount = hasAccount ? (patch.account_id ?? null) : existing.account_id;
             const resCurrency = patch.currency ?? existing.currency;
+            // DB-03 (SPEC-043): новый счёт обязан существовать (FK в проде нет).
+            if (hasAccount && patch.account_id) {
+                const acc = await env.DB.prepare("SELECT 1 FROM accounts WHERE id = ? AND deleted_at IS NULL").bind(patch.account_id).first();
+                if (!acc) return { ok: false, error: "unknown account_id" };
+            }
+            // SPEC-032: согласованность валюта↔счёт.
             const ccyErr = await currencyMismatchError(env, resAccount, resCurrency, patch.allow_currency_mismatch);
             if (ccyErr) return { ok: false, error: ccyErr };
             const invErr = await investmentAccountError(env, resAccount);
             if (invErr) return { ok: false, error: invErr };
+            // WRK-07 (SPEC-043): create-гард L1 обходился правкой суммы («создал 10 €,
+            // исправил на 1000 €»). Пересчитываем баланс результирующего ведра на
+            // результирующую дату с откатом старой версии траты (образец —
+            // checkOverdraft(excludeTxId) в transactions.ts). Если старая трата до
+            // baseline (не в балансе), откат лишь ослабляет гард — безопасно.
+            const resAmount = patch.amount ?? existing.amount;
+            const resDate = patch.date ?? existing.date;
+            if (resAccount && typeof resAmount === "number" && resAmount > 0) {
+                const eff = await getEffectiveBalance(env, resAccount, resDate);
+                let available = eff.balance;
+                if (existing.account_id === resAccount && existing.date <= resDate) available += existing.amount;
+                if (eff.manual_baseline && roundMoney(available - resAmount) < 0) {
+                    return { ok: false, error: `недостаточно средств в ведре (доступно: ${available.toFixed(2)}, нужно: ${resAmount.toFixed(2)})` };
+                }
+            }
         }
+    }
+    // DB-03 (SPEC-043): новая категория обязана существовать.
+    if (hasCategory && patch.category_id) {
+        const cat = await env.DB.prepare("SELECT 1 FROM categories WHERE id = ?").bind(patch.category_id).first();
+        if (!cat) return { ok: false, error: "unknown category_id" };
     }
     const sql =
         `UPDATE expenses
@@ -228,61 +265,8 @@ export async function bulkInsertExpenses(env: Env, expenses: any[]): Promise<num
 
 // ─── References ────────────────────────────────────────────────────────────
 
-interface ReferencePayload {
-    accounts?: any[];
-    categories?: any[];
-    currencies?: any[];
-}
-
-export async function replaceReferences(env: Env, payload: ReferencePayload): Promise<void> {
-    const stmts = [];
-    if (payload.currencies) {
-        stmts.push(env.DB.prepare("DELETE FROM currencies"));
-        for (const c of payload.currencies) {
-            stmts.push(
-                env.DB.prepare(
-                    "INSERT INTO currencies (code, name, emoji, is_crypto, decimals) VALUES (?, ?, ?, ?, ?)",
-                ).bind(c.code, c.name, c.emoji ?? null, c.is_crypto ?? 0, c.decimals ?? 2),
-            );
-        }
-    }
-    if (payload.accounts) {
-        stmts.push(env.DB.prepare("DELETE FROM accounts"));
-        for (const a of payload.accounts) {
-            // form/sort_order/is_investment несём из payload — иначе DELETE+INSERT
-            // сбрасывал бы форму вёдер на 'digital' и инвест-флаг на 0 (SPEC-026).
-            stmts.push(
-                env.DB.prepare(
-                    "INSERT INTO accounts (id, name, type, currency, is_active, color, form, sort_order, is_investment, updated_at) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-                ).bind(
-                    a.id, a.name, a.type, a.currency, a.is_active ?? 1, a.color ?? null,
-                    a.form ?? "digital", a.sort_order ?? 0, a.is_investment ?? 0,
-                ),
-            );
-        }
-    }
-    if (payload.categories) {
-        stmts.push(env.DB.prepare("DELETE FROM categories"));
-        for (const c of payload.categories) {
-            stmts.push(
-                env.DB.prepare(
-                    "INSERT INTO categories (id, name, type, parent_id, emoji, color, sort_order, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-                ).bind(
-                    c.id,
-                    c.name,
-                    c.type,
-                    c.parent_id ?? null,
-                    c.emoji ?? null,
-                    c.color ?? null,
-                    c.sort_order ?? 0,
-                    c.is_active ?? 1,
-                ),
-            );
-        }
-    }
-    if (stmts.length > 0) await env.DB.batch(stmts);
-}
+// WRK-19 (SPEC-043): replaceReferences удалён вместе с /v1/admin/references —
+// DELETE справочников + reinsert терял deleted_at и несовместим с FK-энфорсом D1.
 
 // ─── Bootstrap (для Mini App при старте) ────────────────────────────────────
 

@@ -20,7 +20,6 @@
  *   *      /v1/web/incomes[/:id]      — CRUD incomes (Bearer JWT)
  *   GET    /v1/web/dashboard          — агрегированный дашборд (Bearer JWT)
  *
- *   POST   /v1/admin/references       — push refs (system bearer)
  *   POST   /v1/admin/migrate-expenses — bulk insert (system bearer)
  *   POST   /v1/admin/refresh-rates    — pull rates (system bearer)
  *   POST   /v1/admin/bulk-rates       — bulk insert rates (system bearer)
@@ -37,7 +36,6 @@ import {
     listExpenses,
     bulkInsertExpenses,
     getBootstrapData,
-    replaceReferences,
     setAppConfig,
 } from "./db";
 import { handleTelegramUpdate } from "./bot";
@@ -109,6 +107,7 @@ import {
     contributionUpdateSchema, categoryCreateSchema, categoryUpdateSchema,
     budgetCreateSchema, budgetUpdateSchema, budgetSettingsSchema, budgetDecisionSchema,
     investmentSettingsSchema, zodMessage,
+    isRealIsoDate,
 } from "./schemas";
 import type { z } from "zod";
 
@@ -265,7 +264,6 @@ export default {
             }
 
             // ── System admin (Bearer SYNC_TOKEN) ─────────────────────────────
-            if (path === "/v1/admin/references" && request.method === "POST") return handlePushReferences(request, env);
             if (path === "/v1/admin/migrate-expenses" && request.method === "POST") return handleMigrate(request, env);
             if (path === "/v1/admin/refresh-rates" && request.method === "POST") return handleRefreshRates(request, env);
             if (path === "/v1/admin/bulk-rates" && request.method === "POST") return handleBulkRates(request, env);
@@ -380,16 +378,17 @@ async function handleWebReferences(request: Request, env: Env): Promise<Response
 
 /** Локальное «сегодня» клиента из ?today=YYYY-MM-DD (зона устройства), иначе UTC
  *  fallback (SPEC-024). Валидируем формат — в SQL уходит только как bind/сравнение. */
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function resolveToday(url: URL): string {
     const t = url.searchParams.get("today");
-    return t && ISO_DATE_RE.test(t) ? t : new Date().toISOString().slice(0, 10);
+    // WRK-17 (SPEC-043): не только формат, но и реальность даты — «2026-13-01» ломает окна KPI.
+    return t && isRealIsoDate(t) ? t : new Date().toISOString().slice(0, 10);
 }
 
 /** Безопасный парс ?limit (SPEC-038): NaN/≤0/пусто → def, клампим к max — иначе
  *  `?limit=abc` уходит в SQL как `LIMIT NaN`, а огромный — как полная выгрузка. */
 export const MAX_LIST_LIMIT = 20000;
 export const MAX_BULK_RATES = 5000;   // SPEC-038: cap на /v1/admin/bulk-rates payload
+export const MAX_MIGRATE_EXPENSES = 5000;   // WRK-15 (SPEC-043): cap на /v1/admin/migrate-expenses
 export function parseLimit(raw: string | null, def: number, max: number = MAX_LIST_LIMIT): number {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return def;
@@ -760,19 +759,10 @@ async function handleWebBudgetDecision(request: Request, env: Env): Promise<Resp
 // к цели.
 
 // ── System admin (bearer) ──────────────────────────────────────────────────
-async function handlePushReferences(request: Request, env: Env): Promise<Response> {
-    if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
-    const body = (await request.json().catch(() => ({}))) as any;
-    await replaceReferences(env, body);
-    return json({
-        ok: true,
-        replaced: {
-            accounts: body.accounts?.length ?? null,
-            categories: body.categories?.length ?? null,
-            currencies: body.currencies?.length ?? null,
-        },
-    }, 200, request, env);
-}
+// WRK-19/FIN-02/DB-05 (SPEC-043): /v1/admin/references удалён. Legacy-endpoint эпохи
+// миграции делал DELETE справочников + reinsert: терял deleted_at/непереданные поля и
+// несовместим с FK-энфорсом D1. Справочники правятся через /v1/web/categories (SPEC-017)
+// и точечные SQL-миграции.
 
 async function handleRefreshRates(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
@@ -814,7 +804,7 @@ async function handleBulkRates(request: Request, env: Env): Promise<Response> {
     }
     // Пропускаем мусорные элементы (нет/неверный формат date, пустой quote, нерациональный rate) — остальные вставляем.
     const valid = items.filter((r: any) =>
-        r && typeof r.date === "string" && ISO_DATE_RE.test(r.date) && typeof r.quote === "string" && r.quote !== ""
+        r && typeof r.date === "string" && isRealIsoDate(r.date) && typeof r.quote === "string" && r.quote !== ""
         && Number.isFinite(Number(r.rate)) && Number(r.rate) > 0);
     const skipped = items.length - valid.length;
     if (!valid.length) return json({ ok: true, inserted: 0, attempted: 0, skipped }, 200, request, env);
@@ -832,9 +822,25 @@ async function handleBulkRates(request: Request, env: Env): Promise<Response> {
 async function handleMigrate(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
     const body = (await request.json().catch(() => ({}))) as any;
-    const expenses = Array.isArray(body.expenses) ? body.expenses : [];
-    const n = await bulkInsertExpenses(env, expenses);
-    return json({ ok: true, inserted: n, attempted: expenses.length }, 200, request, env);
+    const raw = Array.isArray(body.expenses) ? body.expenses : [];
+    // WRK-15 (SPEC-043): зеркально bulk-rates — cap + per-item shape-фильтр. Импортёры уже
+    // дважды портили данные (SPEC-031/041); мусорный элемент раньше падал 500 на bind
+    // undefined / canonicalTs(number), валидный хвост терялся.
+    const capped = raw.slice(0, MAX_MIGRATE_EXPENSES);
+    const valid = capped.filter((e: any) =>
+        e && typeof e.id === "string" && e.id !== "" &&
+        typeof e.date === "string" && isRealIsoDate(e.date) &&
+        typeof e.amount === "number" && Number.isFinite(e.amount) &&
+        typeof e.currency === "string" && e.currency !== "" &&
+        (e.created_at === undefined || typeof e.created_at === "string") &&
+        (e.updated_at === undefined || typeof e.updated_at === "string"),
+    );
+    const n = await bulkInsertExpenses(env, valid);
+    return json({
+        ok: true, inserted: n, attempted: raw.length,
+        skipped_invalid: capped.length - valid.length,
+        skipped_overflow: raw.length - capped.length,
+    }, 200, request, env);
 }
 
 // ── Auth helpers ───────────────────────────────────────────────────────────
