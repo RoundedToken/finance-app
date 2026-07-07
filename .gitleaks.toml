@@ -1,0 +1,27 @@
+# Кастомные правила поверх дефолтных gitleaks (аудит 2026-07, SEC-01/SEC-05).
+# Дефолтные правила ловят секрет-паттерны (токены, ключи), но НЕ финданные/PII —
+# эти два правила закрывают классы, из-за которых пришлось переписывать историю.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "persona-workers-dev-subdomain"
+description = "Persona-specific *.workers.dev субдомен (содержит имя владельца) — в репо только placeholder вида finances-worker.<owner>.workers.dev (docs/security.md)"
+regex = '''[a-z]+(?:-[a-z]+)+-\d+\.workers\.dev'''
+# gitignored/генерируемые файлы ОБЯЗАНЫ содержать реальный субдомен — не шумим при dir-скане
+[rules.allowlist]
+paths = [
+    '''(^|/)dist/''',
+    '''(^|/)\.env''',
+    '''wrangler\.toml$''',
+    '''(^|/)\.wrangler/''',
+]
+
+[[rules]]
+id = "telegram-numeric-id"
+description = "Похоже на реальный Telegram ID рядом с telegram_id/user_id/--owner — в репо только placeholder <TELEGRAM_ID> (docs/security.md §PII)"
+regex = '''(?i)(?:telegram[_ -]?id|user_id|--owner)\W{0,10}\d{7,12}'''
+# 123456789 — канонический пример в доках, не реальный ID
+[rules.allowlist]
+regexes = ['''123456789''']

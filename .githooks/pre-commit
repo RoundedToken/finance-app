@@ -8,6 +8,41 @@ if ! command -v gitleaks >/dev/null 2>&1; then
     exit 1
 fi
 
+# Классы файлов, которым нельзя в public-репо (аудит 2026-07, SEC-01: из-за них
+# переписывалась история). Проверяем только ДОБАВЛЯЕМЫЕ файлы (--diff-filter=A).
+blocked=""
+for f in $(git diff --cached --name-only --diff-filter=A); do
+    case "$f" in
+        cloud/worker/migrations/*.sql|cloud/worker/schema.sql) ;;   # легитимный SQL
+        *.sql) blocked="$blocked
+  $f  — SQL вне cloud/worker/migrations (дампы D1 с финданными не коммитим)" ;;
+    esac
+    case "$f" in
+        *.xlsx|*.xls) blocked="$blocked
+  $f  — Excel (финданные не коммитим)" ;;
+    esac
+    case "$f" in
+        cloud/miniapp/public/*|cloud/admin/public/*|cloud/miniapp/src/assets/*|cloud/admin/src/assets/*) ;;  # иконки/статик фронтендов
+        *.png|*.PNG|*.jpg|*.jpeg|*.heic) blocked="$blocked
+  $f  — изображение (скрины UI с числами не коммитим)" ;;
+    esac
+    case "$f" in
+        *wrangler.example.toml) ;;
+        *wrangler.toml) blocked="$blocked
+  $f  — реальный wrangler.toml (инфра-ID; в git только wrangler.example.toml)" ;;
+    esac
+    case "$f" in
+        *.env.example) ;;
+        .env|*/.env|*.env.local) blocked="$blocked
+  $f  — .env (секреты/persona-URL; в git только .env.example)" ;;
+    esac
+done
+if [ -n "$blocked" ]; then
+    printf '🔒 Заблокированы классы файлов, запрещённые в публичном репо:%s\n' "$blocked" >&2
+    printf 'См. docs/security.md. Осознанный обход: git commit --no-verify\n' >&2
+    exit 1
+fi
+
 # Сканируем только staged-файлы, не весь tree.
 if ! gitleaks protect --staged --no-banner --redact; then
     cat <<'MSG' >&2
