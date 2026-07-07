@@ -1,9 +1,9 @@
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from "react";
-import { todayISO, applyNumpadKey, uuid4 } from "@/lib/utils";
+import { todayISO, applyNumpadKey, uuid4, CURRENCY_DECIMALS } from "@/lib/utils";
 import type { Expense } from "@/api/types";
 
 export type Screen = "main" | "history" | "stats" | "edit" | "note";
-export type ModalName = "currency" | "date" | "account" | "menu" | "settings" | null;
+export type ModalName = "currency" | "date" | "account" | "menu" | null;
 
 export interface State {
     amount: string;            // строка суммы (numpad)
@@ -15,9 +15,9 @@ export interface State {
     editingId: string | null;  // id редактируемой траты (null = создание новой)
     draftId: string;           // UUID будущей записи: один на драфт (MA-01/SPEC-042) — ретрай и
                                // двойной тап шлют тот же id, INSERT OR IGNORE дедуплицирует
+    returnScreen: Screen;      // MA-04 (SPEC-048): откуда пришли в edit (main/history/stats) — туда и вернёмся
     screen: Screen;
     modal: ModalName;
-    baseCurrency: string;
 }
 
 export type Action =
@@ -30,10 +30,8 @@ export type Action =
     | { t: "resetDraft" }
     | { t: "loadEdit"; e: Expense }
     | { t: "screen"; v: Screen }
-    | { t: "modal"; v: ModalName }
-    | { t: "baseCurrency"; v: string };
+    | { t: "modal"; v: ModalName };
 
-const BASE_KEY = "mini.baseCurrency";
 const ACC_KEY = "mini.lastAccount";
 const ACC_CCY_KEY = "mini.lastAccountCcy";   // SPEC-032: валюта липкого счёта — чтобы дефолтный драфт был консистентным
 
@@ -56,12 +54,17 @@ function freshDraft(): Draft {
 }
 
 function init(): State {
-    return { ...freshDraft(), screen: "main", modal: null, baseCurrency: localStorage.getItem(BASE_KEY) || "EUR" };
+    // MA-13 (SPEC-048): baseCurrency мёртв (SPEC-036 NG1, всегда EUR) — вычищаем возможное
+    // легаси-значение из localStorage, чтобы оно никогда не мислейбило DayTotal.
+    localStorage.removeItem("mini.baseCurrency");
+    return { ...freshDraft(), returnScreen: "main", screen: "main", modal: null };
 }
 
 function reducer(s: State, a: Action): State {
     switch (a.t) {
-        case "key": return { ...s, amount: applyNumpadKey(s.amount, a.k) };
+        // MA-07 (SPEC-048): decimal-cap по валюте — BTC/ETH получают свои 8/6 знаков,
+        // RSD (0 знаков) вовсе не принимает точку.
+        case "key": return { ...s, amount: applyNumpadKey(s.amount, a.k, CURRENCY_DECIMALS[s.currency] ?? 2) };
         case "currency": return { ...s, currency: a.v, modal: null };
         case "account":
             // SPEC-032 auto-bind: выбор счёта сразу ставит его валюту (трата со счётом обязана
@@ -83,12 +86,14 @@ function reducer(s: State, a: Action): State {
                 ...s,
                 amount: String(e.amount), currency: e.currency, accountId: e.account_id,
                 date: e.date, note: e.note ?? "", categoryId: e.category_id, editingId: e.id,
+                // MA-04 (SPEC-048): запоминаем исходный экран — «Назад»/сохранение/удаление
+                // возвращают в контекст (История/Статистика), а не всегда на главный.
+                returnScreen: s.screen === "edit" ? s.returnScreen : s.screen,
                 screen: "edit", modal: null,
             };
         }
         case "screen": return { ...s, screen: a.v, modal: null };
         case "modal": return { ...s, modal: a.v };
-        case "baseCurrency": localStorage.setItem(BASE_KEY, a.v); return { ...s, baseCurrency: a.v };
     }
 }
 

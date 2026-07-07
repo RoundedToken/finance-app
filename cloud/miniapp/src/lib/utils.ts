@@ -46,19 +46,24 @@ export function uuid4(): string {
 
 const MAX_NUMPAD_DIGITS = 12;
 
-/** Применяет нажатие numpad-клавиши к строке суммы. key: цифра | "." | "dot" | "⌫" | "back". */
-export function applyNumpadKey(amount: string, key: string): string {
+/**
+ * Применяет нажатие numpad-клавиши к строке суммы. key: цифра | "." | "dot" | "⌫" | "back".
+ * maxDec — знаков после точки у валюты драфта (MA-07/SPEC-048): BTC/ETH получают свои 8/6
+ * вместо общего cap'а в 2, у валют без дробной части (RSD) точка игнорируется.
+ */
+export function applyNumpadKey(amount: string, key: string, maxDec = 2): string {
     if (key === "back" || key === "⌫") {
         const n = amount.slice(0, -1);
         return n === "" ? "0" : n;
     }
     if (key === "dot" || key === ".") {
+        if (maxDec === 0) return amount;
         return amount.includes(".") ? amount : amount + ".";
     }
     const next = amount === "0" ? key : amount + key;
     if (next.replace(".", "").length > MAX_NUMPAD_DIGITS) return amount;
     const dec = next.split(".")[1];
-    if (dec && dec.length > 2) return amount;
+    if (dec && dec.length > maxDec) return amount;
     return next;
 }
 
