@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-025, SPEC-037, SPEC-043]  # валидация, партиал-PUT, прогресс-чарт
   - adr: docs/decisions.md#adr-011
   - adr: docs/decisions.md#adr-012
   - adr: docs/decisions.md#adr-013
@@ -672,3 +673,4 @@ Soft delete + cascading detach:
   split — перенесены в `docs/roadmap.md` tech-debt. См.
   `specs/audits/SPEC-007-{qa,arch}.md`.
 - 2026-05-25: статус `done`. Roadmap обновлён.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): валидация goal-payload ужесточена SPEC-025; партиал-PUT `/v1/web/goals/:id` починен SPEC-043 (merge из БД до валидации — раньше PUT без `target_currency` давал ложный 400 вопреки §6); график прогресса цели добавлен SPEC-037.

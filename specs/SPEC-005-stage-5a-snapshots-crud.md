@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-011, SPEC-016, SPEC-026]  # контракт /v1/web/accounts переписан
   - adr: docs/decisions.md#adr-011
   - adr: docs/decisions.md#adr-012
   - parent: docs/roadmap.md#этап-5--снапшоты-счетов-web-admin
@@ -475,3 +476,4 @@ Soft-delete: `UPDATE ... SET deleted_at = datetime('now')`.
 - 2026-05-25: Spec написан retrospectively, статус сразу `done`. Stage 5a
   реализован полностью; миграция 0006 применена в проде; страницы
   `/accounts` и `/snapshots` развёрнуты на `finances-admin.pages.dev`.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): контракт `/v1/web/accounts` трижды переписан после этой спеки: балансы → `effective_balance` (baseline+events, SPEC-011), EUR-поля → canonical конверсия (SPEC-016), добавлены инвест-поля `is_investment` (SPEC-026); `account_id` снапшота теперь валидируется (спека обещала отсутствие проверки). Читать как историю Stage 5a, не как справочник API.

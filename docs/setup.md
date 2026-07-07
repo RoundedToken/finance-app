@@ -12,12 +12,12 @@ brew install python@3.13 node
 Проверка:
 ```bash
 /opt/homebrew/bin/python3.13 --version    # Python 3.13.x
-/opt/homebrew/bin/node --version          # v20+
+/opt/homebrew/bin/node --version          # v22.5+ (engines в cloud/worker/package.json)
 /opt/homebrew/bin/npm --version           # 10+
 ```
 
 ### 2. Python venv и зависимости
-В корне репозитория (`/Users/stepan/Desktop/excel/`):
+В корне репозитория (`/Users/stepan/Projects/finance-app/`):
 ```bash
 /opt/homebrew/bin/python3.13 -m venv .venv
 source .venv/bin/activate
@@ -86,11 +86,9 @@ brew install visidata miller csvkit          # TUI просмотр и pipe-об
    `GOOGLEFINANCE` в листах `latest` и `history`, опубликует оба как CSV
    и допишет `GOOGLE_RATES_LATEST_CSV` / `GOOGLE_RATES_HISTORY_CSV` в `.env`.
 
-7. Залить URL в Cloudflare:
-   ```bash
-   cd cloud/worker
-   wrangler secret put GOOGLE_RATES_LATEST_CSV   # вставить значение из .env
-   ```
+7. Прописать URL в Worker: `GOOGLE_RATES_LATEST_CSV` — это **var**, не secret
+   (см. `cloud/worker/wrangler.example.toml` `[vars]`). Вставить значение из `.env`
+   в `cloud/worker/wrangler.toml` (файл в `.gitignore`) и передеплоить worker.
 
 **Где живёт ключ (для будущих сессий):** `~/.config/finances-gsheets/key.json`.
 Этот путь зафиксирован в `local/scripts/_common.py → GSHEETS_KEY_PATH`.
@@ -202,16 +200,13 @@ npm run dev      # http://localhost:5174
 
 ## Локальный init
 
-```bash
-# Создать БД из schema.sql + миграций
-python local/scripts/init_db.py
+Не нужен: **источник правды — D1** (ADR-011), локальной БД нет. Схема создаётся
+на шаге «Деплой Worker» (`wrangler d1 execute finances-outbox --file schema.sql`).
+Всё локальное — только daily backup (см. следующий раздел) и UI тест-харнесы
+(`local/README.md` § Тестовые харнесы).
 
-# Тестовый sync (без D1 пока пусто, должен пройти и сказать "0 records")
-python local/scripts/sync.py --once
-
-# Регенерация Excel (на пустой БД — увидим заголовки)
-python local/scripts/regenerate_xlsx.py
-```
+> До-D1 скрипты `init_db.py` / `migrate_to_d1.py` в `local/scripts/` — архив
+> старой эпохи, не запускать (см. `local/README.md`).
 
 ## launchd-агент для daily backup D1
 
@@ -296,10 +291,12 @@ wrangler d1 execute finances-outbox --remote \
 ## Проверочный smoke-test
 
 После всего setup'а (включая добавление в whitelist):
-1. Отправить в Telegram боту: `/start` → бот ответит приветствием **только если вы в whitelist**.
-2. Отправить `25 EUR food магазин` → бот подтвердит запись.
-3. На MacBook: `python local/scripts/sync.py --once` → должно показать «pulled 1, inserted 1, confirmed 1».
-4. (Этап 3) Открыть `finances/Finances.generated.xlsx` → новая трата в листе Expenses.
+1. `curl https://<worker>/healthz` → `{"ok":true}`.
+2. Отправить в Telegram боту: `/start` → бот ответит приветствием **только если вы в whitelist**.
+3. Отправить `25 EUR food магазин` → бот подтвердит запись.
+4. Открыть Mini App (кнопка меню бота) → трата видна в Истории.
+5. Открыть Web Admin (`https://finances-admin.pages.dev`) → Google login проходит, `/expenses` показывает трату.
+6. `python local/scripts/backup_d1.py` → дамп появился в `local/backups/` (и в iCloud).
 
 ## Troubleshooting
 
@@ -310,5 +307,5 @@ wrangler d1 execute finances-outbox --remote \
 | `wrangler: command not found` | `npm install -g wrangler` |
 | Worker возвращает 401 | проверить `SYNC_TOKEN` в `.env` и `wrangler secret list` |
 | Mini App белый экран | проверить `setdomain` у бота, CORS-заголовки Worker |
-| Sync не запускается | `launchctl list | grep excel-sync`; логи в `local/logs/` |
-| `Finances.xlsx` залочен | закрыть в Excel/Numbers; `lsof Finances.xlsx` пустой |
+| Backup не запускается | `launchctl list | grep finance-backup`; логи в `local/logs/` |
+| `Finances.xlsx` (legacy) залочен | закрыть в Excel/Numbers; `lsof Finances.xlsx` пустой |

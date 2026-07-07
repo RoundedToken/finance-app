@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-014, SPEC-028, SPEC-036]  # stats снят и воссоздан; cron теперь 4×/сутки
   - adr: docs/decisions.md#adr-006
   - roadmap: docs/roadmap.md#этап-3-курсы-валют-и-аналитика-в-mini-app
 ---
@@ -355,3 +356,4 @@ CREATE INDEX IF NOT EXISTS idx_rates_quote_date ON rates(quote, date DESC);
 
 - 2026-05-25: создан в `done` ретроспективно после фактического закрытия
   Stage 3 (по факту реализован в течение ~10 дней до даты создания spec'а).
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): экран «📊 Статистика» (vanilla) снят при SPEC-014 и воссоздан в React SPEC-036 (`revives`); cron курсов теперь 4×/сутки `0 */6 * * *` (SPEC-028), не 1×/сутки `0 6 * * *` из этой спеки.

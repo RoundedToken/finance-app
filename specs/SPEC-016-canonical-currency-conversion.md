@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-27
 updated: 2026-05-27
 links:
+  - revised_by: SPEC-025  # R3 (MtM goal balance) пересмотрен (ADR-020)
   - adr: docs/decisions.md#adr-014
   - depends_on: [SPEC-011, SPEC-013]
 ---
@@ -120,3 +121,4 @@ Auth — без изменений (JWT для `/web/*`, initData для Mini Ap
 - 2026-05-27: создан в `draft`.
 - 2026-05-27: одобрен Stepan'ом, переведён в `in_progress`.
 - 2026-05-27: реализовано, Phase 3 (solution-architect APPROVED_WITH_NICES, senior-qa PASS_WITH_NICES), запушено (89f208a + a242d1c), `done`.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): решение R3 (mark-to-market goal balance) пересмотрено SPEC-025/ADR-020 — вклад в `target_currency` фиксируется по курсу даты вклада (поток), MtM остаётся только на шаге `target_currency → EUR`. Остальная canonical-модель (запас/поток, RatesIndex) актуальна.

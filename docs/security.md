@@ -55,7 +55,7 @@ WRN leaks found: 1
 
 ## Перед каждым push в public
 
-Чеклист (выполняется руками или через `make security-check`):
+Чеклист (выполняется руками — авто-таргета `make security-check` нет, не выдумывать):
 
 1. `git status` — нет ли в untracked файлов с секретами / личными данными?
 2. `gitleaks dir --no-banner` — clean?

@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-011, SPEC-012]  # AC2–AC5 сняты
   - parent: specs/SPEC-008-stage-7-5-transactions.md
 ---
 
@@ -93,3 +94,4 @@ SPEC-008 NG4 отложил edit transactions. Реальный сценарий
   - Admin: Pencil button на TxRow, EditTxModal с pre-fill;
     структурные поля disabled для chain-tx + amber warning.
 - 2026-05-25: статус done.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): AC2–AC5 (auto-снапшоты при edit, chain-ограничения) сняты позднейшими спеками: auto-снапшоты удалены SPEC-011, chains откачены SPEC-012. Актуален только базовый PUT-контракт.

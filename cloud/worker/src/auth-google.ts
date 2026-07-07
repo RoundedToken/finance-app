@@ -14,7 +14,14 @@ import type { Env } from "./types";
 import { randomState, signJwt, verifyJwt } from "./jwt";
 import { jsonResponse } from "./cors";
 
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;          // 30 дней
+// SEC-08 (волна 2 аудита): 30 дней в localStorage без отзыва — слишком широкое окно
+// для украденного XSS'ом токена. 72ч + автопродление активной сессии через
+// /v1/web/session/refresh (клиент дергает при exp < TTL/2) — активный пользователь
+// не разлогинивается, украденный токен умирает максимум за 72ч. Пересмотр ADR-012.
+export const SESSION_TTL_SECONDS = 60 * 60 * 72;        // 72 часа
+// Absolute cap цепочки refresh'ей: активное продление не может тянуться дольше
+// 30 дней от исходного OAuth-входа (auth_time в payload) — «вечный вор» исключён.
+export const MAX_SESSION_AGE_SECONDS = 60 * 60 * 24 * 30;
 const STATE_TTL_SECONDS = 600;                          // 10 минут на сам OAuth flow
 const STATE_COOKIE = "google_oauth_state";
 const RETURN_COOKIE = "google_oauth_return";
@@ -97,7 +104,7 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
         return text("forbidden", 403);
     }
 
-    const token = await signJwt({ sub: email }, env.ADMIN_JWT_SECRET, SESSION_TTL_SECONDS);
+    const token = await signJwt({ sub: email, auth_time: Math.floor(Date.now() / 1000) }, env.ADMIN_JWT_SECRET, SESSION_TTL_SECONDS);
 
     // Чистим state-cookies + редиректим с fragment-токеном.
     const redirect = appendFragment(returnTo, `token=${encodeURIComponent(token)}`);
@@ -114,7 +121,7 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
 export async function requireAdminSession(
     request: Request,
     env: Env,
-): Promise<{ ok: true; email: string } | { ok: false; response: Response }> {
+): Promise<{ ok: true; email: string; payload: import("./jwt").JwtPayload } | { ok: false; response: Response }> {
     if (!env.ADMIN_JWT_SECRET) {
         return { ok: false, response: jsonResponse({ error: "server misconfigured" }, 500, request, env) };
     }
@@ -125,7 +132,7 @@ export async function requireAdminSession(
     if (!v.ok || !v.payload) return { ok: false, response: jsonResponse({ error: "unauthorized", reason: v.reason }, 401, request, env) };
     const email = v.payload.sub.toLowerCase();
     if (!isAllowedEmail(email, env)) return { ok: false, response: jsonResponse({ error: "forbidden" }, 403, request, env) };
-    return { ok: true, email };
+    return { ok: true, email, payload: v.payload };
 }
 
 function isAllowedEmail(email: string, env: Env): boolean {

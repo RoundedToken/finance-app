@@ -4,7 +4,7 @@
 
 ## TL;DR для агента (актуальная архитектура — см. ADR-011, ADR-012)
 - **D1 (Cloudflare SQLite)** — **единственный источник правды**. Не локальный SQLite.
-- **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` (Mini App), `/v1/web/*` (Web Admin CRUD, JWT), `/v1/admin/*` (системные миграции, SYNC_TOKEN), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates/*`.
+- **Cloudflare Worker** (`cloud/worker/`) — единственный API. Endpoints: `/v1/expenses/*` + `/v1/bootstrap` (Mini App: CRUD трат + референсы), `/v1/web/*` (Web Admin CRUD, JWT), `/v1/admin/*` (системные миграции, SYNC_TOKEN), `/v1/auth/google/*`, `/tg` (bot webhook), `/v1/rates` (GET; refresh курсов — `/v1/admin/refresh-rates`), `/healthz`.
 - **Mini App в Telegram** (`cloud/miniapp/`) — ввод расходов с iPhone + read-only аналитика расходов (экран «📊 Статистика», SPEC-036/ADR-021). Глубокая аналитика (доходы/снапшоты/портфель/net worth) — в Web Admin. Auth: Telegram `initData` HMAC.
 - **Web Admin** (`cloud/admin/`) — React SPA для снапшотов, доходов, обменов, дашбордов, портфеля, инвестиций (крипто-портфель ETH/стейкинг, SPEC-026) **и аналитики расходов**. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`. Свободные деньги: `free = net − targeted − invested` (инвест-ведро `accounts.is_investment=1` входит в net, исключается из free).
 - **MacBook** — только daily backup D1 через `wrangler d1 export`. Может быть выключен неделями.
@@ -16,12 +16,12 @@
 ## Структура репозитория
 
 ```
-excel/                            # имя корня — historical; см. ADR-011 о возможном переименовании
+finance-app/                      # корень репо (переименован из excel/, tech debt #20 закрыт)
 ├── CLAUDE.md, README.md          ← entry points
 ├── docs/                         ← вся архитектурная документация
 │   ├── architecture.md           — общая архитектура и диаграммы
 │   ├── data-model.md             — SQLite-схемы (D1)
-│   ├── decisions.md              — ADR-001…022
+│   ├── decisions.md              — ADR-001…023
 │   ├── setup.md                  — как поднять проект с нуля
 │   ├── stack.md                  — технологический стек
 │   └── roadmap.md                — план этапов и текущий статус
@@ -45,7 +45,7 @@ excel/                            # имя корня — historical; см. ADR-
 │   └── logs/                     — backup.out.log, backup.err.log
 ├── cloud/                        ← вся облачная часть
 │   ├── worker/                   — Worker TypeScript: REST API + bot + auth + cron
-│   │   ├── src/                  — index.ts, bot.ts, auth.ts, auth-google.ts, jwt.ts, db.ts, rates.ts, types.ts
+│   │   ├── src/                  — index.ts (роутинг) + доменные модули: db, rates, dashboard, goals, snapshots, incomes, transactions, budgets/rbar, investments, coach, stats, ledger, schemas, bot, auth/auth-google/jwt, … (~22 файла)
 │   │   ├── schema.sql, migrations/
 │   │   └── wrangler.toml, package.json
 │   ├── miniapp/                  — Telegram Mini App (React + Vite + TS, SPEC-014)
@@ -62,7 +62,7 @@ excel/                            # имя корня — historical; см. ADR-
 └── reports/                      ← устаревшая папка для regen xlsx (gitignored, after ADR-011 не используется активно)
 ```
 
-**Историческая заметка**: корень папки называется `excel/`, что не отражает текущий scope. Переименовать — отдельная задача (см. roadmap, tech debt #20).
+**Историческая заметка**: корень раньше назывался `excel/` (наследие Excel-эпохи до ADR-011); переименован в `finance-app/` (tech debt #20 закрыт, аудит 2026-07).
 
 ## Главные правила для агента
 
@@ -116,7 +116,7 @@ excel/                            # имя корня — historical; см. ADR-
 | Спецификации фич | `specs/SPEC-NNN-*.md` |
 | Общая архитектура, диаграмма потоков | `docs/architecture.md` |
 | Какие таблицы и поля в D1 | `docs/data-model.md` |
-| Почему такие решения | `docs/decisions.md` (ADR-001…022) |
+| Почему такие решения | `docs/decisions.md` (ADR-001…023) |
 | Как поднять проект с нуля | `docs/setup.md` |
 | Полный список зависимостей и версий | `docs/stack.md` |
 | Что сейчас делаем, что дальше | `docs/roadmap.md` |

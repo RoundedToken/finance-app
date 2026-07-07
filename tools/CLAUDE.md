@@ -1,6 +1,6 @@
 # tools/ — Excel-инструменты (для Legacy и для отладки регенерированного дашборда)
 
-**Не источник правды.** Все эти инструменты работают с `.xlsx` файлами (Legacy в `data/legacy/` или regenerated в `reports/`). Источник правды — `local/finances.db`. См. корневой `CLAUDE.md`.
+**Не источник правды.** Legacy-lens поверх `.xlsx` файлов (Legacy в `data/legacy/`; папка `reports/` после ADR-011 активно не используется). **Источник правды — Cloudflare D1** (ADR-011), не `local/finances.db` (тот — мёртвое наследие до-D1-эпохи). См. корневой `CLAUDE.md`.
 
 ## Структура
 
@@ -11,7 +11,7 @@ tools/
 ├── Makefile           ← быстрые команды
 └── excel/             ← Python-скрипты для .xlsx
     ├── _common.py             — общие хелперы (WORKBOOK_PATH, atomic_save, inventory)
-    ├── inspect.py             — структурный паспорт .xlsx
+    ├── inspect_xlsx.py        — структурный паспорт .xlsx
     ├── backup.py / restore.py — резервные копии
     ├── read_sheet.py          — CSV/JSON-дамп листа
     ├── set_cell.py            — точечная правка ячейки
@@ -27,12 +27,12 @@ tools/
 
 - **WORKBOOK по умолчанию** — `data/legacy/Finances.xlsx`. Это переопределено в `_common.py:PROJECT_ROOT`. Если хочется поработать с другим файлом — передавай путь явно.
 - **Бэкапы** — `data/legacy/backups/`. Скрипт `backup.py` пишет туда.
-- **Скрипты можно запускать** из корня репо: `python tools/excel/inspect.py`. `_common.py` сам резолвит правильный путь.
+- **Скрипты можно запускать** из корня репо: `python tools/excel/inspect_xlsx.py`. `_common.py` сам резолвит правильный путь.
 
 ## Когда использовать
 
 1. **Работа с Legacy** `data/legacy/Finances.xlsx` — историческое содержимое, ручной журнал снимков до миграции (Этап 6).
-2. **Отладка регенерированного** `reports/Finances.generated.xlsx` — `diff` с предыдущей версией, `inspect` инвентаря.
+2. ~~Отладка регенерированного `reports/Finances.generated.xlsx`~~ — регенерация снята ADR-011, папка `reports/` пуста/неактивна.
 3. **Анализ любых сторонних .xlsx** (например, экспортов из банков).
 
 ## Главные правила
@@ -45,10 +45,10 @@ tools/
 
 ## Команды
 
-Из корня (`/Users/stepan/Desktop/excel/`), в активированном venv:
+Из корня репо (`/Users/stepan/Projects/finance-app/`), в активированном venv:
 
 ```bash
-python tools/excel/inspect.py
+python tools/excel/inspect_xlsx.py
 python tools/excel/backup.py
 python tools/excel/read_sheet.py --values-only
 python tools/excel/calc.py
@@ -71,7 +71,7 @@ make diff A=… B=…
 ## Связь с верхним уровнем
 
 - Корневой `CLAUDE.md` — общие правила.
-- `docs/architecture.md` — общая архитектура (Excel = dashboard, SQLite = ground truth).
+- `docs/architecture.md` — общая архитектура (D1 = ground truth; Excel — только legacy-архив).
 - `docs/data-model.md` — куда мигрируем сущности.
 - `data/legacy/` — где лежит Legacy `.xlsx`.
-- `reports/` — где появляется регенерированный дашборд.
+- `reports/` — legacy-папка регенерации (после ADR-011 не используется).

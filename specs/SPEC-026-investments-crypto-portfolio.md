@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-06-06
 updated: 2026-06-06
 links:
+  - revised_by: [SPEC-027, SPEC-028, SPEC-030]  # staked_qty, цепочка провайдеров, autorange
   - adr: docs/decisions.md#adr-006   # источник курсов
   - adr: docs/decisions.md#adr-011   # D1 — источник правды
   - adr: docs/decisions.md#adr-012   # Web Admin scope
@@ -504,3 +505,4 @@ ASCII-набросок карточки позиции:
   `investments.ts`, `listBuckets` отдаёт `is_investment`, исключение инвест-ведра из пикеров расхода/дохода;
   guard'ы валют/account в существующих обмене/снапшоте/вкладе (AC18). Отклонены ~18 «находок» вида
   «код ещё не написан» (это план Phase 2, не дефект спеки). Статус — `draft`, ждёт одобрения owner'а (Phase 1 gate).
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): §5/§7 устарели точечно: `is_staked` теперь производный от `staked_qty>0` (SPEC-027); `source='binance'` → цепочка Binance→Coinbase→CoinGecko + `rate_ticks` (SPEC-028/ADR-019); период графика → autorange + начисление стейкинга (SPEC-029→SPEC-030).

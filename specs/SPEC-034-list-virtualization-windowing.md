@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-06-26
 updated: 2026-06-26
 links:
+  - revised_by: SPEC-035  # R3 container-scroll → window-virtualizer (фикс 47359bd)
   - adr: docs/decisions.md
   - depends_on: [SPEC-016, SPEC-024, SPEC-033]
 ---
@@ -145,3 +146,4 @@ links:
 
 - 2026-06-26: создан сразу в `in_progress` (scope зафиксирован двумя ответами владельца: windowing-only; Admin Расходы + Mini App История). Discovery — фоновый workflow из 4 Explore-агентов.
 - 2026-06-26: `done` — выкачено на прод (Pages: finances-admin + finances-miniapp; worker/D1 не тронуты). Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES (0 must-fix). Сошедшиеся nice-to-have применены fix-коммитом (`table-fixed` против прыжка ширин, colSpan→columns.length, border на th, scroll-to-top при сортировке, useMemo, чистка header). Локальный визуал-тест Playwright light/dark: Admin 19→35 DOM-строк из 400 (sticky 0px, KPI/sort по полному набору); Mini App 11→14 блоков-дней из 140 (DayTotal сходится). PR #20. Отложено (nice-to-have, в tech-debt roadmap): живой iOS-swipe тест на виртуализированных строках (структурно безопасно, R4); пре-существующая неконсистентность KPI↔поиск (NG2, не из этой фичи); разовый «подскок» скролла у дня с bulk-импортом (E3, осознанно).
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): §7/R3 (container-scroll через ограниченный контейнер) заменён на `useWindowVirtualizer` (фикс `47359bd`, зафиксирован в changelog SPEC-035) — тело спеки описывает первоначальный вариант реализации.

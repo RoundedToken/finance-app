@@ -1,28 +1,28 @@
 # Personal Finance System
 
-Личная финансовая система для одного пользователя: Telegram Mini App для ввода с телефона, локальная SQLite-база как источник правды, Excel как красивый дашборд. Без VPS, без подписок, под полным контролем.
+Личная финансовая система для одного пользователя: Telegram Mini App для ввода с телефона, Web Admin для управления и аналитики, Cloudflare D1 как единственный источник правды (ADR-011/012). Без VPS, без подписок, под полным контролем.
 
 ## Зачем
 
 - Ввод расходов с iPhone в Telegram — UI похож на «Расходы ОК», но свой.
-- Снапшоты балансов по всем счетам (Сбер, Cash EUR/RSD, биржи, кошельки).
-- Обмены валют и цепочки операций (RUB → USDT → EUR) — с фиксацией курса и подсчётом потерь на спреде.
+- Снапшоты балансов по всем счетам (банк, Cash EUR/RSD, биржи, кошельки).
+- Обмены валют (RUB → USDT → EUR) — с фиксацией курса и подсчётом потерь на спреде.
 - Курсы валют — из Google автоматически, фиксируются на момент операции.
-- Excel-дашборд: динамика капитала, аллокация по валютам/счетам, savings rate.
+- Web Admin-дашборды: динамика капитала, аллокация по валютам/счетам, savings rate, бюджеты, цели, крипто-портфель.
 
 ## Архитектура
 
 ```
-iPhone (Telegram Mini App)
-        │ HTTPS
+iPhone (Telegram Mini App)      Desktop browser (Web Admin)
+        │ HTTPS (initData HMAC)         │ HTTPS (Google OAuth → JWT)
+        ▼                               ▼
+Cloudflare Worker  ── единственный API (REST + bot + cron)
+        │
         ▼
-Cloudflare Worker + D1     ← бесплатно, всегда онлайн (не VPS)
-        │ REST API
-        ▼ при пробуждении MacBook
-Локальный SQLite           ← источник правды
-        │ regenerate_xlsx.py
+Cloudflare D1      ← ИСТОЧНИК ПРАВДЫ (ADR-011)
+        │ wrangler d1 export (daily, launchd)
         ▼
-Finances.xlsx              ← read-only dashboard
+MacBook            ← только backup (local/backups/ + iCloud)
 ```
 
 ## Где начать
@@ -37,7 +37,7 @@ Finances.xlsx              ← read-only dashboard
 
 ## Стек
 
-Python 3.13, SQLite, TypeScript, Cloudflare Workers + D1 + Pages, Telegram Mini Apps, openpyxl/xlsxwriter, Google Sheets как прокси к Google Finance.
+TypeScript (Worker + два React SPA), Cloudflare Workers + D1 + Pages, Telegram Mini Apps, Google Sheets как прокси к Google Finance. Python 3.13 — только backup D1 и локальные UI-тест-харнесы.
 
 ## Стоимость
 

@@ -1,5 +1,14 @@
 # Sync protocol
 
+> ⚠️ **HISTORICAL (до-D1 эпоха, ADR-011): описанное ниже не соответствует текущей архитектуре.**
+> Протокол outbox-синхронизации целиком отменён ADR-011 — **D1 стал единственным источником
+> правды**, локального SQLite и `sync.py` больше нет, MacBook — только daily backup
+> (`local/scripts/backup_d1.py`). Из перечисленных ниже endpoint'ов сегодня существует только
+> `POST /v1/expenses` (пишет напрямую в `expenses`, не в outbox); `/v1/sync/*`, `sync_state`,
+> `device_heartbeats`, cron-cleanup — удалены; `POST /v1/admin/references` удалён SPEC-043
+> (аудит 2026-07, FIN-02). Актуальная картина — `docs/architecture.md`. Документ сохранён
+> как архив решения.
+
 Документ детально описывает, как данные перемещаются между Mini App, Cloudflare D1 и локальным SQLite.
 
 ## Принципы

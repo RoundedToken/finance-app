@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-019, SPEC-024, SPEC-032]  # см. changelog 2026-07-07
   - adr: docs/decisions.md#adr-009
   - adr: docs/decisions.md#adr-011
   - roadmap: docs/roadmap.md
@@ -360,3 +361,4 @@ wrangler d1 execute finances-outbox --remote \
 
 - 2026-05-25: создан retrospectively (Stage 1 уже `done`). Описывает реализованное состояние по факту кода в `cloud/worker/` + `cloud/miniapp/` + миграциях `0001-0004`.
 - 2026-05-25: статус `done`. Закрыто по факту smoke-теста (трата с iPhone → D1).
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): контракт `/v1/expenses` уточнён позднейшими спеками — `created_at` теперь серверный (SPEC-024), тело 400 и валидация — Zod (SPEC-019), trust-client `currency` закрыт guard-ом валюта↔счёт (SPEC-032); outbox-части сняты ADR-011. Спека — исторический снимок Stage 1.

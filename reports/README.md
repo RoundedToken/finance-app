@@ -1,21 +1,9 @@
-# reports/ — generated artefacts (gitignored)
+# reports/ — legacy-папка (gitignored)
 
-Сюда попадают **производные** артефакты, которые автоматически собираются из ground truth (`local/finances.db`). В git только этот README — сами файлы регенерируются и не должны жить в истории.
+> ⚠️ **HISTORICAL (до-D1 эпоха, ADR-011): описанный ранее pipeline не существует.**
+> Папка предназначалась для артефактов, регенерируемых из локального SQLite
+> (`regenerate_xlsx.py` → `Finances.generated.xlsx`). После pivot к D1 (ADR-011)
+> локальной БД и regen-скриптов нет; все дашборды живут в Web Admin.
 
-## Текущее содержимое
-
-| Файл | Кто генерирует | Когда |
-|---|---|---|
-| `Finances.generated.xlsx` | `local/scripts/regenerate_xlsx.py` | после каждого `sync.py` (или вручную) |
-
-## Будущее
-
-- `monthly-<YYYY-MM>.xlsx` — помесячные отчёты.
-- `tax-<year>.csv` — экспорт для налогов.
-- `pdf-reports/` — рендеры дашборда в PDF.
-
-## Правила
-
-1. **Не редактировать вручную.** Все правки данных — через SQL в `local/finances.db` или через скрипты в `local/scripts/`.
-2. **Содержимое всегда воспроизводимо** из ground truth.
-3. **Безопасно удалять и регенерировать.**
+Активной генерации нет. В git только этот README. Содержимое (если осталось) —
+безопасно удалять. Для Excel-lens поверх legacy-файла — см. `tools/CLAUDE.md`.

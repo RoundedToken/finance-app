@@ -17,7 +17,7 @@
     "@tanstack/react-virtual": "^3.14.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "echarts": "^5.5.1",
+    "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.453.0",
     "react": "^19.0.0",

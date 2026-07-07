@@ -27,7 +27,7 @@ Personal finance system для одного пользователя, без VPS
 │  │ Mini App           │  │    │  │ Web Admin (React)   │  │
 │  │ - numpad + cats    │  │    │  │ - accounts          │  │
 │  │ - история          │  │    │  │ - snapshots         │  │
-│  │ - 📊 статистика     │  │    │  │ - incomes / chains  │  │
+│  │ - 📊 статистика     │  │    │  │ - incomes / goals   │  │
 │  │ - settings         │  │    │  │ - dashboards        │  │
 │  └──────────┬─────────┘  │    │  └──────────┬──────────┘  │
 └─────────────┼────────────┘    └─────────────┼─────────────┘
@@ -44,13 +44,14 @@ Personal finance system для одного пользователя, без VPS
         │  │  - /v1/web/*          Web Admin CRUD (JWT)│  │
         │  │  - /v1/admin/*        sys-миграции (SYNC) │  │
         │  │  - /v1/rates/...      курсы               │  │
-        │  │  - cron               4×/сутки rates pull │  │
+        │  │  - cron    rates 4×/сутки + coach 1×/день │  │
         │  └──────────────────┬────────────────────────┘  │
         │  ┌──────────────────▼────────────────────────┐  │
         │  │ D1 — ИСТОЧНИК ПРАВДЫ                      │  │
         │  │  expenses, categories, accounts,          │  │
         │  │  currencies, rates, authorized_users,     │  │
-        │  │  snapshots (planned), transactions ...    │  │
+        │  │  snapshots, transactions, goals, budgets, │  │
+        │  │  rate_ticks, coach_state ...              │  │
         │  └───────────────────────────────────────────┘  │
         │  ┌─────────────────┐    ┌─────────────────────┐ │
         │  │ Pages           │    │ Pages               │ │
@@ -97,12 +98,18 @@ Personal finance system для одного пользователя, без VPS
 3. Если ОК — handler работает с D1 напрямую.
 4. Если 401 — SPA чистит token и показывает /login.
 
-### Поток 4: курсы валют (cron)
-1. Cloudflare Cron Trigger срабатывает **4×/сутки** (`0 */6 * * *`).
-2. **Фиат** (EUR/USD/RUB/RSD/USDT/TRY): Worker делает `fetch(GOOGLE_RATES_LATEST_CSV)`, парсит CSV (см. ADR-006).
-3. **Крипто** (ETH/EUR): цепочка провайдеров Binance→Coinbase→CoinGecko (fallback при гео-блоке CF-IP, ADR-019/SPEC-028).
-4. `INSERT OR REPLACE INTO rates (date, base, quote, rate)` для каждой валюты; крипто пишет ещё и внутридневной тик в `rate_ticks`.
+### Поток 4: cron (курсы + Lido APR + coach)
+
+Два Cron Trigger'а (`triggers.crons` в wrangler.toml), ветвление по `event.cron` в `scheduled()`:
+
+**A. Курсы — 4×/сутки (`0 */6 * * *`):**
+1. **Фиат** (EUR/USD/RUB/RSD/USDT/TRY): Worker делает `fetch(GOOGLE_RATES_LATEST_CSV)`, парсит CSV (см. ADR-006).
+2. **Крипто** (ETH/EUR): цепочка провайдеров Binance→Coinbase→CoinGecko (fallback при гео-блоке CF-IP, ADR-019/SPEC-028) — отдельный try/catch, падение не валит фиат.
+3. `INSERT OR REPLACE INTO rates (date, base, quote, rate)` для каждой валюты; крипто пишет ещё и внутридневной тик в `rate_ticks`.
+4. **Lido APR** (SPEC-027): fetch авто-APR stETH → `app_config.steth_apr_pct` (тоже изолированный try/catch).
 5. Mini App и Web Admin читают актуальные курсы из D1 при bootstrap.
+
+**B. Coach-нудж — 1×/день (`0 7 * * *`, `COACH_CRON`, SPEC-040/ADR-023):** детерминированные правила качества данных (`coach.ts`); при наличии сигналов — одно Telegram-сообщение владельцу через бота; cooldown в `coach_state`. Нет сигналов → молчание.
 
 ### Поток 5: backup MacBook (раз в день)
 1. launchd-агент запускает `local/scripts/backup_d1.py`.

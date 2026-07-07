@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - superseded_by: SPEC-014  # vanilla Mini App удалён при React-rewrite
   - adr: docs/decisions.md
   - parent: SPEC-001  # Stage 1 заложил Worker + endpoints, на которые опирается UI
   - depends_on: []
@@ -293,3 +294,4 @@ CREATE TABLE expenses (
 ## 13. Changelog spec'а
 
 - 2026-05-25: создан retrospective как `done`. Stage 2 закрыт в коде минимум за месяц до этого, но spec не писали.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): vanilla Mini App целиком заменён React-переписыванием (SPEC-014) и удалён из репо; AC этой спеки непроверяемы против текущего кода. UI-паттерны переехали в `cloud/miniapp/src/`.
