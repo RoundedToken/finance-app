@@ -802,7 +802,7 @@ async def scenario_toast_error(page, base: str) -> None:
         await page.goto(f"{base}/categories", wait_until="networkidle")
         await page.wait_for_selector("text=Категории", timeout=5000)
         await page.get_by_role("button", name="Деактивировать").first.click()
-        await page.wait_for_selector("[role=status]", timeout=3000)
+        await page.wait_for_selector("[role=status], [role=alert]", timeout=3000)   # ADM-21: тосты ошибок теперь role=alert
         await page.wait_for_timeout(150)
         await page.screenshot(path=str(OUT_DIR / "admin-toast-error.png"), full_page=True)
         print("  ✓ admin-toast-error.png (тост ошибки мутации)")
