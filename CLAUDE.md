@@ -91,7 +91,7 @@ excel/                            # имя корня — historical; см. ADR-
 8. **macOS-specific:**
    - Python 3.13 в `.venv/` корня проекта. **Не использовать системный Python 3.9.6.**
    - Node + npm для wrangler. Wrangler ставится глобально (`npm install -g wrangler`).
-   - launchd-агент для backup прописывается в `~/Library/LaunchAgents/com.user.excel-backup.plist`.
+   - launchd-агент для backup прописывается в `~/Library/LaunchAgents/com.user.finance-backup.plist` (источник — `local/launchd/`).
 
 9. **Bot не отвечает никому, кроме `authorized_users`.** Правило безопасности (ADR-009). Не добавлять «фолбэк-приветствия» для unauthorized — только логирование. Для добавления нового пользователя — `wrangler d1 execute INSERT INTO authorized_users`.
 

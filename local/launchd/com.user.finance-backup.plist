@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.finance-backup</string>
+
+    <!-- Daily backup D1 (единственная задача агента после D1-centric pivot, ADR-011).
+         Пути привязаны к ~/Projects/finance-app (аудит 2026-07, DB-01: прежний plist
+         com.user.excel-sync указывал на переехавший ~/Desktop/excel и молча падал). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/stepan/Projects/finance-app/.venv/bin/python</string>
+        <string>/Users/stepan/Projects/finance-app/local/scripts/backup_d1.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/stepan/Projects/finance-app</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Календарное расписание вместо StartInterval: интервальный таймер на спящем
+         ноутбуке пропускает запуски, календарный launchd догоняет после пробуждения. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/stepan/Projects/finance-app/local/logs/backup.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/stepan/Projects/finance-app/local/logs/backup.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

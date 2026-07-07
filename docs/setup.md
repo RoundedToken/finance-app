@@ -203,49 +203,31 @@ python local/scripts/sync.py --once
 python local/scripts/regenerate_xlsx.py
 ```
 
-## launchd-агент для автоматического sync
+## launchd-агент для daily backup D1
 
-Создать `~/Library/LaunchAgents/com.user.excel-sync.plist`:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.user.excel-sync</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/stepan/Desktop/excel/.venv/bin/python</string>
-        <string>/Users/stepan/Desktop/excel/local/scripts/sync.py</string>
-        <string>--once</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>StartInterval</key>
-    <integer>900</integer>
-    <key>StandardOutPath</key>
-    <string>/Users/stepan/Desktop/excel/local/logs/sync.out.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/stepan/Desktop/excel/local/logs/sync.err.log</string>
-</dict>
-</plist>
-```
+> До-D1 sync-агент (`sync.py`, каждые 15 минут) упразднён вместе с локальной БД (ADR-011).
+> Единственный агент — ежедневный бэкап D1.
 
-Загрузить:
+Готовый plist лежит в репо: `local/launchd/com.user.finance-backup.plist`
+(пути внутри привязаны к `~/Projects/finance-app`; запуск ежедневно в 10:30
+через `StartCalendarInterval` — календарный таймер, в отличие от `StartInterval`,
+догоняет пропущенный запуск после пробуждения ноутбука — плюс `RunAtLoad`).
+
+Установить:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.user.excel-sync.plist
+cp local/launchd/com.user.finance-backup.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.finance-backup.plist
 ```
 
-Это запускает sync каждые 15 минут когда MacBook не спит, плюс при логине.
-
-Если хотите запуск **только при пробуждении** (а не каждые 15 минут) — заменить `StartInterval` на:
-```xml
-<key>RunAtLoad</key>
-<true/>
-<key>KeepAlive</key>
-<false/>
+Проверить (второй столбец = last exit status, должен быть 0):
+```bash
+launchctl list | grep finance-backup
+tail -5 local/logs/backup.out.log
 ```
-И добавить ловлю wake events через отдельный плист с `LaunchEvents` (системные события).
+
+Скрипт `local/scripts/backup_d1.py`: `wrangler d1 export` → `local/backups/d1-<ts>.sql`,
+verify-фаза (импорт дампа в temp-sqlite + count ключевых таблиц), копия в iCloud Drive
+(`~/Library/Mobile Documents/com~apple~CloudDocs/finances-backups/`), ротация (30 копий).
 
 ## Локальные секреты (`.env`)
 
