@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, History as HistoryIcon, Calendar, MessageSquare, Wallet } from "lucide-react";
+import { Menu, History as HistoryIcon, Calendar, MessageSquare, Wallet, Loader2 } from "lucide-react";
 import { useBootstrap, useCreateExpense, useDeleteExpense } from "@/api/queries";
 import { useApp, amountValue } from "@/store";
 import { useToast } from "@/components/Toast";
@@ -67,7 +67,7 @@ export function MainScreen() {
         <div className="min-h-screen flex flex-col">
             <header className="flex items-center justify-between px-4 py-3">
                 <IconBtn label="Меню" onClick={() => d({ t: "modal", v: "menu" })}><Menu className="h-5 w-5" /></IconBtn>
-                <Display account={account} />
+                <Display account={account} busy={create.isPending} />
                 <IconBtn label="История" onClick={() => d({ t: "screen", v: "history" })}><HistoryIcon className="h-5 w-5" /></IconBtn>
             </header>
 
@@ -82,7 +82,7 @@ export function MainScreen() {
     );
 }
 
-function Display({ account }: { account: Account | null }) {
+function Display({ account, busy }: { account: Account | null; busy: boolean }) {
     const { s, d } = useApp();
     const mismatch = !!account && s.currency !== account.currency;
     // SPEC-032: валюта привязана к счёту. Открыть пикер можно только через осознанное
@@ -98,8 +98,15 @@ function Display({ account }: { account: Account | null }) {
     };
     return (
         <button onClick={openCurrency} className="flex flex-col items-center min-w-0">
-            <span className={cn("text-4xl font-semibold num tabular-nums leading-none truncate max-w-[60vw]", s.amount === "0" && "text-hint")}>{s.amount}</span>
+            {/* MA-07 (SPEC-048): длинное число уменьшаем, а не truncate — вводимые цифры
+                должны быть видны (truncate прятал КОНЕЦ суммы прямо во время ввода). */}
+            <span className={cn("font-semibold num tabular-nums leading-none max-w-[60vw]",
+                s.amount.length > 10 ? "text-2xl" : s.amount.length > 7 ? "text-3xl" : "text-4xl",
+                s.amount === "0" && "text-hint")}>{s.amount}</span>
             <span className={cn("mt-1 inline-flex items-center gap-1 text-sm", mismatch ? "text-amber-500 font-medium" : "text-hint")}>
+                {/* MA-05 (SPEC-048): явный busy-индикатор — «сохраняется» видимо отличается
+                    от «сумма не введена» (у обоих грид категорий приглушён). */}
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="Сохраняется" />}
                 <CurrencyFlag code={s.currency} /> {s.currency}{mismatch && " ⚠"}
             </span>
         </button>
@@ -163,9 +170,12 @@ function Categories({ cats, budgetByCat, envelopeByCat, onPick, busy, canSave }:
                             <button key={c.id} disabled={disabled} onClick={() => onPick(c.id)}
                                 style={{ background: (c.color ?? "#9ca3af") + "40" }}
                                 className={cn("flex flex-col items-center gap-1 py-3 rounded-xl transition-all",
-                                    disabled ? "opacity-40 pointer-events-none" : "active:animate-pop")}>
-                                <span className="text-2xl leading-none">{c.emoji ?? "🏷"}</span>
-                                <span className="text-[11px] text-center leading-tight">{c.name}</span>
+                                    disabled ? "pointer-events-none" : "active:animate-pop")}>
+                                {/* MA-08 (SPEC-048): приглушаем только интерактивную часть плитки —
+                                    бейджи бюджета/конверта (SPEC-020/023) остаются читаемыми в покое
+                                    (до ввода суммы), когда «могу ли я тратить?» нужнее всего. */}
+                                <span className={cn("text-2xl leading-none", disabled && "opacity-40")}>{c.emoji ?? "🏷"}</span>
+                                <span className={cn("text-[11px] text-center leading-tight", disabled && "opacity-40")}>{c.name}</span>
                                 {envelopeByCat.has(c.id)
                                     ? <EnvelopeHint e={envelopeByCat.get(c.id)} />
                                     : <BudgetHint b={budgetByCat.get(c.id)} />}
@@ -189,8 +199,9 @@ function BudgetHint({ b }: { b?: BudgetCategoryProgress }) {
     const over = b.remaining_eur < 0;
     const val = Math.round(Math.abs(b.remaining_eur));
     return (
+        // MA-08: 9px → 10px — на плитке 4-колоночного грида бейдж читается на пределе
         <span className={cn(
-            "text-[9px] leading-none font-medium tabular-nums mt-0.5",
+            "text-[10px] leading-none font-medium tabular-nums mt-0.5",
             b.status === "over" ? "text-red-600" : b.status === "warn" ? "text-amber-600" : "text-hint",
         )}>
             {over ? `−${val} €` : `≈${val} €`}
@@ -202,14 +213,13 @@ function BudgetHint({ b }: { b?: BudgetCategoryProgress }) {
 function EnvelopeHint({ e }: { e?: BudgetEnvelope }) {
     if (!e) return null;
     return (
-        <span className="text-[9px] leading-none font-medium tabular-nums mt-0.5 text-violet-500">
+        <span className="text-[10px] leading-none font-medium tabular-nums mt-0.5 text-violet-500">
             🐷 {Math.round(e.accrued_eur)} €
         </span>
     );
 }
 
 function RecentDays() {
-    const { s } = useApp();
     const { data } = useBootstrap();
     const expenses = data?.expenses ?? [];
     // последние 2 дня с тратами
@@ -231,7 +241,7 @@ function RecentDays() {
                     <div key={day}>
                         <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
                             <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
-                            <DayTotal rows={rows} base={s.baseCurrency} />
+                            <DayTotal rows={rows} />
                         </div>
                         <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
                             {/* SPEC-033: показываем ВСЕ траты дня — иначе итог DayTotal (по всем) не
@@ -275,8 +285,9 @@ function RecentRow({ e }: { e: Expense }) {
 
 function IconBtn({ children, label, onClick }: { children: React.ReactNode; label: string; onClick: () => void }) {
     return (
+        // MA-11 (SPEC-048): 44×44 pt — минимальный touch target по HIG
         <button aria-label={label} onClick={() => { haptic("light"); onClick(); }}
-            className="h-10 w-10 grid place-items-center rounded-full text-hint active:bg-secondary-bg transition-colors">
+            className="h-11 w-11 grid place-items-center rounded-full text-hint active:bg-secondary-bg transition-colors">
             {children}
         </button>
     );

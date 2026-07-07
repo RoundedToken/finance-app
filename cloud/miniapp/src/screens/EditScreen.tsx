@@ -27,7 +27,9 @@ export function EditScreen() {
     const busy = upd.isPending || del.isPending;
     const mismatch = !!account && s.currency !== account.currency;   // SPEC-032
 
-    const back = () => { d({ t: "resetDraft" }); d({ t: "screen", v: "main" }); };
+    // MA-04 (SPEC-048): возвращаемся туда, откуда пришли (main/История/drill Статистики),
+    // а не всегда на главный — цикл «просматриваю период → правлю» не теряет контекст.
+    const back = () => { d({ t: "resetDraft" }); d({ t: "screen", v: s.returnScreen }); };
 
     // SPEC-032: валюта привязана к счёту — пикер только через осознанное подтверждение.
     // При уже-рассогласованной (легаси) записи или «без счёта» — открываем сразу.
@@ -59,15 +61,19 @@ export function EditScreen() {
     return (
         <div className="min-h-screen flex flex-col">
             <header className="flex items-center justify-between px-4 py-3">
+                {/* MA-11 (SPEC-048): 44×44 pt touch target */}
                 <button aria-label="Назад" onClick={() => { haptic("light"); back(); }}
-                    className="h-9 w-9 grid place-items-center rounded-full active:bg-secondary-bg">
+                    className="h-11 w-11 grid place-items-center rounded-full active:bg-secondary-bg">
                     <ArrowLeft className="h-5 w-5" />
                 </button>
                 <button onClick={openCurrency} className="flex flex-col items-center">
-                    <span className={cn("text-3xl font-semibold num tabular-nums leading-none", s.amount === "0" && "text-hint")}>{s.amount}</span>
+                    {/* MA-07 (SPEC-048): длинное число уменьшаем, а не обрезаем */}
+                    <span className={cn("font-semibold num tabular-nums leading-none",
+                        s.amount.length > 10 ? "text-xl" : s.amount.length > 7 ? "text-2xl" : "text-3xl",
+                        s.amount === "0" && "text-hint")}>{s.amount}</span>
                     <span className={cn("mt-0.5 inline-flex items-center gap-1 text-xs", mismatch ? "text-amber-500 font-medium" : "text-hint")}><CurrencyFlag code={s.currency} /> {s.currency}{mismatch && " ⚠"}</span>
                 </button>
-                <span className="w-9" />
+                <span className="w-11" />
             </header>
 
             <Numpad onKey={(k) => d({ t: "key", k })} className="px-4" />

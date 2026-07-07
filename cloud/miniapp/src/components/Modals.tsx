@@ -86,7 +86,9 @@ function DatePicker({ open }: { open: boolean }) {
                 ))}
                 <label className="flex items-center justify-between py-3 px-3 rounded-xl bg-secondary-bg text-sm">
                     <span>Другая</span>
-                    <input type="date" value={s.date} max={dateShiftISO(0)} onChange={e => d({ t: "date", v: e.target.value })}
+                    {/* MA-12 (SPEC-048): очистка значения (десктоп/часть Android) даёт "" —
+                        пустую дату в драфт не пишем, остаёмся на прежней. */}
+                    <input type="date" value={s.date} max={dateShiftISO(0)} onChange={e => { if (e.target.value) d({ t: "date", v: e.target.value }); }}
                         className="bg-transparent text-right tabular-nums outline-none" />
                 </label>
             </div>

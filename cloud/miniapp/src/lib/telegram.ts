@@ -11,12 +11,17 @@ export function tg(): typeof window.Telegram.WebApp | undefined {
 
 /** Вызывается один раз на старте: ready/expand, фиксация цветов под тему. */
 export function initTelegram(): void {
+    // MA-06 (SPEC-048): тема может смениться ВО ВРЕМЯ сессии (iOS-автопереключение на
+    // закате) — подписываемся на смену, а не только снимаем её один раз на старте.
+    // Вне Telegram сигнал — prefers-color-scheme (внутри syncTheme его перекроет colorScheme).
+    try { window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", syncTheme); } catch { /* старый webview */ }
     const w = tg();
-    if (!w) return;
+    if (!w) { syncTheme(); return; }
     w.ready();
     w.expand();
     // расходы вводятся свайпами по категориям — гасим вертикальный свайп-закрытие
     try { w.disableVerticalSwipes?.(); } catch { /* старый клиент */ }
+    try { w.onEvent?.("themeChanged", syncTheme); } catch { /* старый клиент */ }
     syncTheme();
 }
 

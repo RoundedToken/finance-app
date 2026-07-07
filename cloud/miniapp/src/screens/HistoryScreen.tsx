@@ -19,7 +19,7 @@ const MODES: { key: Mode; label: string }[] = [
 ];
 
 export function HistoryScreen() {
-    const { s, d } = useApp();
+    const { d } = useApp();
     const { data, isLoading, isError, refetch } = useExpenses();
     const boot = useBootstrap();
     const expenses = data?.expenses ?? [];
@@ -114,8 +114,9 @@ export function HistoryScreen() {
         <div className="min-h-screen">
             <div className="sticky top-0 z-20 bg-bg/95 backdrop-blur px-4 pt-3 pb-2 space-y-2.5">
                 <div className="flex items-center gap-2">
+                    {/* MA-11 (SPEC-048): 44×44 pt touch target (иконка прежняя) */}
                     <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
-                        className="h-9 w-9 grid place-items-center rounded-full -ml-1 active:bg-secondary-bg transition-colors">
+                        className="h-11 w-11 grid place-items-center rounded-full -ml-2 active:bg-secondary-bg transition-colors">
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     <h1 className="text-lg font-semibold">История</h1>
@@ -138,13 +139,14 @@ export function HistoryScreen() {
                 <div className="flex items-center justify-between gap-2 min-h-[2rem]">
                     {mode !== "all" ? (
                         <div className="flex items-center gap-0.5">
+                            {/* MA-11 (SPEC-048): степперы 44×44 pt */}
                             <button aria-label="Предыдущий период" disabled={prevDisabled} onClick={() => step(-1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                className="h-11 w-11 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronLeft className="h-5 w-5" />
                             </button>
                             <span aria-live="polite" className="text-sm font-semibold text-center min-w-[8rem] whitespace-nowrap">{periodLabel}</span>
                             <button aria-label="Следующий период" disabled={nextDisabled} onClick={() => step(1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                className="h-11 w-11 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronRight className="h-5 w-5" />
                             </button>
                         </div>
@@ -189,7 +191,7 @@ export function HistoryScreen() {
                                     className="pb-4">
                                     <div className="flex items-center justify-between px-1 mb-1.5 text-xs text-hint gap-2">
                                         <span className="font-medium uppercase tracking-wide shrink-0">{humanDay(day)}</span>
-                                        <DayTotal rows={rows} base={s.baseCurrency} />
+                                        <DayTotal rows={rows} />
                                     </div>
                                     <div className="rounded-2xl overflow-hidden divide-y divide-border/40">
                                         {rows.map(e => <HistoryRow key={e.id} e={e} cats={cats} accounts={accounts} />)}

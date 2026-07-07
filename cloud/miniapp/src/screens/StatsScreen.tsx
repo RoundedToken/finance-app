@@ -92,12 +92,20 @@ export function StatsScreen() {
     const periodLabel = mode === "month" ? `${MONTHS_NOM[month]} ${year}` : mode === "year" ? `${year}` : "Всё время";
     const openDrill = (cat: string | null) => { haptic("light"); setDrill({ cat }); };
 
+    // MA-15 (SPEC-048): Δ сравнивает неполный текущий период с ПОЛНЫМ прошлым (AC3 SPEC-036) —
+    // «▼ 90%» 3-го числа месяца обманчив без слов. In-progress подписываем явно
+    // (memory `dashed-line-means-forecast`: in-progress должен быть подписан словами).
+    const inProgress = mode === "month" ? ymCur === today.slice(0, 7) : mode === "year" ? year === curY : false;
+    const deltaCaption = mode === "all" ? "" :
+        `к прошлому ${mode === "month" ? "мес" : "году"}${inProgress ? ` · ${mode === "month" ? "месяц" : "год"} идёт` : ""}`;
+
     return (
         <div className="min-h-screen">
             <div className="sticky top-0 z-20 bg-bg/95 backdrop-blur px-4 pt-3 pb-2 space-y-2.5">
                 <div className="flex items-center gap-2">
+                    {/* MA-11 (SPEC-048): 44×44 pt touch target (иконка прежняя) */}
                     <button aria-label="Назад" onClick={() => { haptic("light"); d({ t: "screen", v: "main" }); }}
-                        className="h-9 w-9 grid place-items-center rounded-full -ml-1 active:bg-secondary-bg transition-colors">
+                        className="h-11 w-11 grid place-items-center rounded-full -ml-2 active:bg-secondary-bg transition-colors">
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     <h1 className="text-lg font-semibold">Статистика</h1>
@@ -122,13 +130,14 @@ export function StatsScreen() {
                 <div className="flex items-center justify-center gap-2 min-h-[2rem]">
                     {mode !== "all" ? (
                         <div className="flex items-center gap-0.5">
+                            {/* MA-11 (SPEC-048): степперы 44×44 pt */}
                             <button aria-label="Предыдущий период" disabled={prevDisabled} onClick={() => step(-1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                className="h-11 w-11 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronLeft className="h-5 w-5" />
                             </button>
                             <span aria-live="polite" className="text-sm font-semibold text-center min-w-[8rem] whitespace-nowrap">{periodLabel}</span>
                             <button aria-label="Следующий период" disabled={nextDisabled} onClick={() => step(1)}
-                                className="h-8 w-8 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
+                                className="h-11 w-11 grid place-items-center rounded-full disabled:opacity-30 active:bg-secondary-bg transition-colors">
                                 <ChevronRight className="h-5 w-5" />
                             </button>
                         </div>
@@ -157,7 +166,7 @@ export function StatsScreen() {
 
                 {!isLoading && !isError && agg.count > 0 && (
                     <>
-                        <KPI total={agg.total} avg={avg} count={agg.count} missing={agg.missing} delta={delta} />
+                        <KPI total={agg.total} avg={avg} count={agg.count} missing={agg.missing} delta={delta} deltaCaption={deltaCaption} />
                         {agg.total > 0 && <Donut agg={agg} palette={palette} onTapCat={openDrill} />}
                         {agg.total > 0 && <CatList palette={palette} total={agg.total} catById={catById} onTapCat={openDrill} />}
                         {agg.total > 0 && <Trend trend={trend} mode={mode} />}
@@ -177,19 +186,19 @@ export function StatsScreen() {
 /* ── KPI ─────────────────────────────────────────────────────────────────── */
 
 function DeltaBadge({ delta }: { delta: NonNullable<Delta> }) {
-    if (delta.kind === "flat") return <span className="text-xs font-medium text-hint" title="к прошлому периоду">→ 0%</span>;
-    if (delta.kind === "new") return <span className="text-xs font-medium text-hint" title="к прошлому периоду">▲ new</span>;
+    if (delta.kind === "flat") return <span className="text-xs font-medium text-hint">→ 0%</span>;
+    if (delta.kind === "new") return <span className="text-xs font-medium text-hint">▲ new</span>;
     // Для расходов: больше трат = danger (красный), меньше = accent (зелёный).
     const up = delta.kind === "up";
     return (
-        <span className={cn("text-xs font-medium", up ? "text-danger" : "text-accent")} title="к прошлому периоду">
+        <span className={cn("text-xs font-medium", up ? "text-danger" : "text-accent")}>
             {up ? "▲" : "▼"} {Math.round(delta.pct)}%
         </span>
     );
 }
 
-function KPI({ total, avg, count, missing, delta }: {
-    total: number; avg: number; count: number; missing: number; delta: Delta;
+function KPI({ total, avg, count, missing, delta, deltaCaption }: {
+    total: number; avg: number; count: number; missing: number; delta: Delta; deltaCaption: string;
 }) {
     return (
         <div className="space-y-1">
@@ -198,7 +207,13 @@ function KPI({ total, avg, count, missing, delta }: {
                 <Currency code="EUR" size="sm" />
                 {/* Δ скрываем, когда total==0 при count>0 (все траты без курса) — иначе «▼ 100%»
                     рядом с «! N без курса» вводит в заблуждение (SPEC-036 review). */}
-                {delta && total > 0 && <span className="ml-auto"><DeltaBadge delta={delta} /></span>}
+                {/* MA-15/MA-11 (SPEC-048): контекст Δ видим (не только title, недоступный на touch) */}
+                {delta && total > 0 && (
+                    <span className="ml-auto text-right">
+                        <DeltaBadge delta={delta} />
+                        {deltaCaption && <span className="block text-[9px] text-hint leading-tight mt-0.5">{deltaCaption}</span>}
+                    </span>
+                )}
             </div>
             <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs text-hint">
                 <span className="inline-flex items-center gap-1 tabular-nums">

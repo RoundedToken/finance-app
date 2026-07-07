@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** Focus-guard (SPEC-002 AC25/E7): тап на ДРУГОЕ поле при сфокусированном → blur. */
@@ -33,6 +33,7 @@ export function Modal({ open, onClose, title, children, className }: {
     const [dragY, setDragY] = useState(0);
     const startY = useRef<number | null>(null);
     const dragging = useRef(false);
+    const titleId = useId();   // MA-11 (SPEC-048): связка dialog ↔ заголовок для скринридера
 
     useEffect(() => {
         if (!open) { setDragY(0); return; }
@@ -91,6 +92,7 @@ export function Modal({ open, onClose, title, children, className }: {
             style={{ height: "var(--tg-viewport-height, 100dvh)" }}
             role="dialog"
             aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
         >
             <div
                 className="absolute inset-0 bg-black/50 animate-fade-in"
@@ -120,7 +122,7 @@ export function Modal({ open, onClose, title, children, className }: {
                 >
                     <div className="h-1.5 w-10 rounded-full bg-hint/40" />
                 </div>
-                {title && <h2 className="text-lg font-semibold mb-3">{title}</h2>}
+                {title && <h2 id={titleId} className="text-lg font-semibold mb-3">{title}</h2>}
                 {children}
             </div>
         </div>
