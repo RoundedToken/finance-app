@@ -30,9 +30,12 @@ const loginRoute = createRoute({
 const authedRoute = createRoute({
     getParentRoute: () => rootRoute,
     id: "authed",
-    beforeLoad: () => {
+    beforeLoad: ({ location }) => {
         const token = getToken();
         if (!token || isExpired(token)) {
+            // ADM-03 (SPEC-044): запоминаем куда шли — LoginPage передаст path
+            // в return_to, после логина OAuth вернёт на этот же URL.
+            try { sessionStorage.setItem("admin.return_to", location.href); } catch { /* ignore */ }
             throw redirect({ to: "/login" });
         }
     },

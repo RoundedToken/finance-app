@@ -13,7 +13,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { useToast } from "@/components/Toast";
 import { BudgetBar, BUDGET_STATUS_TEXT } from "@/components/BudgetBar";
 import { RecommendationsSection, EnvelopesSection, ClassificationSection } from "@/components/AdaptiveBudgets";
-import { formatAmount, cn } from "@/lib/utils";
+import { formatAmount, cn, useDraftId } from "@/lib/utils";
 import type {
     BudgetCategoryProgress,
     BudgetTotalProgress,
@@ -228,6 +228,7 @@ function BudgetModal({ state, onClose, unbudgeted }: { state: ModalState; onClos
     const open = state !== null;
     const isEdit = state?.mode === "edit";
     const isTotal = state?.mode === "create-total" || (state?.mode === "edit" && state.isTotal);
+    const draftId = useDraftId(open && !isEdit);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
 
     const [categoryId, setCategoryId] = useState("");
     const [limit, setLimit] = useState("");
@@ -257,9 +258,9 @@ function BudgetModal({ state, onClose, unbudgeted }: { state: ModalState; onClos
             if (state.mode === "edit") {
                 await update.mutateAsync({ id: state.budgetId, patch: { limit_eur: limitNum } });
             } else if (state.mode === "create-total") {
-                await create.mutateAsync({ scope: "total", limit_eur: limitNum });
+                await create.mutateAsync({ id: draftId, scope: "total", limit_eur: limitNum });   // ADM-02
             } else {
-                await create.mutateAsync({ scope: "category", category_id: categoryId, limit_eur: limitNum });
+                await create.mutateAsync({ id: draftId, scope: "category", category_id: categoryId, limit_eur: limitNum });   // ADM-02
             }
             toast("Сохранено", "ok");
             onClose();

@@ -36,6 +36,9 @@ export function consumeFragmentToken(): boolean {
     const token = params.get("token");
     if (!token) return false;
     setToken(token);
+    // ADM-03 (SPEC-044): успешный логин — сохранённый return_to использован
+    // (OAuth уже вернул на нужный path), чистим, чтобы не влиял на будущие логины.
+    try { sessionStorage.removeItem("admin.return_to"); } catch { /* ignore */ }
     // Убираем токен из URL чтобы не висел в истории.
     const clean = window.location.pathname + window.location.search;
     window.history.replaceState({}, "", clean);

@@ -107,6 +107,7 @@ export interface SnapshotsResponse {
 }
 
 export interface SnapshotCreatePayload {
+    id?: string;                   // ADM-02 (SPEC-044): клиентский UUID для идемпотентного ретрая
     date: string;
     account_id: string;
     amount: number;

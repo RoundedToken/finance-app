@@ -12,7 +12,7 @@ import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
-import { cn, formatAmount, formatDate, formatExchangeRate, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, formatExchangeRate, todayLocal, useDraftId } from "@/lib/utils";
 import type { Account, Transaction, TransactionCreatePayload, TransactionType, TransactionUpdatePayload } from "@/api/types";
 
 const todayISO = todayLocal;   // SPEC-024: дефолт даты операции — локальный день, не UTC
@@ -202,6 +202,7 @@ interface ModalCommonProps { open: boolean; onClose: () => void; accounts: Accou
 
 function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
     const create = useCreateTransaction();
+    const draftId = useDraftId(open);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     const [date, setDate] = useState(todayISO());
     const [fromId, setFromId] = useState("");
     const [toId, setToId] = useState("");
@@ -237,6 +238,7 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
         setSubmitting(true);
         try {
             const payload: TransactionCreatePayload = {
+                id: draftId,   // ADM-02: идемпотентный ретрай того же сабмита
                 type: "exchange",
                 date,
                 from_account_id: fromId,
@@ -319,6 +321,7 @@ function ExchangeModal({ open, onClose, accounts }: ModalCommonProps) {
 
 function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
     const create = useCreateTransaction();
+    const draftId = useDraftId(open);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     const [date, setDate] = useState(todayISO());
     const [fromId, setFromId] = useState("");
     const [toId, setToId] = useState("");
@@ -345,6 +348,7 @@ function TransferModal({ open, onClose, accounts }: ModalCommonProps) {
         setSubmitting(true);
         try {
             const payload: TransactionCreatePayload = {
+                id: draftId,   // ADM-02: идемпотентный ретрай того же сабмита
                 type: "transfer",
                 date,
                 from_account_id: fromId,

@@ -12,7 +12,15 @@ export function LoginPage() {
     }, [navigate]);
 
     const handleLogin = () => {
-        window.location.href = googleLoginUrl(window.location.origin + "/");
+        // ADM-03 (SPEC-044): возвращаем не на «/», а на страницу, с которой выкинуло
+        // (сохранена в sessionStorage при показе модала / beforeLoad-redirect'е).
+        // Сервер валидирует только origin (isAllowedReturnTo) — path проходит как есть.
+        let returnPath = "/";
+        try {
+            const saved = sessionStorage.getItem("admin.return_to");
+            if (saved && saved.startsWith("/")) returnPath = saved;
+        } catch { /* ignore */ }
+        window.location.href = googleLoginUrl(window.location.origin + returnPath);
     };
 
     return (

@@ -15,7 +15,7 @@ import { Currency, AccountOption } from "@/components/Currency";
 import { GoalProgressChart } from "@/components/GoalProgressChart";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
-import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal, useDraftId } from "@/lib/utils";
 import type { ContributionCreatePayload, GoalContribution, GoalStatus } from "@/api/types";
 
 const todayISO = todayLocal;   // SPEC-024: дефолт даты взноса + overdue — локальный день, не UTC
@@ -284,6 +284,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
     const { data: refs } = useReferences();
     const { data: accountsData } = useAccounts();
     const create = useCreateContribution();
+    const draftId = useDraftId(open);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
 
     const [date, setDate] = useState(todayISO());
     const [amount, setAmount] = useState("");
@@ -310,6 +311,7 @@ function ContributionModal({ open, onClose, goalId, defaultCurrency }: Contribut
         setSubmitting(true);
         try {
             const payload: ContributionCreatePayload = {
+                id: draftId,   // ADM-02: идемпотентный ретрай того же сабмита
                 goal_id: goalId,
                 date,
                 amount: numAmount,

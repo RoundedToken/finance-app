@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]): string {
     return twMerge(clsx(inputs));
+}
+
+/** ADM-02 (SPEC-044): UUID будущей записи — один на открытие формы. Ретрай того же
+ *  сабмита шлёт тот же id → INSERT OR IGNORE на сервере дедуплицирует. */
+export function useDraftId(active: boolean): string {
+    const [id, setId] = useState(() => crypto.randomUUID());
+    useEffect(() => { if (active) setId(crypto.randomUUID()); }, [active]);
+    return id;
 }
 
 /**
