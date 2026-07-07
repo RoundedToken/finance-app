@@ -106,7 +106,7 @@ describe("runDailyNudge — интеграция (AC1/6/7/8)", () => {
             expect(r1.sent).toBe(true);
             expect(r1.signals).toBeGreaterThan(0);
             expect(fx.count()).toBe(1);
-            const st = await env.DB.prepare("SELECT COUNT(*) AS n FROM coach_state").first<{ n: number }>();
+            const st = await d1.prepare("SELECT COUNT(*) AS n FROM coach_state").first<{ n: number }>();
             expect(st!.n).toBe(r1.signals);
             // cooldown: повтор в тот же день → молчим, fetch не вызван снова
             const r2 = await runDailyNudge(env, TODAY);
@@ -148,7 +148,7 @@ describe("runDailyNudge — интеграция (AC1/6/7/8)", () => {
         try {
             const r = await runDailyNudge(env, TODAY);
             expect(r.sent).toBe(false);
-            const st = await env.DB.prepare("SELECT COUNT(*) AS n FROM coach_state").first<{ n: number }>();
+            const st = await d1.prepare("SELECT COUNT(*) AS n FROM coach_state").first<{ n: number }>();
             expect(st!.n).toBe(0);   // не застамплено → завтра повторим
         } finally { globalThis.fetch = orig; }
     });

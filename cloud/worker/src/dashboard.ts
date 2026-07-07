@@ -272,11 +272,15 @@ export async function getDashboard(env: Env, opts: { from?: string; to?: string;
             const eur = toEurAt(native, b.currency, T) ?? 0;              // нет курса → 0 (rates backfill с 2024)
             by_bucket[b.id] = r2(eur);
             by_bucket_native[b.id] = r2(native);
-            by_form[b.form] = r2((by_form[b.form] ?? 0) + eur);
-            by_currency[b.currency] = r2((by_currency[b.currency] ?? 0) + eur);
+            // FIN-06 (SPEC-047): копим raw, r2 — однократно на выдаче (ADR-015 «округление
+            // на выдаче»). r2 на каждом шаге аккумуляции давал дрейф Σ ± центы от total_eur.
+            by_form[b.form] = (by_form[b.form] ?? 0) + eur;
+            by_currency[b.currency] = (by_currency[b.currency] ?? 0) + eur;
             total += eur;
             if (b.is_investment) invested += eur;                         // SPEC-026: слой «инвестиции» на графике net worth
         }
+        for (const k of Object.keys(by_form)) by_form[k] = r2(by_form[k]);
+        for (const k of Object.keys(by_currency)) by_currency[k] = r2(by_currency[k]);
         return { month: m, total_eur: r2(total), invested_eur: r2(invested), by_bucket, by_bucket_native, by_form, by_currency };
     });
 

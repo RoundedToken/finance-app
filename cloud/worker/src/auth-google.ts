@@ -93,6 +93,15 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
     const claims = decodeIdToken(tokenData.id_token);
     if (!claims) return text("bad id_token", 502);
     if (claims.aud !== env.GOOGLE_CLIENT_ID) return text("aud mismatch", 401);
+    // SEC-11 (SPEC-047): defense-in-depth поверх TLS-канала token-эндпоинта — iss + exp.
+    // Подпись (JWKS) в authorization-code flow не обязательна (OIDC Core §3.1.3.7):
+    // id_token получен напрямую от oauth2.googleapis.com в обмен на client_secret.
+    if (claims.iss !== "https://accounts.google.com" && claims.iss !== "accounts.google.com") {
+        return text("iss mismatch", 401);
+    }
+    if (typeof claims.exp !== "number" || claims.exp <= Math.floor(Date.now() / 1000)) {
+        return text("id_token expired", 401);
+    }
     // Fail-closed: принимаем только явный true. Если поле отсутствует — отклоняем.
     // Google в текущей версии всегда возвращает email_verified, но не полагаемся на это.
     if (claims.email_verified !== true) return text("email not verified", 403);

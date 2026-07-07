@@ -573,11 +573,14 @@ function todayUtc(): string {
     return new Date().toISOString().slice(0, 10);
 }
 
-async function loadCommon(env: Env, period: string, ratesArg?: RatesIndex) {
+async function loadCommon(env: Env, period: string, ratesArg?: RatesIndex, expensesArg?: ExpenseLite[]) {
     const [exp, rates, cats, budgetsR, settingsR, dismissedR] = await Promise.all([
-        env.DB.prepare(
-            "SELECT date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL",
-        ).all<ExpenseLite>(),
+        // WRK-22 (SPEC-047): bootstrap уже загрузил траты — не сканируем второй раз.
+        expensesArg
+            ? Promise.resolve({ results: expensesArg })
+            : env.DB.prepare(
+                "SELECT date, amount, currency, category_id FROM expenses WHERE deleted_at IS NULL",
+            ).all<ExpenseLite>(),
         ratesArg ? Promise.resolve(ratesArg) : loadRatesIndex(env),   // SPEC-038: bootstrap шарит индекс
         env.DB.prepare(
             "SELECT id, name, emoji, color FROM categories WHERE type = 'expense' AND is_active = 1 ORDER BY sort_order, name",
@@ -650,10 +653,11 @@ export async function getArchetypes(env: Env): Promise<{
     return { categories };
 }
 
-/** Lumpy-конверты для read-only lens в Mini App (bootstrap). */
-export async function getEnvelopesForBootstrap(env: Env, ratesArg?: RatesIndex): Promise<Array<{ category_id: string; accrued_eur: number; annual_eur: number }>> {
+/** Lumpy-конверты для read-only lens в Mini App (bootstrap). expensesArg — уже
+ *  загруженные bootstrap'ом траты (WRK-22: без второго полного скана таблицы). */
+export async function getEnvelopesForBootstrap(env: Env, ratesArg?: RatesIndex, expensesArg?: ExpenseLite[]): Promise<Array<{ category_id: string; accrued_eur: number; annual_eur: number }>> {
     const period = todayUtc().slice(0, 7);
-    const common = await loadCommon(env, period, ratesArg);
+    const common = await loadCommon(env, period, ratesArg, expensesArg);
     const lastClosed = prevMonth(period);
     const seriesByCat = buildSeries(common.expenses, common.rates, lastClosed, period);
 

@@ -243,7 +243,7 @@ describe("createExpense · серверный created_at (SPEC-024 AC6)", () => 
             created_at: "2099-01-01T00:00:00.000Z",   // клиентский — должен быть проигнорирован
         });
         expect(res).toMatchObject({ ok: true, inserted: true });
-        const row = await env.DB.prepare("SELECT created_at FROM expenses WHERE id = ?")
+        const row = await d1.prepare("SELECT created_at FROM expenses WHERE id = ?")
             .bind("e1").first<{ created_at: string }>();
         // канон 'YYYY-MM-DD HH:MM:SS' (без 'T'/'Z'/мс) и НЕ клиентский 2099
         expect(row!.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);

@@ -20,19 +20,22 @@ database_name = "<YOUR_D1_DATABASE_NAME>"
 database_id = "<YOUR_D1_DATABASE_ID>"
 
 [triggers]
-crons = ["0 6 * * *", "0 7 * * *"]   # курсы + coach-нудж (SPEC-040)
+# Курсы — 4×/сутки (ADR-019/SPEC-028: свежий mark-to-market крипты) + coach-нудж (SPEC-040).
+crons = ["0 */6 * * *", "0 7 * * *"]
 
 # Vars — публичная конфигурация (не secrets, но privacy: настрой под свой deployment).
 # - GOOGLE_RATES_LATEST_CSV: published-CSV листа `latest` из Google Sheet с GOOGLEFINANCE-курсами (ADR-006).
 # - GOOGLE_REDIRECT_URI: callback URL для Google OAuth Web Admin (ADR-012).
 # - ADMIN_ALLOWED_EMAILS: CSV-список email, которым разрешён вход.
-# - ADMIN_ALLOWED_ORIGINS: CSV-список https-origins для return_to.
+# - ADMIN_ALLOWED_ORIGINS: CSV-список https-origins для return_to И CORS-allowlist.
+#   SEC-12 (SPEC-047): неизвестным браузерным origin CORS-заголовок не отдаётся —
+#   сюда обязаны входить И Admin, И Mini App Pages origins.
 # - ADMIN_DEFAULT_RETURN_URL: fallback редирект после OAuth callback.
 [vars]
 GOOGLE_RATES_LATEST_CSV = "https://docs.google.com/spreadsheets/d/<YOUR_SHEET_ID>/export?format=csv&gid=<YOUR_GID>"
 GOOGLE_REDIRECT_URI = "https://<your-worker>.workers.dev/v1/auth/google/callback"
 ADMIN_ALLOWED_EMAILS = "<your-email@example.com>"
-ADMIN_ALLOWED_ORIGINS = "https://<your-admin>.pages.dev"
+ADMIN_ALLOWED_ORIGINS = "https://<your-admin>.pages.dev,https://<your-miniapp>.pages.dev"
 ADMIN_DEFAULT_RETURN_URL = "https://<your-admin>.pages.dev/"
 
 # Secrets устанавливаются через `wrangler secret put <NAME>` интерактивно:

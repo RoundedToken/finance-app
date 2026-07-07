@@ -26,18 +26,25 @@ const MONEY_CAP = 1e12;
 const posAmount = z.number().positive("amount must be positive").finite().max(MONEY_CAP, "amount too large");
 const moneyValue = z.number().finite().min(-MONEY_CAP, "amount too small").max(MONEY_CAP, "amount too large");  // снапшот: баланс, знак любой
 const nonNegAmount = z.number().nonnegative().finite().max(MONEY_CAP, "amount too large");
-const optStr = z.string().nullish();   // string | null | undefined
+// SEC-13 (SPEC-047): caps на длину строк — анти-раздувание записей/CPU. Это SHAPE
+// (форма), не бизнес-валидация: реальные значения на порядки короче (UUID 36,
+// код валюты 3-5, имя ≤ пары десятков символов). Bump тривиален при нужде.
+const STR_CAP = 1000;                                       // note/source и прочие свободные тексты
+const idStr = z.string().min(1).max(128, "id too long");    // UUID/slug-идентификаторы
+const nameStr = z.string().min(1).max(200, "name too long");
+const ccyStr = z.string().min(1).max(16, "currency too long");
+const optStr = z.string().max(STR_CAP, "string too long").nullish();   // string | null | undefined
 
 // ── Expenses (Mini App + бот) ───────────────────────────────────────────────
 export const expenseCreateSchema = z.object({
-    id: z.string().min(1),
+    id: idStr,
     date: isoDate,
     amount: posAmount,
-    currency: z.string().min(1),
+    currency: ccyStr,
     account_id: optStr,
     category_id: optStr,
     note: optStr,
-    source: z.string().optional(),
+    source: z.string().max(64).optional(),
     source_record_id: optStr,
     created_at: z.string().optional(),
     allow_currency_mismatch: z.boolean().optional(),   // SPEC-032: осознанный override валюты ≠ счёта
@@ -45,7 +52,7 @@ export const expenseCreateSchema = z.object({
 export const expenseUpdateSchema = z.object({
     date: isoDate.optional(),
     amount: posAmount.optional(),
-    currency: z.string().min(1).optional(),
+    currency: ccyStr.optional(),
     category_id: optStr,
     account_id: optStr,
     note: optStr,
@@ -54,20 +61,20 @@ export const expenseUpdateSchema = z.object({
 
 // ── Incomes ─────────────────────────────────────────────────────────────────
 export const incomeCreateSchema = z.object({
-    id: z.string().optional(),
+    id: idStr.optional(),
     date: isoDate,
-    account_id: z.string().min(1),
+    account_id: idStr,
     amount: posAmount,
-    category_id: z.string().min(1),
+    category_id: idStr,
     source: optStr,
     note: optStr,
     goal_id: optStr,
 });
 export const incomeUpdateSchema = z.object({
     date: isoDate.optional(),
-    account_id: z.string().min(1).optional(),
+    account_id: idStr.optional(),
     amount: posAmount.optional(),
-    category_id: z.string().min(1).optional(),
+    category_id: idStr.optional(),
     source: optStr,
     note: optStr,
     goal_id: optStr,
@@ -75,27 +82,27 @@ export const incomeUpdateSchema = z.object({
 
 // ── Snapshots (amount может быть любым — это баланс, не поток) ───────────────
 export const snapshotCreateSchema = z.object({
-    id: z.string().optional(),
+    id: idStr.optional(),
     date: isoDate,
-    account_id: z.string().min(1),
+    account_id: idStr,
     amount: moneyValue,
     note: optStr,
-    source: z.string().optional(),
+    source: z.string().max(64).optional(),
 });
 export const snapshotUpdateSchema = z.object({
     date: isoDate.optional(),
-    account_id: z.string().min(1).optional(),
+    account_id: idStr.optional(),
     amount: moneyValue.optional(),
     note: optStr,
 });
 
 // ── Transactions ────────────────────────────────────────────────────────────
 export const transactionCreateSchema = z.object({
-    id: z.string().optional(),
+    id: idStr.optional(),
     type: z.enum(["exchange", "transfer"]),
     date: isoDate,
-    from_account_id: z.string().min(1),
-    to_account_id: z.string().min(1),
+    from_account_id: idStr,
+    to_account_id: idStr,
     from_amount: posAmount,
     to_amount: posAmount,
     fee_amount: nonNegAmount.nullish(),
@@ -105,8 +112,8 @@ export const transactionCreateSchema = z.object({
 export const transactionUpdateSchema = z.object({
     type: z.enum(["exchange", "transfer"]).optional(),
     date: isoDate.optional(),
-    from_account_id: z.string().min(1).optional(),
-    to_account_id: z.string().min(1).optional(),
+    from_account_id: idStr.optional(),
+    to_account_id: idStr.optional(),
     from_amount: posAmount.optional(),
     to_amount: posAmount.optional(),
     fee_amount: nonNegAmount.nullish(),
@@ -116,8 +123,8 @@ export const transactionUpdateSchema = z.object({
 
 // ── Goals (формат hex / обязательность target_currency — в домене) ──────────
 export const goalCreateSchema = z.object({
-    id: z.string().optional(),
-    name: z.string().min(1),
+    id: idStr.optional(),
+    name: nameStr,
     emoji: optStr,
     color: optStr,
     target_amount: posAmount.nullish(),
@@ -126,7 +133,7 @@ export const goalCreateSchema = z.object({
     note: optStr,
 });
 export const goalUpdateSchema = z.object({
-    name: z.string().min(1).optional(),
+    name: nameStr.optional(),
     emoji: optStr,
     color: optStr,
     target_amount: posAmount.nullish(),
@@ -140,20 +147,20 @@ export const goalStatusSchema = z.object({
 
 // ── Goal contributions (account_id обязателен — L4/G11) ─────────────────────
 export const contributionCreateSchema = z.object({
-    id: z.string().optional(),
-    goal_id: z.string().min(1),
+    id: idStr.optional(),
+    goal_id: idStr,
     date: isoDate,
     amount: posAmount,
-    currency_code: z.string().optional(),   // сервер деривит из ведра, клиентское игнорируется
-    account_id: z.string().min(1),
+    currency_code: ccyStr.optional(),   // сервер деривит из ведра, клиентское игнорируется
+    account_id: idStr,
     note: optStr,
 });
 export const contributionUpdateSchema = z.object({
-    goal_id: z.string().min(1).optional(),
+    goal_id: idStr.optional(),
     date: isoDate.optional(),
     amount: posAmount.optional(),
-    currency_code: z.string().optional(),
-    account_id: z.string().min(1).optional(),
+    currency_code: ccyStr.optional(),
+    account_id: idStr.optional(),
     note: optStr,
 });
 
@@ -162,7 +169,7 @@ export const contributionUpdateSchema = z.object({
 // выше любого личного месячного лимита; бамп тривиален.
 const budgetLimit = z.number().positive("amount must be positive").max(1_000_000, "limit_eur too large");
 export const budgetCreateSchema = z.object({
-    id: z.string().optional(),
+    id: idStr.optional(),
     scope: z.enum(["category", "total"]).optional(),   // default 'category' в домене
     category_id: optStr,                               // обязателен при scope='category' (проверка в домене)
     limit_eur: budgetLimit,
@@ -179,12 +186,12 @@ export const budgetSettingsSchema = z.object({
     adaptive_enabled: z.boolean().optional(),
 });
 export const budgetDecisionSchema = z.object({
-    category_id: z.string().min(1),
+    category_id: idStr,
     period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM").refine(p => { const m = Number(p.slice(5)); return m >= 1 && m <= 12; }, "period month must be 01-12"),
-    archetype: z.string().min(1),
+    archetype: z.string().min(1).max(32),
     prev_limit_eur: nonNegAmount.nullish(),
     reco_limit_eur: nonNegAmount,
-    reason_code: z.string().min(1),
+    reason_code: z.string().min(1).max(64),
     decision: z.enum(["accepted", "dismissed"]),
 });
 
@@ -197,14 +204,14 @@ export const investmentSettingsSchema = z.object({
 
 // ── Categories (expense + income, общий shape) ──────────────────────────────
 export const categoryCreateSchema = z.object({
-    id: z.string().optional(),
-    name: z.string().min(1),
+    id: idStr.optional(),
+    name: nameStr,
     emoji: optStr,
     color: optStr,
     sort_order: z.number().finite().nullish(),
 });
 export const categoryUpdateSchema = z.object({
-    name: z.string().min(1).optional(),
+    name: nameStr.optional(),
     emoji: optStr,
     color: optStr,
     sort_order: z.number().finite().nullish(),

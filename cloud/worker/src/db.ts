@@ -281,18 +281,24 @@ export async function getBootstrapData(env: Env, opts: { withExpenses?: boolean;
     // listExpenses/getBudgetsWithProgress/getEnvelopesForBootstrap (раньше — 3× за bootstrap).
     // refs (Admin: оба флага false) индекс не нужен — пропускаем загрузку.
     const ratesIdx = withExpenses || withBudgets ? await loadRatesIndex(env) : undefined;
-    const [accounts, categories, currencies, expenses, ratesMaxDate, budgets, envelopes] = await Promise.all([
-        env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1").all(),
+    // WRK-22 (SPEC-047): траты грузим ОДИН раз и шарим в конверты RBAR (раньше
+    // getEnvelopesForBootstrap внутри loadCommon сканировал expenses второй раз).
+    // Cap 20000 = server-cap listExpenses; за ним конверты теряли бы хвост так же,
+    // как список — согласованная деградация.
+    const expenses = withExpenses ? await listExpenses(env, { limit: 20000 }, ratesIdx) : ([] as any[]);   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
+    const [accounts, categories, currencies, ratesMaxDate, budgets, envelopes] = await Promise.all([
+        // QA-14 (SPEC-047): явный ORDER BY — порядок вёдер/валют в пикерах Mini App не
+        // должен зависеть от планировщика SQLite (мок и прод-D1 — разные сборки).
+        env.DB.prepare("SELECT * FROM accounts WHERE is_active = 1 ORDER BY sort_order, name").all(),
         // Все категории (вкл. неактивные) — чтобы история сохраняла подпись после
         // деактивации (SPEC-017 AC4); выбор фильтрует is_active на клиенте.
         env.DB.prepare("SELECT * FROM categories ORDER BY sort_order, name").all(),
-        env.DB.prepare("SELECT * FROM currencies").all(),
-        withExpenses ? listExpenses(env, { limit: 20000 }, ratesIdx) : Promise.resolve([] as any[]),   // refs не нужны траты (Фаза 1.8); amount_eur date-aware (ADR-014/SPEC-016)
+        env.DB.prepare("SELECT * FROM currencies ORDER BY code").all(),
         env.DB.prepare("SELECT MAX(date) AS d FROM rates").first<{ d: string | null }>(),
         // SPEC-020: read-only бюджет-подсказка «осталось X» при вводе траты в Mini App.
         withBudgets ? getBudgetsWithProgress(env, {}, ratesIdx) : Promise.resolve(null),
         // SPEC-023: read-only lens годового конверта для lumpy-категорий.
-        withBudgets ? getEnvelopesForBootstrap(env, ratesIdx) : Promise.resolve([] as any[]),
+        withBudgets ? getEnvelopesForBootstrap(env, ratesIdx, withExpenses ? expenses : undefined) : Promise.resolve([] as any[]),
     ]);
     const date = ratesMaxDate?.d ?? null;
     let rates: Record<string, number> = {};

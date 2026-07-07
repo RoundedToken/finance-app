@@ -235,17 +235,19 @@ export async function getGoalDetail(env: Env, id: string): Promise<{ goal: GoalW
     // SPEC-012: timeline только income + manual.
     // SPEC-025: delta_in_target каждой строки фиксируется по курсу НА ЕЁ ДАТУ
     // (поток), не на сегодня — баланс цели стабилен и не дрожит с курсом.
+    // FIN-11 (SPEC-047): legacy-цель без target_currency — fallback EUR, как в listGoals.
+    // Раньше detail брал валюту строки (identity-конверсия) и суммировал разные валюты
+    // в одно число — list и detail расходились для мультивалютной legacy-цели.
+    const fallbackTarget = goalRow.target_currency ?? "EUR";
     let sum = 0, missing = 0;
     const allRows: any[] = [];
     for (const r of incomes.results) {
-        const target = goalRow.target_currency ?? r.currency_code;
-        const conv = rates.convertAt(r.amount, r.currency_code, target, r.date);
+        const conv = rates.convertAt(r.amount, r.currency_code, fallbackTarget, r.date);
         if (conv == null) missing += 1; else sum += conv;
         allRows.push({ source: "income", income_id: r.id, ...r, delta_in_target: conv });
     }
     for (const r of manual.results) {
-        const target = goalRow.target_currency ?? r.currency_code;
-        const conv = rates.convertAt(r.amount, r.currency_code, target, r.date);
+        const conv = rates.convertAt(r.amount, r.currency_code, fallbackTarget, r.date);
         if (conv == null) missing += 1; else sum += conv;
         allRows.push({ source: "manual", ...r, delta_in_target: conv });
     }

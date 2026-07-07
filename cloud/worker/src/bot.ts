@@ -70,6 +70,23 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         return;
     }
 
+    // WRK-21 (SPEC-047): токен категории резолвится по справочнику (id ИЛИ имя,
+    // case-insensitive) — раньше любая опечатка («food2») уходила в createExpense
+    // несуществующим category_id и трата молча становилась «Без категории».
+    const catsR = await env.DB.prepare(
+        "SELECT id, name FROM categories WHERE type = 'expense' AND is_active = 1 ORDER BY sort_order, name",
+    ).all<{ id: string; name: string }>();
+    const category = resolveCategoryToken(catsR.results, parsed.category);
+    if (!category) {
+        const list = catsR.results.map(c => `<code>${escapeHtml(c.id)}</code>`).join(", ");
+        await sendMessage(
+            env,
+            chatId,
+            `❓ Неизвестная категория «${escapeHtml(parsed.category)}». Доступные:\n${list}`,
+        );
+        return;
+    }
+
     // UUID v4 на стороне worker (для bootstrap fallback; Mini App будет генерить сам).
     // created_at ставит createExpense (серверный datetime('now'), SPEC-024) — не передаём.
     // date — UTC: бот исполняется на сервере без зоны устройства (fallback-путь, ADR-009).
@@ -81,7 +98,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
         date,
         amount: parsed.amount,
         currency: parsed.currency,
-        category_id: parsed.category,
+        category_id: category.id,
         note: parsed.note ?? null,
         source: "telegram_bot",
     });
@@ -94,10 +111,22 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     await sendMessage(
         env,
         chatId,
-        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${escapeHtml(parsed.category)}` +   // SEC-14: text-node HTML
+        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${escapeHtml(category.name)}` +   // SEC-14: text-node HTML
             (parsed.note ? `\n📝 ${escapeHtml(parsed.note)}` : "") +
             `\n<i>id: ${id.slice(0, 8)}…</i>`,
     );
+}
+
+/** WRK-21 (SPEC-047): резолв токена категории по справочнику — принимает и id
+ *  («food»), и видимое имя («Еда»), регистронезависимо. Чистая функция (тесты). */
+export function resolveCategoryToken(
+    categories: Array<{ id: string; name: string }>,
+    token: string,
+): { id: string; name: string } | null {
+    const t = token.toLowerCase();
+    return categories.find(c => c.id.toLowerCase() === t)
+        ?? categories.find(c => c.name.toLowerCase() === t)
+        ?? null;
 }
 
 /** Парсер текстового ввода траты "<amount> <ccy> <category> [note]". Чистая функция

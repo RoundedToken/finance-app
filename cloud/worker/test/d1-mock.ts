@@ -5,9 +5,17 @@
  * оконные суммы). Реализует используемый воркером срез D1Database:
  * prepare().bind(...).all<T>()/.first<T>()/.run() + batch().
  *
- * Типы node:sqlite не поставляются (@types/node нет; test/ вне tsconfig
- * include — vitest гоняет через esbuild без typecheck), поэтому модуль
- * импортируется без типов — это ок.
+ * QA-12 (SPEC-047): test/ входит в tsconfig — тесты типизируются (иначе опечатка
+ * в имени поля ассерта тихо превращает тест в вечно-зелёный). node:sqlite грузим
+ * через createRequire (Vite его не резолвит) — модуль остаётся untyped-кастом.
+ *
+ * QA-14 (SPEC-047, остаточный риск паритета): мок — node:sqlite (сборка SQLite
+ * Node 24), прод — workerd/D1 (своя сборка). Семантика совпадает (FK off,
+ * first() undefined→null, INTEGER как number), но ПОРЯДОК СТРОК multi-row
+ * SELECT без ORDER BY не гарантирован и может различаться между планировщиками
+ * при зелёном тесте. Правило: везде, где порядок значим (списки/пикеры/серии),
+ * — явный ORDER BY в SQL (ревью 2026-07: bootstrap accounts/currencies добиты,
+ * остальные multi-row либо упорядочены, либо коммутативны — Map/Set/Σ).
  */
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";

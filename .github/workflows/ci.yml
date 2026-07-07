@@ -8,6 +8,18 @@ on:
   pull_request:
 
 jobs:
+  # QA-11 (SPEC-047): вторая линия обороны от секретов — repo публичный, а gitleaks
+  # был только в opt-in pre-commit хуке. Полная история (fetch-depth: 0) + .gitleaks.toml.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   worker:
     runs-on: ubuntu-latest
     defaults:
@@ -24,11 +36,16 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
 
+  # QA-11 (SPEC-047): полный `npm run build` (tsc внутри) вместо голого tsc —
+  # ловит битые импорты ассетов/env на этапе бандла. VITE_API_BASE — CI-заглушка
+  # для inject'а __WORKER_ORIGIN__ в dist/_headers (реальный origin — при деплое).
   admin:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: cloud/admin
+    env:
+      VITE_API_BASE: https://ci-placeholder.example.com
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,13 +54,15 @@ jobs:
           cache: npm
           cache-dependency-path: cloud/admin/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npm run build
 
   miniapp:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: cloud/miniapp
+    env:
+      VITE_API_BASE: https://ci-placeholder.example.com
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,4 +71,5 @@ jobs:
           cache: npm
           cache-dependency-path: cloud/miniapp/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npm test
