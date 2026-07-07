@@ -29,9 +29,10 @@ Thumbs.db
 .env.*.local
 *.secret
 secrets/
-# GCP Service Account JSON (см. docs/setup.md, ключ живёт в ~/.config/finances-gsheets/key.json)
+# GCP Service Account JSON (см. docs/setup.md, ключ живёт в ~/.config/finances-gsheets/key.json;
+# скачанный ключ называется <gcp-project>-<hash>.json — широкий паттерн, чтобы не раскрывать имя проекта)
 *-service-account*.json
-<gcp-project>-*.json
+finances-*.json
 gcp-key*.json
 service-account*.json
 

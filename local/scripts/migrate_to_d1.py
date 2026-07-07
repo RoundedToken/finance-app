@@ -5,7 +5,6 @@
 переноса исторических данных (1820 трат из CSV + 1 от текстового бота).
 
 Usage:
-    python local/scripts/migrate_to_d1.py
     python local/scripts/migrate_to_d1.py --owner <TELEGRAM_ID>
 """
 from __future__ import annotations
@@ -21,7 +20,7 @@ from _common import assert_env, db_connect  # noqa: E402
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--owner", default="<TELEGRAM_ID>", help="Telegram user_id для всех мигрируемых записей")
+    ap.add_argument("--owner", required=True, help="Telegram user_id для всех мигрируемых записей (PII — не хардкодим в репо)")
     ap.add_argument("--batch", type=int, default=200)
     args = ap.parse_args()
 

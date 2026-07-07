@@ -79,4 +79,4 @@ WRN leaks found: 1
 - API contract (endpoints `/v1/...`, query/body shape).
 - D1 схема (`schema.sql`, `migrations/`).
 - Имена endpoints, имена таблиц, имена env vars (но не их значения).
-- URL deployment'а на `*.workers.dev` / `*.pages.dev` **можно** обнаружить через Network panel у любого пользователя — поэтому в Mini App код `WORKER_BASE` оставлен hardcode (не считается leak). В Admin SPA через `VITE_API_BASE` — потому что Admin строится у каждого deploy'ера со своим Worker.
+- URL deployment'а на `*.workers.dev` / `*.pages.dev` **можно** обнаружить через Network panel у любого пользователя. Но persona-specific Worker-субдомен (содержит имя владельца) в репо всё равно **не храним** (аудит 2026-07, SEC-05): и Mini App, и Admin берут его из `VITE_API_BASE` (`cloud/*/​.env`, gitignored; шаблоны — `.env.example`), а `cloud/admin/public/_headers` держит placeholder `__WORKER_ORIGIN__`, который build-time подставляется vite-плагином из `VITE_API_BASE`.

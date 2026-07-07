@@ -63,9 +63,9 @@ brew install visidata miller csvkit          # TUI просмотр и pipe-об
 
 **Один раз — настройка GCP:**
 
-1. https://console.cloud.google.com → `New Project` → имя `<gcp-project>`.
+1. https://console.cloud.google.com → `New Project` → имя `<gcp-project>` (реальное имя проекта — вне публичного репо, см. `docs/security.md`).
 2. `APIs & Services → Library` → включить **Google Sheets API** и **Google Drive API**.
-3. `APIs & Services → Credentials → + CREATE CREDENTIALS → Service account` → имя `claude-sheets`, без ролей.
+3. `APIs & Services → Credentials → + CREATE CREDENTIALS → Service account` → имя `<sa-name>`, без ролей.
 4. Открыть SA → вкладка `Keys → Add Key → Create new key → JSON`. Скачается файл.
 5. Положить ключ:
    ```bash

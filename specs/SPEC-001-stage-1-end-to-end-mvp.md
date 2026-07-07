@@ -266,7 +266,7 @@ Stage 1 Mini App (`cloud/miniapp/public/`) — минимальный однос
 ### PII / финансовые данные
 
 - В D1 хранятся: суммы трат, категории, описания (могут содержать «продукты», магазины, имена).
-- Telegram ID `<TELEGRAM_ID>` — не секрет (есть в `authorized_users`).
+- Telegram ID владельца — PII (`docs/security.md`): в публичных доках только placeholder `<TELEGRAM_ID>`, реальное значение — в D1 `authorized_users`.
 - `data/` (CSV-экспорт ОК) — gitignored.
 
 ### Что **не** должно попасть в логи

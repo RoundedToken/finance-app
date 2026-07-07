@@ -1,8 +1,10 @@
 import { initData } from "@/lib/telegram";
 
-// Тот же Worker, что и у админки. Hardcode допустим: URL виден в Network у
-// любого пользователя, security-нагрузки не несёт (см. docs/security.md §82).
-const WORKER_BASE = "https://finances-worker.<owner>.workers.dev";
+// Тот же Worker, что и у админки. URL приходит из VITE_API_BASE
+// (cloud/miniapp/.env, gitignored): субдомен persona-specific и в публичном
+// репо не хранится (см. docs/security.md).
+const WORKER_BASE = import.meta.env.VITE_API_BASE as string;
+if (!WORKER_BASE) throw new Error("VITE_API_BASE не задан — заполни cloud/miniapp/.env (см. .env.example)");
 
 export async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
     const headers = new Headers(opts.headers);
