@@ -14,7 +14,7 @@ import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { PeriodPicker, DEFAULT_PERIOD, computeRange, type PeriodValue } from "@/components/PeriodPicker";
-import { cn, formatAmount, formatDate, isoLocal, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, isoLocal, todayLocal, useDraftId } from "@/lib/utils";
 import type { Account, Income, IncomeCategory } from "@/api/types";
 
 const todayISO = todayLocal;   // SPEC-024: дефолт даты дохода — локальный день, не UTC
@@ -338,12 +338,13 @@ interface IncomeModalProps {
     incomes: Income[];
     onClose: () => void;
     onSubmit: (
-        payload: { date: string; account_id: string; amount: number; category_id: string; source: string | null; note: string | null; goal_id: string | null },
+        payload: { id?: string; date: string; account_id: string; amount: number; category_id: string; source: string | null; note: string | null; goal_id: string | null },
         id?: string,
     ) => Promise<void>;
 }
 
 function IncomeModal({ open, editing, accounts, categories, categoriesById, incomes, onClose, onSubmit }: IncomeModalProps) {
+    const draftId = useDraftId(open && !editing);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     const [date, setDate] = useState(editing?.date ?? todayISO());
     const [accountId, setAccountId] = useState(editing?.account_id ?? accounts[0]?.id ?? "");
     const [categoryId, setCategoryId] = useState(editing?.category_id ?? categories[0]?.id ?? "");
@@ -367,6 +368,15 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
     }, [open, editing?.id]);
 
     const selectedAcc = accounts.find(a => a.id === accountId);
+
+    // FIN-01-хвост (SPEC-044): смена счёта в edit пере-деривит валюту записи на сервере.
+    // Полный payload несёт старый amount и обходит серверный guard (он срабатывает
+    // только при amount == null) — чистим сумму, пользователь вводит заново.
+    const currencyChanged = !!editing && !!selectedAcc && selectedAcc.currency !== editing.currency_code;
+    useEffect(() => {
+        if (currencyChanged) setAmount("");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAcc?.currency]);
 
     // «Из последней» — самая свежая запись выбранной категории
     const latestInCat = useMemo(() => {
@@ -396,6 +406,7 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
         try {
             await onSubmit(
                 {
+                    ...(editing ? {} : { id: draftId }),   // ADM-02: только create, не PUT
                     date,
                     account_id: accountId,
                     category_id: categoryId,
@@ -475,6 +486,11 @@ function IncomeModal({ open, editing, accounts, categories, categoriesById, inco
                         placeholder="0"
                         className="w-full px-3 py-2 rounded-lg border bg-background text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
+                    {currencyChanged && (
+                        <span className="block mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                            валюта сменилась на {selectedAcc!.currency} — введи сумму заново
+                        </span>
+                    )}
                 </Field>
 
                 <Field label="Источник (необязательно)">

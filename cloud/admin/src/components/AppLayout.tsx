@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target, FolderTree, Gauge, Coins } from "lucide-react";
+import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target, FolderTree, Gauge, Coins, ShieldAlert } from "lucide-react";
 import { useMe } from "@/api/queries";
-import { clearToken } from "@/lib/auth";
+import { clearToken, decodeClaims, getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -35,6 +36,44 @@ export function AppLayout() {
 
     const logout = () => {
         clearToken();
+        router.navigate({ to: "/login" });
+    };
+
+    // ── Сессия истекла (ADM-03/08, SPEC-044) ────────────────────────────────
+    const [sessionExpired, setSessionExpired] = useState(false);
+
+    // ADM-03: apiFetch при 401 диспатчит событие вместо жёсткого reload'а —
+    // показываем модал поверх текущего состояния, ввод в формах не теряется молча.
+    useEffect(() => {
+        const onExpired = () => setSessionExpired(true);
+        window.addEventListener("admin:session-expired", onExpired);
+        return () => window.removeEventListener("admin:session-expired", onExpired);
+    }, []);
+
+    // ADM-08: долгоживущая вкладка — JWT протухает без единой навигации (beforeLoad
+    // не срабатывает). Таймер на exp − 60с показывает модал мягко, ДО фактического 401.
+    useEffect(() => {
+        let timer: number | undefined;
+        const arm = () => {
+            const token = getToken();
+            const claims = token ? decodeClaims(token) : null;
+            if (!claims) return;
+            const msLeft = claims.exp * 1000 - Date.now() - 60_000;
+            if (msLeft <= 0) { setSessionExpired(true); return; }
+            // setTimeout ограничен int32 (~24.8 сут), JWT живёт дольше — клампим и перевзводим.
+            timer = window.setTimeout(arm, Math.min(msLeft, 2_000_000_000));
+        };
+        arm();
+        return () => window.clearTimeout(timer);
+    }, []);
+
+    const relogin = () => {
+        // return_to: после логина вернуть на страницу, с которой выкинуло (ADM-03).
+        try {
+            sessionStorage.setItem("admin.return_to", window.location.pathname + window.location.search);
+        } catch { /* ignore */ }
+        clearToken();
+        setSessionExpired(false);
         router.navigate({ to: "/login" });
     };
 
@@ -93,6 +132,30 @@ export function AppLayout() {
                     <Outlet />
                 </div>
             </main>
+
+            {/* Несносимый модал «Сессия истекла» (ADM-03/08): без Escape/backdrop-close —
+                единственный выход «Войти». Обычный Modal не подходит (он закрываемый). */}
+            {sessionExpired && (
+                <div
+                    className="fixed inset-0 z-[60] grid place-items-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-label="Сессия истекла"
+                >
+                    <div className="card max-w-sm w-full p-6 space-y-4 animate-slide-up">
+                        <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 grid place-items-center shrink-0">
+                                <ShieldAlert className="h-5 w-5" />
+                            </div>
+                            <h2 className="text-lg font-semibold">Сессия истекла</h2>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                            Войди снова через Google — после входа вернёшься на эту же страницу.
+                        </p>
+                        <button onClick={relogin} className="btn-primary w-full py-2.5">Войти</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

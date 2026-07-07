@@ -51,10 +51,11 @@ describe("createExpense — валюта↔счёт (SPEC-032)", () => {
         expect(r.ok).toBe(true);
     });
 
-    it("несуществующее ведро не блокирует (первичный flow): ok", async () => {
+    it("несуществующее ведро → 400 unknown account_id (DB-03/SPEC-043: FK в проде нет, проверяет сервер)", async () => {
         const { env } = envWithAccounts();
         const r = await createExpense(env, "u", { id: "e5", date: "2026-06-07", account_id: "ghost", amount: 10, currency: "EUR" });
-        expect(r.ok).toBe(true);
+        expect(r.ok).toBe(false);
+        if (!r.ok) expect(r.error).toContain("unknown account_id");
     });
 });
 

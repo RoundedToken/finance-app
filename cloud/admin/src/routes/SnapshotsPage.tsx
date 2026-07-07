@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Banknote, Coins, Search } from "lucide-react";
 import { useAccounts, useCreateSnapshot, useDeleteSnapshot, useSnapshots, useUpdateSnapshot } from "@/api/queries";
 import { ErrorState } from "@/components/ErrorState";
 import { Modal } from "@/components/Modal";
 import { Currency, AccountOption } from "@/components/Currency";
 import { Select } from "@/components/Select";
-import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal, useDraftId } from "@/lib/utils";
 import type { Account, Snapshot } from "@/api/types";
 
 const todayISO = todayLocal;   // SPEC-024: дефолт даты снапшота — локальный день, не UTC
@@ -182,10 +182,11 @@ interface SnapshotModalProps {
     editing: Snapshot | null;
     accounts: Account[];
     onClose: () => void;
-    onSubmit: (payload: { date: string; account_id: string; amount: number; note: string | null }, id?: string) => Promise<void>;
+    onSubmit: (payload: { id?: string; date: string; account_id: string; amount: number; note: string | null }, id?: string) => Promise<void>;
 }
 
 function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotModalProps) {
+    const draftId = useDraftId(open && !editing);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     const [date, setDate] = useState(editing?.date ?? todayISO());
     const [accountId, setAccountId] = useState(editing?.account_id ?? accounts[0]?.id ?? "");
     const [amount, setAmount] = useState<string>(editing ? String(editing.amount) : "");
@@ -203,6 +204,17 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
 
     const selectedAcc = accounts.find(a => a.id === accountId);
     const lastForAcc = selectedAcc?.manual_snapshot ?? selectedAcc?.latest_snapshot;
+
+    // FIN-01-хвост (SPEC-044): валюта снапшота = валюта ведра. В edit полный payload
+    // несёт старый amount — смена ведра на другую валюту обходила бы серверный guard
+    // («100 000 RUB» молча стали бы «100 000 EUR»). Чистим сумму — вводится заново.
+    const originalCcy = editing ? accounts.find(a => a.id === editing.account_id)?.currency : null;
+    const currencyChanged = !!originalCcy && !!selectedAcc && selectedAcc.currency !== originalCcy;
+    useEffect(() => {
+        if (currencyChanged) setAmount("");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAcc?.currency]);
+
     const valid = !!date && !!accountId && parseFloat(amount) >= 0;
 
     const submit = async (e: React.FormEvent) => {
@@ -211,7 +223,10 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
         setSubmitting(true);
         try {
             await onSubmit(
-                { date, account_id: accountId, amount: parseFloat(amount), note: note.trim() || null },
+                {
+                    ...(editing ? {} : { id: draftId }),   // ADM-02: только create, не PUT
+                    date, account_id: accountId, amount: parseFloat(amount), note: note.trim() || null,
+                },
                 editing?.id,
             );
         } finally {
@@ -247,6 +262,11 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
                                 <Currency code={selectedAcc?.currency} />
                             </span>
                         </div>
+                        {currencyChanged && (
+                            <span className="block mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                                валюта сменилась на {selectedAcc!.currency} — введи сумму заново
+                            </span>
+                        )}
                     </Field>
                     <Field label="Дата">
                         <input

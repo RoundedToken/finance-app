@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, FolderTree, ArrowUp, ArrowDown, Eye, EyeOff } from "lucide-react";
 import { useManagedCategories, useCreateCategory, useUpdateCategory } from "@/api/queries";
 import { Modal } from "@/components/Modal";
-import { cn } from "@/lib/utils";
+import { cn, useDraftId } from "@/lib/utils";
 import { COLOR_PALETTE } from "./GoalsPage";
 import type { ManagedCategory, CategoryCreatePayload, CategoryUpdatePayload } from "@/api/types";
 
@@ -170,6 +170,7 @@ function CategoryRow({ cat, onEdit, onToggle, onUp, onDown, inactive }: RowProps
 function CategoryModal({ kind, open, onClose, initial }: { kind: Kind; open: boolean; onClose: () => void; initial: ManagedCategory | null }) {
     const create = useCreateCategory(kind);
     const update = useUpdateCategory(kind);
+    const draftId = useDraftId(open && !initial);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
 
     const [name, setName] = useState("");
     const [emoji, setEmoji] = useState("");
@@ -195,7 +196,7 @@ function CategoryModal({ kind, open, onClose, initial }: { kind: Kind; open: boo
                 const patch: CategoryUpdatePayload = { name: name.trim(), emoji: emoji.trim() || null, color };
                 await update.mutateAsync({ id: initial.id, patch });
             } else {
-                const payload: CategoryCreatePayload = { name: name.trim(), emoji: emoji.trim() || null, color };
+                const payload: CategoryCreatePayload = { id: draftId, name: name.trim(), emoji: emoji.trim() || null, color };   // ADM-02
                 await create.mutateAsync(payload);
             }
             onClose();

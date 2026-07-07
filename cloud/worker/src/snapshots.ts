@@ -222,19 +222,22 @@ export async function updateSnapshot(env: Env, id: string, patch: Partial<Snapsh
             }
         }
     }
+    // WRK-05 (SPEC-043): note — hasOwnProperty-гард (как во всех соседних доменах);
+    // раньше PUT {amount} молча стирал заметку.
+    const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
     const r = await env.DB.prepare(
         `UPDATE snapshots
            SET date        = COALESCE(?, date),
                account_id  = COALESCE(?, account_id),
                amount      = COALESCE(?, amount),
-               note        = ?,
+               note        = ${hasNote ? "?" : "note"},
                updated_at  = datetime('now')
          WHERE id = ? AND deleted_at IS NULL`,
     ).bind(
         patch.date ?? null,
         patch.account_id ?? null,
         patch.amount ?? null,
-        patch.note ?? null,
+        ...(hasNote ? [patch.note ?? null] : []),
         id,
     ).run();
     return { ok: true, updated: (r.meta.changes ?? 0) > 0 };

@@ -1,8 +1,9 @@
 /**
- * Fetch-обёртка с JWT auth и автоматическим logout при 401.
+ * Fetch-обёртка с JWT auth. При 401 — событие `admin:session-expired`
+ * (AppLayout показывает модал «Сессия истекла»), без жёсткого редиректа.
  */
 
-import { getToken, clearToken } from "@/lib/auth";
+import { getToken } from "@/lib/auth";
 
 const API_BASE = import.meta.env.VITE_API_BASE as string | undefined;
 if (!API_BASE) {
@@ -32,8 +33,14 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
     if (res.status === 401) {
-        clearToken();
-        if (!path.startsWith("/v1/auth/")) window.location.href = "/login";
+        // ADM-03 (SPEC-044): НЕ перезагружаем страницу и НЕ чистим токен сразу —
+        // фоновый refetch с протухшим JWT убивал несохранённый ввод в открытой форме.
+        // AppLayout слушает событие и показывает модал «Сессия истекла»; clearToken —
+        // только по подтверждению пользователя. Ошибку всё равно бросаем, чтобы
+        // TanStack Query штатно пометил запрос isError.
+        if (!path.startsWith("/v1/auth/")) {
+            window.dispatchEvent(new CustomEvent("admin:session-expired"));
+        }
         throw new ApiError("unauthorized", 401);
     }
 

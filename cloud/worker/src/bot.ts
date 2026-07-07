@@ -94,7 +94,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     await sendMessage(
         env,
         chatId,
-        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${parsed.category}` +
+        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${escapeHtml(parsed.category)}` +   // SEC-14: text-node HTML
             (parsed.note ? `\n📝 ${escapeHtml(parsed.note)}` : "") +
             `\n<i>id: ${id.slice(0, 8)}…</i>`,
     );
@@ -134,6 +134,9 @@ export async function sendMessage(env: Env, chatId: number, text: string): Promi
     return true;
 }
 
-function escapeHtml(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Экранирование для text-node Telegram HTML. Экспорт — coach.ts вставляет имена
+ *  категорий/целей/вёдер в HTML-нудж (WRK-13/SPEC-043: имя с «<» валило sendMessage,
+ *  cooldown не записывался и cron падал ежедневно). Кавычки — на случай атрибутов. */
+export function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

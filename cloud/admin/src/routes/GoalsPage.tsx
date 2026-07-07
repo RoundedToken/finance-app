@@ -6,7 +6,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { Currency } from "@/components/Currency";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
-import { cn, formatAmount, formatDate, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, todayLocal, useDraftId } from "@/lib/utils";
 import type { Goal, GoalCreatePayload, GoalStatus, GoalUpdatePayload } from "@/api/types";
 
 const STATUS_TABS: { value: GoalStatus; label: string }[] = [
@@ -214,6 +214,7 @@ interface GoalFormProps {
 
 function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProps) {
     const { data: refs } = useReferences();
+    const draftId = useDraftId(open && !initial);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
 
     const [name, setName] = useState("");
     const [emoji, setEmoji] = useState("🎯");
@@ -249,6 +250,7 @@ function GoalFormModal({ open, onClose, title, initial, onSubmit }: GoalFormProp
         setSubmitting(true);
         try {
             const payload = {
+                ...(initial ? {} : { id: draftId }),   // ADM-02: только create, не PUT
                 name: name.trim(),
                 emoji: emoji.trim() || null,
                 color,

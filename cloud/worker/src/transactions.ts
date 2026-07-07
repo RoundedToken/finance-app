@@ -233,7 +233,14 @@ export async function updateTransaction(
     ).bind(id).first<any>();
     if (!existing) return { ok: false, error: "transaction not found" };
 
-    const wantsStructural = STRUCTURAL_FIELDS.some(f => Object.prototype.hasOwnProperty.call(patch, f));
+    const hasFeeAmt = Object.prototype.hasOwnProperty.call(patch, "fee_amount");
+    const hasFeeCcy = Object.prototype.hasOwnProperty.call(patch, "fee_currency");
+    const hasNote   = Object.prototype.hasOwnProperty.call(patch, "note");
+
+    // WRK-14 (SPEC-043): fee-поля включены в триггер полной валидации — раньше PUT
+    // {fee_currency:"ZZZ"} обходил validateStep (неизвестная валюта сохранялась),
+    // а fee_amount без валюты в БД создавал пару, которую create бы отклонил.
+    const wantsStructural = STRUCTURAL_FIELDS.some(f => Object.prototype.hasOwnProperty.call(patch, f)) || hasFeeAmt || hasFeeCcy;
 
     const merged: TransactionPayload = {
         type: existing.type,
@@ -256,10 +263,6 @@ export async function updateTransaction(
         from = { id: existing.from_account_id, currency: existing.from_currency };
         to   = { id: existing.to_account_id,   currency: existing.to_currency };
     }
-
-    const hasFeeAmt = Object.prototype.hasOwnProperty.call(patch, "fee_amount");
-    const hasFeeCcy = Object.prototype.hasOwnProperty.call(patch, "fee_currency");
-    const hasNote   = Object.prototype.hasOwnProperty.call(patch, "note");
 
     const updateStmt = env.DB.prepare(
         `UPDATE transactions SET
@@ -289,8 +292,9 @@ export async function updateTransaction(
         id,
     );
 
-    if (wantsStructural || hasFeeAmt) {
-        // overdraft при изменении сумм ИЛИ fee (fee тоже уменьшает баланс — L2).
+    if (wantsStructural) {
+        // overdraft при изменении сумм ИЛИ fee-полей (перенос комиссии на from-ведро
+        // сменой fee_currency тоже уменьшает баланс — L2, WRK-14).
         const feeFrom = (merged.fee_amount && merged.fee_currency === from.currency) ? merged.fee_amount : 0;
         const od = await checkOverdraft(env, merged.from_account_id, merged.from_amount + feeFrom, merged.date, id);
         if (!od.ok) return od;

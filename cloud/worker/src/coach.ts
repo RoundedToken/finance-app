@@ -11,7 +11,7 @@ import { effectiveBalancePerAccount, listBuckets } from "./snapshots";
 import { getBudgetsWithProgress } from "./budgets";
 import { listGoals } from "./goals";
 import { loadRatesIndex, type RatesIndex } from "./rates";
-import { sendMessage } from "./bot";
+import { sendMessage, escapeHtml } from "./bot";
 
 export interface CoachConfig {
     GAP_DAYS: number;            // нет трат дольше → сигнал
@@ -70,7 +70,7 @@ export function signalsFor(s: CoachSnapshot, cfg: CoachConfig = COACH_CONFIG): S
         if (d >= cfg.SNAPSHOT_STALE_DAYS) out.push({ key: "stale_snapshots", priority: 1, text: `🔸 Снапшоты не обновлялись ${d} дн. — балансы дрейфуют.` });
     }
     if (s.bucketsNoBaseline.length) {
-        const names = s.bucketsNoBaseline.slice(0, 3).join(", ");
+        const names = s.bucketsNoBaseline.slice(0, 3).map(escapeHtml).join(", ");
         const more = s.bucketsNoBaseline.length > 3 ? ` и ещё ${s.bucketsNoBaseline.length - 3}` : "";
         out.push({ key: "bucket_no_baseline", priority: 1, text: `🔸 Без baseline: ${names}${more} — баланс неточен.` });
     }
@@ -82,10 +82,10 @@ export function signalsFor(s: CoachSnapshot, cfg: CoachConfig = COACH_CONFIG): S
     if (s.budgetsOver.length) {
         const worst = [...s.budgetsOver].sort((a, b) => b.pct - a.pct)[0];
         const more = s.budgetsOver.length > 1 ? ` и ещё ${s.budgetsOver.length - 1}` : "";
-        out.push({ key: "budget_over", priority: 2, text: `🔸 Бюджет «${worst.name}» превышен (${Math.round(worst.pct)}%)${more}.` });
+        out.push({ key: "budget_over", priority: 2, text: `🔸 Бюджет «${escapeHtml(worst.name)}» превышен (${Math.round(worst.pct)}%)${more}.` });
     }
     if (s.goalsOverdue.length) {
-        const names = s.goalsOverdue.slice(0, 2).join(", ");
+        const names = s.goalsOverdue.slice(0, 2).map(escapeHtml).join(", ");
         const more = s.goalsOverdue.length > 2 ? ` и ещё ${s.goalsOverdue.length - 2}` : "";
         out.push({ key: "goal_overdue", priority: 2, text: `🔸 Цель просрочена: ${names}${more}.` });
     }
@@ -104,7 +104,7 @@ export function signalsFor(s: CoachSnapshot, cfg: CoachConfig = COACH_CONFIG): S
     // ── Аномалия трат (приоритет 4, грубая — тонкая версия = routine, шаг 2) ──
     if (s.categorySpikes.length) {
         const top = s.categorySpikes[0];
-        out.push({ key: "spending_spike", priority: 4, text: `🔸 «${top.name}»: ${eur(top.eur)} в этом месяце — ×${top.factor.toFixed(1)} к среднему.` });
+        out.push({ key: "spending_spike", priority: 4, text: `🔸 «${escapeHtml(top.name)}»: ${eur(top.eur)} в этом месяце — ×${top.factor.toFixed(1)} к среднему.` });
     }
 
     return out.sort((a, b) => a.priority - b.priority);

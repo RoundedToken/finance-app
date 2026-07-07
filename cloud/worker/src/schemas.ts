@@ -11,8 +11,21 @@
  */
 import { z } from "zod";
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
-const posAmount = z.number().positive("amount must be positive");
+// WRK-17 (SPEC-043): regex пропускает несуществующие даты («2026-13-99»), которые дальше
+// живут в строковых сравнениях и ломают окна KPI/бюджетов. Проверяем реальность календарного дня.
+export function isRealIsoDate(d: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    const [y, m, dd] = d.split("-").map(Number);
+    const t = new Date(Date.UTC(y, m - 1, dd));
+    return t.getUTCMonth() === m - 1 && t.getUTCDate() === dd;
+}
+const isoDate = z.string().refine(isRealIsoDate, "date must be a real YYYY-MM-DD");
+// WRK-03 (SPEC-043): JSON.parse("1e309") = Infinity, а z.number().positive() его пропускает —
+// одна такая строка отравляет SUM/балансы/KPI каскадом. finite + широкий sanity-cap.
+const MONEY_CAP = 1e12;
+const posAmount = z.number().positive("amount must be positive").finite().max(MONEY_CAP, "amount too large");
+const moneyValue = z.number().finite().min(-MONEY_CAP, "amount too small").max(MONEY_CAP, "amount too large");  // снапшот: баланс, знак любой
+const nonNegAmount = z.number().nonnegative().finite().max(MONEY_CAP, "amount too large");
 const optStr = z.string().nullish();   // string | null | undefined
 
 // ── Expenses (Mini App + бот) ───────────────────────────────────────────────
@@ -65,14 +78,14 @@ export const snapshotCreateSchema = z.object({
     id: z.string().optional(),
     date: isoDate,
     account_id: z.string().min(1),
-    amount: z.number(),
+    amount: moneyValue,
     note: optStr,
     source: z.string().optional(),
 });
 export const snapshotUpdateSchema = z.object({
     date: isoDate.optional(),
     account_id: z.string().min(1).optional(),
-    amount: z.number().optional(),
+    amount: moneyValue.optional(),
     note: optStr,
 });
 
@@ -85,7 +98,7 @@ export const transactionCreateSchema = z.object({
     to_account_id: z.string().min(1),
     from_amount: posAmount,
     to_amount: posAmount,
-    fee_amount: z.number().nonnegative().nullish(),
+    fee_amount: nonNegAmount.nullish(),
     fee_currency: optStr,
     note: optStr,
 });
@@ -96,7 +109,7 @@ export const transactionUpdateSchema = z.object({
     to_account_id: z.string().min(1).optional(),
     from_amount: posAmount.optional(),
     to_amount: posAmount.optional(),
-    fee_amount: z.number().nonnegative().nullish(),
+    fee_amount: nonNegAmount.nullish(),
     fee_currency: optStr,
     note: optStr,
 });
@@ -162,15 +175,15 @@ export const budgetUpdateSchema = z.object({
 const archetypeEnum = z.enum(["fixed", "recurring", "seasonal", "lumpy", "intermittent"]);
 export const budgetSettingsSchema = z.object({
     archetype_override: archetypeEnum.nullish(),
-    floor_eur: z.number().nonnegative().nullish(),
+    floor_eur: nonNegAmount.nullish(),
     adaptive_enabled: z.boolean().optional(),
 });
 export const budgetDecisionSchema = z.object({
     category_id: z.string().min(1),
-    period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM"),
+    period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM").refine(p => { const m = Number(p.slice(5)); return m >= 1 && m <= 12; }, "period month must be 01-12"),
     archetype: z.string().min(1),
-    prev_limit_eur: z.number().nonnegative().nullish(),
-    reco_limit_eur: z.number().nonnegative(),
+    prev_limit_eur: nonNegAmount.nullish(),
+    reco_limit_eur: nonNegAmount,
     reason_code: z.string().min(1),
     decision: z.enum(["accepted", "dismissed"]),
 });
@@ -188,13 +201,13 @@ export const categoryCreateSchema = z.object({
     name: z.string().min(1),
     emoji: optStr,
     color: optStr,
-    sort_order: z.number().nullish(),
+    sort_order: z.number().finite().nullish(),
 });
 export const categoryUpdateSchema = z.object({
     name: z.string().min(1).optional(),
     emoji: optStr,
     color: optStr,
-    sort_order: z.number().nullish(),
+    sort_order: z.number().finite().nullish(),
     is_active: z.union([z.boolean(), z.number()]).optional(),
 });
 

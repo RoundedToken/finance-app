@@ -12,7 +12,7 @@ import { Modal } from "@/components/Modal";
 import { Select } from "@/components/Select";
 import { Sparkline } from "@/components/Sparkline";
 import { Currency, AccountOption } from "@/components/Currency";
-import { cn, formatAmount, formatDate, formatExchangeRate, formatRelativeTime, hoursSince, todayLocal } from "@/lib/utils";
+import { cn, formatAmount, formatDate, formatExchangeRate, formatRelativeTime, hoursSince, todayLocal, useDraftId } from "@/lib/utils";
 import { type Preset, PeriodPresets, PRESETS_WITH_AUTO, presetRange, startOfMonthMinus, todayIso } from "@/components/PeriodPresets";
 import type { Account, InvestmentPosition, TransactionCreatePayload } from "@/api/types";
 
@@ -267,6 +267,7 @@ function Field({ label, children }: FieldProps) {
 function BuyModal({ position, accounts, onClose }: { position: InvestmentPosition | null; accounts: Account[]; onClose: () => void }) {
     const create = useCreateTransaction();
     const open = !!position;
+    const draftId = useDraftId(open);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     // Источники — обычные (не инвест) вёдра; дефолт — USDT-ведро.
     const sources = useMemo(() => accounts.filter(a => !a.is_investment), [accounts]);
     const [fromId, setFromId] = useState("");
@@ -297,6 +298,7 @@ function BuyModal({ position, accounts, onClose }: { position: InvestmentPositio
         setSubmitting(true); setError(null);
         try {
             const payload: TransactionCreatePayload = {
+                id: draftId,   // ADM-02: идемпотентный ретрай того же сабмита
                 type: "exchange", date,
                 from_account_id: fromId, to_account_id: position.account_id,
                 from_amount: numFrom, to_amount: numTo,
@@ -359,6 +361,7 @@ function BuyModal({ position, accounts, onClose }: { position: InvestmentPositio
 function BalanceSnapshotModal({ position, onClose }: { position: InvestmentPosition | null; onClose: () => void }) {
     const create = useCreateSnapshot();
     const open = !!position;
+    const draftId = useDraftId(open);   // ADM-02 (SPEC-044): id create-записи на одно открытие формы
     const [amount, setAmount] = useState("");
     const [date, setDate] = useState(todayLocal());
     const [note, setNote] = useState("");
@@ -380,7 +383,7 @@ function BalanceSnapshotModal({ position, onClose }: { position: InvestmentPosit
         if (!valid) return;
         setSubmitting(true); setError(null);
         try {
-            await create.mutateAsync({ date, account_id: position.account_id, amount: num, note: note.trim() || null });
+            await create.mutateAsync({ id: draftId, date, account_id: position.account_id, amount: num, note: note.trim() || null });   // ADM-02
             onClose();
         } catch (err: any) {
             setError(err?.message ?? "Не удалось сохранить баланс");
