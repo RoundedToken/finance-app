@@ -44,10 +44,15 @@ export function formatAmount(amount: number, currency: string, opts?: { withSymb
 /**
  * Компактная дата для таблиц: `dd.mm.yyyy`. ru-RU short ("24 мая 2026 г.")
  * переносился в узких колонках — теперь всегда влезает без wrap.
+ *
+ * ADM-18: форматируем строку напрямую, без `new Date("YYYY-MM-DD")` — он парсит
+ * как UTC-полночь, и в западных TZ (UTC−) дата операций съезжала на −1 день
+ * (нарушало собственное правило isoLocal этого же файла, SPEC-024).
  */
 export function formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString("ru-RU", { year: "numeric", month: "2-digit", day: "2-digit" });
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+    return new Date(iso).toLocaleDateString("ru-RU", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 export function formatDateTime(iso: string): string {

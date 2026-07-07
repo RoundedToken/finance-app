@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, FolderTree, ArrowUp, ArrowDown, Eye, EyeOff } from "lucide-react";
 import { useManagedCategories, useCreateCategory, useUpdateCategory } from "@/api/queries";
 import { Modal } from "@/components/Modal";
+import { ErrorState } from "@/components/ErrorState";
 import { cn, useDraftId } from "@/lib/utils";
 import { COLOR_PALETTE } from "./GoalsPage";
 import type { ManagedCategory, CategoryCreatePayload, CategoryUpdatePayload } from "@/api/types";
@@ -64,7 +65,7 @@ export function CategoriesPage() {
 }
 
 function CategoryList({ kind }: { kind: Kind }) {
-    const { data, isLoading } = useManagedCategories(kind);
+    const { data, isLoading, isError, refetch } = useManagedCategories(kind);
     const update = useUpdateCategory(kind);
     const [editing, setEditing] = useState<ManagedCategory | null>(null);
 
@@ -94,6 +95,11 @@ function CategoryList({ kind }: { kind: Kind }) {
         );
     }
 
+    // ADM-05: 5xx/сеть — не «категорий нет»: ложный empty-state подталкивал создать дубликаты.
+    if (isError) {
+        return <ErrorState onRetry={() => refetch()} label="Не удалось загрузить категории" />;
+    }
+
     return (
         <div className="space-y-5">
             <div className="card divide-y overflow-hidden">
@@ -107,8 +113,11 @@ function CategoryList({ kind }: { kind: Kind }) {
                         key={c.id} cat={c}
                         onEdit={() => setEditing(c)}
                         onToggle={() => setActive(c, false)}
-                        onUp={i > 0 ? () => move(i, -1) : undefined}
-                        onDown={i < active.length - 1 ? () => move(i, 1) : undefined}
+                        // ADM-20: пока пара PUT свопа в полёте, стрелки неактивны — быстрые
+                        // повторные клики стартовали новый своп по ещё не инвалидированному
+                        // порядку (риск двух категорий с одинаковым sort_order).
+                        onUp={i > 0 && !update.isPending ? () => move(i, -1) : undefined}
+                        onDown={i < active.length - 1 && !update.isPending ? () => move(i, 1) : undefined}
                     />
                 ))}
             </div>

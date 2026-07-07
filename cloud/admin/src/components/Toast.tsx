@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {children}
             {toast && (
                 <div
-                    role="status"
+                    role={toast.kind === "err" ? "alert" : "status"}   /* ADM-21: ошибки анонсируются скринридером сразу */
                     className={cn(
                         "fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] max-w-[90vw] px-4 py-2.5 rounded-xl text-sm font-medium shadow-lg animate-in fade-in slide-in-from-bottom-2",
                         toast.kind === "err" ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background",

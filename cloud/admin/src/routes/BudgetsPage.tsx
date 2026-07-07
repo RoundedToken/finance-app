@@ -271,6 +271,8 @@ function BudgetModal({ state, onClose, unbudgeted }: { state: ModalState; onClos
 
     const remove = async () => {
         if (!state || state.mode !== "edit") return;
+        // ADM-19: единственный delete в приложении был без confirm — выравниваем с остальными.
+        if (!confirm(`Удалить лимит «${state.isTotal ? "Общий потолок" : state.label}»?`)) return;
         setSubmitting(true);
         try {
             await del.mutateAsync(state.budgetId);

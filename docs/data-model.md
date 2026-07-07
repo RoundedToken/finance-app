@@ -72,7 +72,7 @@
 **`goals`** — целевые фонды. `id, name, emoji, color, target_amount?(>0), target_currency?(FK), deadline?, note, status('active'|'achieved'|'archived'), sort_order, created_at, updated_at, deleted_at`.
 
 **`goal_contributions`** — ручные взносы в цель. `id, goal_id(FK), date, amount(>0), currency_code, account_id?(FK), note, created_at, updated_at, deleted_at`.
-- **Инвариант (Стадия 2):** `account_id` обязателен — каждый взнос привязан к реальному ведру, чтобы `targeted` сходился с `net` (см. ниже).
+- **Инвариант (Стадия 2):** `account_id` обязателен — каждый взнос привязан к реальному ведру, чтобы `targeted` сходился с `net` (см. ниже). Обязательность — app-level: в DDL колонка nullable (legacy-строки), NOT NULL энфорсится кодом Worker (`goals.ts`), не схемой.
 
 ### Бюджеты (SPEC-020/023)
 

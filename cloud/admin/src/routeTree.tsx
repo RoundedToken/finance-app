@@ -63,6 +63,11 @@ const accountsRoute = createRoute({
 const snapshotsRoute = createRoute({
     getParentRoute: () => authedRoute,
     path: "/snapshots",
+    // ADM-10: карточка ведра на /accounts ведёт сюда с ?account_id=… — схема search
+    // валидируется явно (раньше параметр игнорировался, а Link маскировал типы `as any`).
+    validateSearch: (search: Record<string, unknown>): { account_id?: string } => ({
+        account_id: typeof search.account_id === "string" && search.account_id !== "" ? search.account_id : undefined,
+    }),
     component: SnapshotsPage,
 });
 

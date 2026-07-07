@@ -20,7 +20,7 @@
 - CRUD `/v1/expenses` GET/POST/PUT/DELETE, `/v1/bootstrap`, `/v1/admin/*`.
 - launchd-агент для daily D1 export (сейчас — `com.user.finance-backup.plist`).
 
-### Stage 2 — Mini App (UI ввода трат)
+### Stage 2 — Mini App (UI ввода трат) (SPEC-002)
 - Numpad + сетка категорий с пагинацией + история.
 - Мульти-валютность с флагами (EUR/USD/RUB/RSD/USDT).
 - Telegram WebApp API: `initData` HMAC.
@@ -28,7 +28,7 @@
 - iOS swipe-to-delete, edit-modal с CRUD.
 - Унифицированные анимации через CSS-vars; direction lock на свайпе.
 
-### Stage 3 — Курсы валют и аналитика в Mini App
+### Stage 3 — Курсы валют и аналитика в Mini App (SPEC-003)
 - Google Sheet «Finance Rates» с формулами `=GOOGLEFINANCE(...)` (ADR-006).
 - Worker cron `0 6 * * *` тянет CSV → D1 `rates(date, base='EUR', quote, rate)`.
 - Backfill 2024-01-10 → today (4179 записей, **TRY добавлен 2026-05-25**).
@@ -52,7 +52,7 @@
 
 ### Spec-driven workflow (ADR-013)
 - `docs/process.md` — 4-фазный pipeline (Discovery+Spec → Implementation → Test+Review parallel → Push).
-- `specs/SPEC-template.md` + retro SPEC-001..005 + 10 audits в `specs/audits/`.
+- `specs/SPEC-template.md` + retro SPEC-001..005 + 16 audits (SPEC-001…008 × arch+qa) в `specs/audits/`.
 - `.claude/agents/senior-qa.md`, `.claude/agents/solution-architect.md`.
 - gitleaks `.githooks/pre-commit`, `wrangler.toml` в .gitignore, `wrangler.example.toml` как public template.
 

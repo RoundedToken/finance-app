@@ -243,9 +243,11 @@ function KpiRow({ data, lens }: { data: DashboardResponse; lens: Lens }) {
                 spark={<Sparkline values={srSpark} color={sparkTone(sr, prevSr, true)} inProgressTail={1} />}
                 sub={free ? "из свободного дохода" : "из всего дохода"} />
 
+            {/* ADM-12: спарклайн убран — линия рисовала ряд net worth, а не runway (nw/burn):
+                runway может расти при падающем nw, и зелёная ниспадающая линия смешивала две
+                метрики в одной карточке (memory kpi-card-one-signal). Δ-бейджа достаточно. */}
             <KpiCard icon={Clock} label="Runway" value={rw == null ? "∞" : `${rw.toFixed(1)} мес`}
                 delta={rw != null && prevRw != null ? <DeltaBadge cur={rw} prev={prevRw} /> : null}
-                spark={<Sparkline values={nwSpark} color={sparkTone(rw, prevRw, true)} />}
                 sub={free ? "без целевых фондов" : "со всеми фондами"} />
         </div>
     );
@@ -416,6 +418,10 @@ function CategoryDonut({ data, cats, setCats }: { data: DashboardResponse; cats:
     const all = data.expenses_by_category;
     const slices = cats.size === 0 ? all : all.filter(s => cats.has(s.category_id));
     const toggle = (id: string) => { const next = new Set(cats); next.has(id) ? next.delete(id) : next.add(id); setCats(next); };
+    // ADM-06: fallback-цвет считается ОДИН раз по полному списку категорий. Раньше секторы
+    // индексировали PALETTE по отфильтрованному массиву, а легенда — по полному: при активном
+    // фильтре категория без явного color получала в donut другой цвет, чем в легенде.
+    const colorOf = new Map(all.map((s, i) => [s.category_id, s.color ?? PALETTE[i % PALETTE.length]]));
     // D6: при активном фильтре доли пересчитываются от суммы выбранных категорий.
     const activeSum = slices.reduce((s, x) => s + x.total_eur, 0);
     const shareOf = (s: typeof all[number]) => (cats.size === 0 ? s.share : activeSum > 0 ? s.total_eur / activeSum : 0);
@@ -429,19 +435,19 @@ function CategoryDonut({ data, cats, setCats }: { data: DashboardResponse; cats:
             type: "pie", radius: ["52%", "78%"], center: ["50%", "50%"], avoidLabelOverlap: true,
             itemStyle: { borderColor: "transparent", borderWidth: 1 },
             label: { show: false }, labelLine: { show: false },
-            data: slices.map((s, i) => ({ name: `${s.emoji ?? ""} ${s.name}`.trim(), value: Math.round(s.total_eur), itemStyle: { color: s.color ?? PALETTE[i % PALETTE.length] } })),
+            data: slices.map(s => ({ name: `${s.emoji ?? ""} ${s.name}`.trim(), value: Math.round(s.total_eur), itemStyle: { color: colorOf.get(s.category_id) } })),
         }],
     };
     return (
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-center">
             <ReactECharts option={option} style={{ height: 260 }} notMerge />
             <div className="flex flex-col gap-1 max-h-64 overflow-y-auto pr-1 text-sm">
-                {all.map((s, i) => {
+                {all.map(s => {
                     const on = cats.size === 0 || cats.has(s.category_id);
                     return (
-                        <button key={s.category_id} onClick={() => toggle(s.category_id)}
+                        <button key={s.category_id} onClick={() => toggle(s.category_id)} aria-pressed={on}
                             className={cn("flex items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-accent/50", !on && "opacity-35")}>
-                            <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: s.color ?? PALETTE[i % PALETTE.length] }} />
+                            <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: colorOf.get(s.category_id) }} />
                             <span className="truncate">{s.emoji} {s.name}</span>
                             <span className="ml-auto num tabular-nums text-muted-foreground">{on ? `${Math.round(shareOf(s) * 100)}%` : ""}</span>
                         </button>
@@ -464,7 +470,7 @@ function FormFilter({ buckets, forms, setForms }: { buckets: DashboardBucket[]; 
             {available.map(f => {
                 const on = forms.size === 0 || forms.has(f);
                 return (
-                    <button key={f} onClick={() => toggle(f)}
+                    <button key={f} onClick={() => toggle(f)} aria-pressed={on}
                         className={cn("text-xs px-2 py-0.5 rounded-full border transition-colors", on ? "border-primary/50 bg-primary/10 text-foreground" : "border-border text-muted-foreground opacity-60")}>
                         {FORM_LABEL[f] ?? f}
                     </button>

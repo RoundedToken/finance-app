@@ -159,7 +159,7 @@ function BucketCard({ acc, eurEquiv, spark }: BucketCardProps) {
     return (
         <Link
             to="/snapshots"
-            search={{ account_id: acc.id } as any}
+            search={{ account_id: acc.id }}
             className={cn(
                 "card p-5 block transition-all hover:bg-card/80 hover:border-primary/40 group relative",
                 !hasManual && "border-dashed",

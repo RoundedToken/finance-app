@@ -23,7 +23,10 @@ const queryClient = new QueryClient({
     }),
     defaultOptions: {
         queries: {
-            refetchOnWindowFocus: false,
+            // ADM-22: типичный поток — трата вносится с iPhone (Mini App), Admin открыт на маке.
+            // Refetch по возврату во вкладку держит данные свежими (single-user, запросы дешёвые);
+            // раньше стейл жил до следующего маунта, на длинно-открытой странице — бессрочно.
+            refetchOnWindowFocus: true,
             retry: 1,
         },
     },

@@ -36,7 +36,7 @@ React 19 + Vite + TypeScript. TanStack Router / Query / Table (**без** Form).
 | Workers | 100k req/day, 10ms CPU | ~50/день |
 | D1 | 5 GB, 5M reads/day, 100k writes/day | ~30 writes, ~2000 трат ≈ 250 KB |
 | Pages | unlimited bandwidth, 500 deploys/мес | 1-2 deploy/мес (×2 проекта) |
-| Cron Triggers | 1000/day | 1/день (курсы, `0 6 * * *`) |
+| Cron Triggers | 1000/day | 2/день (курсы `0 6 * * *` + coach `0 7 * * *`, SPEC-040) |
 | Telegram Bot API + Mini Apps | без лимитов для personal | — |
 | Google Sheets (GOOGLEFINANCE → CSV) | — | прокси для курсов (ADR-006) |
 

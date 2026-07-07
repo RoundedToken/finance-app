@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
  *
  * Diff vs Mini App:
  *  - кнопка «Период» открывает inline custom range (два <input type=date>)
- *  - «Нед» убрана (в Admin'е недельный срез пока не востребован)
  *  - default = месяц, offset=0 (текущий)
  */
 
@@ -41,7 +40,6 @@ const MONTHS_GEN = [
 
 function pad(n: number): string { return String(n).padStart(2, "0"); }
 function isoDate(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function addMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function startOfWeek(d: Date): Date {
     // Понедельник как первый день недели (RU/EU convention).
@@ -68,8 +66,11 @@ export function computeRange(value: PeriodValue): PeriodRange {
     }
 
     if (t === "month") {
-        const ref = addMonths(today, value.offset);
-        const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+        // ADM-04: считаем от 1-го числа, не мутируем день. Прежний addMonths через
+        // setMonth переполнялся 29–31 числа (31 мая − 1 мес → «31 апреля» → 1 мая):
+        // ‹prev› возвращал тот же месяц, а offset −2 перескакивал через месяц.
+        const ref = new Date(today.getFullYear(), today.getMonth() + value.offset, 1);
+        const start = ref;
         const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
         const label = `${MONTHS[ref.getMonth()]} ${ref.getFullYear()}`;
         return { type: t, from: isoDate(start), to: isoDate(end), label };
