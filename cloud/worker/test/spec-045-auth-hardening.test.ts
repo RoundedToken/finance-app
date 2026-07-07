@@ -9,26 +9,8 @@ import worker from "../src/index";
 import { validateInitData, timingSafeEqualStr } from "../src/auth";
 import { signJwt, verifyJwt } from "../src/jwt";
 import { makeEnv } from "./d1-mock";
-
-const BOT_TOKEN = "12345:test-bot-token";
-
-/** Собирает подписанный initData тем же алгоритмом, что Telegram (для тестов). */
-async function makeInitData(authDate: number, userId = 42): Promise<string> {
-    const params = new URLSearchParams();
-    params.set("auth_date", String(authDate));
-    params.set("query_id", "AAtest");
-    params.set("user", JSON.stringify({ id: userId, username: "tester" }));
-    const pairs = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`);
-    const dataCheckString = pairs.join("\n");
-    const enc = new TextEncoder();
-    const secretKey = await crypto.subtle.importKey("raw", enc.encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const secret = await crypto.subtle.sign("HMAC", secretKey, enc.encode(BOT_TOKEN));
-    const dataKey = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const sig = await crypto.subtle.sign("HMAC", dataKey, enc.encode(dataCheckString));
-    const hex = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("");
-    params.set("hash", hex);
-    return params.toString();
-}
+// QA-04 (SPEC-046): makeInitData вынесен в helpers.ts — переиспользуется e2e-периметром.
+import { makeInitData, BOT_TOKEN } from "./helpers";
 
 describe("SEC-06 — initData freshness", () => {
     it("свежий auth_date → ok; старше 24ч → expired", async () => {
