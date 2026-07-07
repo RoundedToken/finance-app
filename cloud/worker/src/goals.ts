@@ -24,6 +24,7 @@
  */
 
 import type { Env } from "./types";
+import { isRealIsoDate } from "./schemas";
 import { loadRatesIndex, RatesIndex } from "./rates";
 import { roundMoney } from "./ledger";
 
@@ -102,7 +103,7 @@ export async function validateGoalPayload(env: Env, payload: GoalPayload): Promi
             return { ok: false, error: "target_amount must be positive" };
         }
     }
-    if (payload.deadline != null && payload.deadline !== "" && !ISO_DATE.test(payload.deadline)) {
+    if (payload.deadline != null && payload.deadline !== "" && !isRealIsoDate(payload.deadline)) {   // WRK-17: не только формат
         return { ok: false, error: "deadline must be YYYY-MM-DD" };
     }
     if (payload.color != null && payload.color !== "" && !HEX_COLOR.test(payload.color)) {

@@ -766,7 +766,14 @@ async function handleWebBudgetDecision(request: Request, env: Env): Promise<Resp
 
 async function handleRefreshRates(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
-    const payload = await fetchLatestRatesEUR(env);
+    // WRK-04 (SPEC-043): фетч может упасть на мусорной дате CSV — оператору полезен
+    // явный 502 с текстом, а не generic 500 из глобального catch.
+    let payload;
+    try {
+        payload = await fetchLatestRatesEUR(env);
+    } catch (e) {
+        return json({ error: `rates fetch failed: ${e instanceof Error ? e.message : "unknown"}` }, 502, request, env);
+    }
     const n = await saveRates(env, payload);
     // SPEC-026: крипта (ETH) — отдельный try/catch, падение не валит ответ по фиату (E7).
     let cryptoSaved = 0;
@@ -823,23 +830,31 @@ async function handleMigrate(request: Request, env: Env): Promise<Response> {
     if (!checkBearer(request, env.SYNC_TOKEN)) return json({ error: "unauthorized" }, 401, request, env);
     const body = (await request.json().catch(() => ({}))) as any;
     const raw = Array.isArray(body.expenses) ? body.expenses : [];
-    // WRK-15 (SPEC-043): зеркально bulk-rates — cap + per-item shape-фильтр. Импортёры уже
-    // дважды портили данные (SPEC-031/041); мусорный элемент раньше падал 500 на bind
-    // undefined / canonicalTs(number), валидный хвост терялся.
-    const capped = raw.slice(0, MAX_MIGRATE_EXPENSES);
-    const valid = capped.filter((e: any) =>
+    // WRK-15 (SPEC-043): зеркально bulk-rates — превышение cap'а отклоняется целиком
+    // (тихий truncate маскировал бы потерю данных), элементы фильтруются по shape.
+    // Импортёры уже дважды портили данные (SPEC-031/041); мусорный элемент раньше
+    // падал 500 на bind undefined / canonicalTs(number), валидный хвост терялся.
+    if (raw.length > MAX_MIGRATE_EXPENSES) {
+        return json({ error: `too many expenses (max ${MAX_MIGRATE_EXPENSES} per request)` }, 400, request, env);
+    }
+    // DB-03-периметр и для admin-канала: ghost-справочники в импорте — источник сирот.
+    const accIds = new Set(((await env.DB.prepare("SELECT id FROM accounts WHERE deleted_at IS NULL").all()).results as any[]).map(r => r.id));
+    const catIds = new Set(((await env.DB.prepare("SELECT id FROM categories").all()).results as any[]).map(r => r.id));
+    const TS_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/;   // канонизуемый timestamp (SPEC-024)
+    const valid = raw.filter((e: any) =>
         e && typeof e.id === "string" && e.id !== "" &&
         typeof e.date === "string" && isRealIsoDate(e.date) &&
-        typeof e.amount === "number" && Number.isFinite(e.amount) &&
+        typeof e.amount === "number" && Number.isFinite(e.amount) && e.amount > 0 && e.amount <= 1e12 &&
         typeof e.currency === "string" && e.currency !== "" &&
-        (e.created_at === undefined || typeof e.created_at === "string") &&
-        (e.updated_at === undefined || typeof e.updated_at === "string"),
+        (e.account_id == null || (typeof e.account_id === "string" && accIds.has(e.account_id))) &&
+        (e.category_id == null || (typeof e.category_id === "string" && catIds.has(e.category_id))) &&
+        (e.created_at == null || (typeof e.created_at === "string" && TS_RE.test(e.created_at))) &&
+        (e.updated_at == null || (typeof e.updated_at === "string" && TS_RE.test(e.updated_at))),
     );
     const n = await bulkInsertExpenses(env, valid);
     return json({
         ok: true, inserted: n, attempted: raw.length,
-        skipped_invalid: capped.length - valid.length,
-        skipped_overflow: raw.length - capped.length,
+        skipped_invalid: raw.length - valid.length,
     }, 200, request, env);
 }
 

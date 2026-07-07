@@ -176,24 +176,50 @@ describe("WRK-15/WRK-19 — admin-периметр", () => {
         expect(r.status).toBe(404);
     });
 
-    it("/v1/admin/migrate-expenses: мусорные элементы скипаются, валидные вставляются, ответ считает skipped", async () => {
+    it("/v1/admin/migrate-expenses: мусор/ghost-справочники скипаются, валидные вставляются", async () => {
         const { env, d1 } = makeWorld();
         env.SYNC_TOKEN = "sync-tok";
         const body = {
             expenses: [
-                { id: "m1", date: "2026-06-01", amount: 10, currency: "EUR" },                    // валидный
-                { date: "2026-06-01", amount: 10, currency: "EUR" },                              // без id
-                { id: "m3", date: "2026-13-99", amount: 10, currency: "EUR" },                    // фейковая дата
-                { id: "m4", date: "2026-06-01", amount: "10", currency: "EUR" },                  // amount строкой
-                { id: "m5", date: "2026-06-01", amount: 10, currency: "EUR", created_at: 123 },   // created_at числом (раньше 500)
+                { id: "m1", date: "2026-06-01", amount: 10, currency: "EUR" },                        // валидный (без счёта)
+                { id: "m2", date: "2026-06-01", amount: 10, currency: "RSD", account_id: "rsd-bank", category_id: "food" },  // валидный со справочниками
+                { date: "2026-06-01", amount: 10, currency: "EUR" },                                  // без id
+                { id: "m3", date: "2026-13-99", amount: 10, currency: "EUR" },                        // фейковая дата
+                { id: "m4", date: "2026-06-01", amount: "10", currency: "EUR" },                      // amount строкой
+                { id: "m5", date: "2026-06-01", amount: 10, currency: "EUR", created_at: 123 },       // created_at числом (раньше 500)
+                { id: "m6", date: "2026-06-01", amount: -5, currency: "EUR" },                        // отрицательная сумма
+                { id: "m7", date: "2026-06-01", amount: 10, currency: "EUR", account_id: "ghost" },   // ghost-ведро (DB-03)
+                { id: "m8", date: "2026-06-01", amount: 10, currency: "EUR", created_at: "junk" },    // мусорный timestamp (tie-break SPEC-024)
             ],
         };
         const r = await worker.fetch(post("/v1/admin/migrate-expenses", body), env);
         expect(r.status).toBe(200);
         const j = await r.json() as any;
-        expect(j.inserted).toBe(1);
-        expect(j.skipped_invalid).toBe(4);
-        expect(j.skipped_overflow).toBe(0);
-        expect((d1.db.prepare("SELECT COUNT(*) c FROM expenses").get() as any).c).toBe(1);
+        expect(j.inserted).toBe(2);
+        expect(j.skipped_invalid).toBe(7);
+        expect((d1.db.prepare("SELECT COUNT(*) c FROM expenses").get() as any).c).toBe(2);
+    });
+
+    it("/v1/admin/migrate-expenses: >5000 элементов → 400 целиком (как bulk-rates)", async () => {
+        const { env } = makeWorld();
+        env.SYNC_TOKEN = "sync-tok";
+        const expenses = Array.from({ length: 5001 }, (_, i) => ({ id: `b${i}`, date: "2026-06-01", amount: 1, currency: "EUR" }));
+        const r = await worker.fetch(post("/v1/admin/migrate-expenses", { expenses }), env);
+        expect(r.status).toBe(400);
+    });
+
+    it("WRK-07: перенос траты датой вперёд через baseline не пере-применяет откат (ведро не уходит в минус)", async () => {
+        const { env, d1 } = makeEnv();
+        seed(d1, {
+            accounts: [{ id: "b1", currency: "EUR" }],
+            currencies: [{ code: "EUR", name: "Euro" }],
+            expenses: [{ id: "old1", date: "2026-06-05", account_id: "b1", amount: 100, currency: "EUR", user_id: "u" }],
+            snapshots: [{ id: "bl", date: "2026-06-10", account_id: "b1", amount: 1000 }],   // baseline ПОСЛЕ траты — поглотил её
+        });
+        // available = 1000 (старая трата в baseline, откат НЕ применяется) → 1050 не влезает
+        const r = await updateExpense(env, "old1", "u", { date: "2026-06-15", amount: 1050 });
+        expect(r.ok).toBe(false);
+        // а 900 — влезает
+        expect((await updateExpense(env, "old1", "u", { date: "2026-06-15", amount: 900 })).ok).toBe(true);
     });
 });

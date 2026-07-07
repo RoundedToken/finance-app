@@ -180,7 +180,7 @@ export const budgetSettingsSchema = z.object({
 });
 export const budgetDecisionSchema = z.object({
     category_id: z.string().min(1),
-    period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM"),
+    period: z.string().regex(/^\d{4}-\d{2}$/, "period must be YYYY-MM").refine(p => { const m = Number(p.slice(5)); return m >= 1 && m <= 12; }, "period month must be 01-12"),
     archetype: z.string().min(1),
     prev_limit_eur: nonNegAmount.nullish(),
     reco_limit_eur: nonNegAmount,
@@ -201,13 +201,13 @@ export const categoryCreateSchema = z.object({
     name: z.string().min(1),
     emoji: optStr,
     color: optStr,
-    sort_order: z.number().nullish(),
+    sort_order: z.number().finite().nullish(),
 });
 export const categoryUpdateSchema = z.object({
     name: z.string().min(1).optional(),
     emoji: optStr,
     color: optStr,
-    sort_order: z.number().nullish(),
+    sort_order: z.number().finite().nullish(),
     is_active: z.union([z.boolean(), z.number()]).optional(),
 });
 

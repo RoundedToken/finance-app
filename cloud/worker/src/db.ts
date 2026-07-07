@@ -36,8 +36,8 @@ export async function isAuthorizedUser(env: Env, telegramId: string): Promise<bo
  * SPEC-032: согласованность валюта↔счёт. Трата со счётом обязана быть в native-валюте
  * ведра — баланс (`effective_balance`, SPEC-011) вычитает её именно в этой валюте, иначе
  * «999 RSD на RUB-ведре» тихо искажает баланс. Возвращает текст ошибки, если счёт задан,
- * его валюта известна и ≠ валюте траты, а осознанный override не выставлен; иначе null
- * (всё ок / нет счёта / ведро не найдено → не блокируем первичный flow).
+ * его валюта известна и ≠ валюте траты, а осознанный override не выставлен; иначе null.
+ * Несуществующее ведро сюда не доходит — режется DB-03 exists-guard'ом раньше (SPEC-043).
  */
 async function currencyMismatchError(
     env: Env,
@@ -161,7 +161,11 @@ export async function updateExpense(env: Env, id: string, userId: string, patch:
             if (resAccount && typeof resAmount === "number" && resAmount > 0) {
                 const eff = await getEffectiveBalance(env, resAccount, resDate);
                 let available = eff.balance;
-                if (existing.account_id === resAccount && existing.date <= resDate) available += existing.amount;
+                // Откатываем старую версию только если она реально сидит в eff.balance:
+                // то же ведро, в окне asOf и ПОСЛЕ baseline-даты (трата до/в день снапшота
+                // поглощена baseline'ом — откат завышал бы available и пускал ведро в минус).
+                const afterBaseline = !eff.manual_baseline || existing.date > eff.manual_baseline.date;
+                if (existing.account_id === resAccount && existing.date <= resDate && afterBaseline) available += existing.amount;
                 if (eff.manual_baseline && roundMoney(available - resAmount) < 0) {
                     return { ok: false, error: `недостаточно средств в ведре (доступно: ${available.toFixed(2)}, нужно: ${resAmount.toFixed(2)})` };
                 }

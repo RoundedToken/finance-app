@@ -94,7 +94,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     await sendMessage(
         env,
         chatId,
-        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${parsed.category}` +
+        `✅ Записано: <b>${parsed.amount} ${parsed.currency}</b> / ${escapeHtml(parsed.category)}` +   // SEC-14: text-node HTML
             (parsed.note ? `\n📝 ${escapeHtml(parsed.note)}` : "") +
             `\n<i>id: ${id.slice(0, 8)}…</i>`,
     );
