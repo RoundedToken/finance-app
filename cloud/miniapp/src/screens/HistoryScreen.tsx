@@ -20,7 +20,7 @@ const MODES: { key: Mode; label: string }[] = [
 
 export function HistoryScreen() {
     const { s, d } = useApp();
-    const { data, isLoading } = useExpenses();
+    const { data, isLoading, isError, refetch } = useExpenses();
     const boot = useBootstrap();
     const expenses = data?.expenses ?? [];
     const cats = boot.data?.categories ?? [];
@@ -168,8 +168,15 @@ export function HistoryScreen() {
 
             <div id="history-list" role="tabpanel" className="px-4 pb-10">
                 {isLoading && <p className="text-center text-hint py-10 animate-pulse">Загрузка…</p>}
-                {!isLoading && !days.length && <p className="text-center text-hint py-12">{emptyLabel}</p>}
-                {days.length > 0 && (
+                {/* MA-02 (SPEC-042): ошибка сети ≠ «трат нет» — различимый error-state с ретраем (паттерн Shell). */}
+                {!isLoading && isError && (
+                    <div className="text-center py-12 space-y-3">
+                        <p className="text-hint">Не удалось загрузить траты</p>
+                        <button onClick={() => refetch()} className="text-accent font-medium">Повторить</button>
+                    </div>
+                )}
+                {!isLoading && !isError && !days.length && <p className="text-center text-hint py-12">{emptyLabel}</p>}
+                {!isError && days.length > 0 && (
                     <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
                         {virtualDays.map(vd => {
                             const day = days[vd.index];

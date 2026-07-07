@@ -694,20 +694,28 @@ export async function upsertBudgetSettings(env: Env, categoryId: string, patch: 
         return { ok: false, error: "invalid archetype_override" };
     }
 
-    // UPSERT: COALESCE сохраняет неуказанные поля.
+    // UPSERT: непереданные поля сохраняются, явный null очищает (WRK-02: прежний
+    // COALESCE делал сброс override/floor на «авто» невозможным). Паттерн — как в
+    // upsertInvestmentSettings (investments.ts).
+    const hasOverride = Object.prototype.hasOwnProperty.call(patch, "archetype_override");
+    const hasFloor = Object.prototype.hasOwnProperty.call(patch, "floor_eur");
+    const hasEnabled = patch.adaptive_enabled !== undefined;
     const r = await env.DB.prepare(
         `INSERT INTO budget_settings (category_id, archetype_override, floor_eur, adaptive_enabled, created_at, updated_at)
          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
          ON CONFLICT(category_id) DO UPDATE SET
-            archetype_override = COALESCE(excluded.archetype_override, budget_settings.archetype_override),
-            floor_eur          = COALESCE(excluded.floor_eur, budget_settings.floor_eur),
-            adaptive_enabled   = COALESCE(excluded.adaptive_enabled, budget_settings.adaptive_enabled),
+            archetype_override = ${hasOverride ? "?" : "archetype_override"},
+            floor_eur          = ${hasFloor ? "?" : "floor_eur"},
+            adaptive_enabled   = ${hasEnabled ? "?" : "adaptive_enabled"},
             updated_at         = datetime('now')`,
     ).bind(
         categoryId,
         patch.archetype_override ?? null,
         patch.floor_eur ?? null,
-        patch.adaptive_enabled === undefined ? null : (patch.adaptive_enabled ? 1 : 0),
+        hasEnabled ? (patch.adaptive_enabled ? 1 : 0) : 1,
+        ...(hasOverride ? [patch.archetype_override ?? null] : []),
+        ...(hasFloor ? [patch.floor_eur ?? null] : []),
+        ...(hasEnabled ? [patch.adaptive_enabled ? 1 : 0] : []),
     ).run();
     return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
 }

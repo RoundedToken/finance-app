@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from "react";
-import { todayISO, applyNumpadKey } from "@/lib/utils";
+import { todayISO, applyNumpadKey, uuid4 } from "@/lib/utils";
 import type { Expense } from "@/api/types";
 
 export type Screen = "main" | "history" | "stats" | "edit" | "note";
@@ -13,6 +13,8 @@ export interface State {
     note: string;
     categoryId: string | null; // выбранная категория (для edit; на главной категорию задаёт тап-создание)
     editingId: string | null;  // id редактируемой траты (null = создание новой)
+    draftId: string;           // UUID будущей записи: один на драфт (MA-01/SPEC-042) — ретрай и
+                               // двойной тап шлют тот же id, INSERT OR IGNORE дедуплицирует
     screen: Screen;
     modal: ModalName;
     baseCurrency: string;
@@ -35,11 +37,12 @@ const BASE_KEY = "mini.baseCurrency";
 const ACC_KEY = "mini.lastAccount";
 const ACC_CCY_KEY = "mini.lastAccountCcy";   // SPEC-032: валюта липкого счёта — чтобы дефолтный драфт был консистентным
 
-type Draft = Pick<State, "amount" | "currency" | "accountId" | "date" | "note" | "categoryId" | "editingId">;
+type Draft = Pick<State, "amount" | "currency" | "accountId" | "date" | "note" | "categoryId" | "editingId" | "draftId">;
 
 function freshDraft(): Draft {
     return {
         amount: "0",
+        draftId: uuid4(),
         // SPEC-032: дефолт валюты = валюта липкого счёта (а не захардкоженный RSD), чтобы новый
         // драфт сразу был согласован со счётом. Если счёта нет — fallback RSD. Финальная сверка
         // с реальным справочником — reconcile-эффект в MainScreen (чинит легаси-localStorage).

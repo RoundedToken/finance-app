@@ -153,6 +153,7 @@ wrangler login                                    # OAuth
 wrangler d1 create finances-outbox                # создать D1, сохранить database_id в wrangler.toml
 wrangler d1 execute finances-outbox --file schema.sql
 wrangler secret put TELEGRAM_BOT_TOKEN            # вставить токен
+wrangler secret put TELEGRAM_WEBHOOK_SECRET       # openssl rand -hex 32 (защита /tg, SEC-04)
 wrangler secret put SYNC_TOKEN                    # сгенерировать длинной строкой
 # (см. секцию 8 выше для Google OAuth secrets)
 wrangler deploy
@@ -160,8 +161,17 @@ wrangler deploy
 
 После деплоя:
 1. URL Worker'а — `https://finances-worker.<account>.workers.dev`.
-2. В @BotFather: `/setdomain` для бота → ввести URL Pages.
-3. В @BotFather: `/setmenubutton` → `Open` → URL Mini App.
+2. Привязать webhook бота **с тем же секретом**, что в `TELEGRAM_WEBHOOK_SECRET`
+   (иначе Worker будет отвечать 403 на апдейты Telegram):
+   ```bash
+   curl -s "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+     -d "url=https://<worker>/tg" -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+   ```
+   Worker сверяет заголовок `X-Telegram-Bot-Api-Secret-Token` constant-time;
+   без секрета в env проверка выключена (bootstrap-совместимость) — на проде
+   секрет обязателен.
+3. В @BotFather: `/setdomain` для бота → ввести URL Pages.
+4. В @BotFather: `/setmenubutton` → `Open` → URL Mini App.
 
 ## Деплой Web Admin (Cloudflare Pages)
 
