@@ -11,7 +11,7 @@ D1 (единственный источник правды) ← один Cloudfl
 | Компонент | Версия | Где |
 |---|---|---|
 | TypeScript | ~5.4–5.6 | Worker + оба фронта |
-| Node.js | 20+ | сборка (Vite) + деплой (wrangler) |
+| Node.js | 22.5+ (`engines` в `cloud/worker/package.json`) | сборка (Vite) + деплой (wrangler) |
 | Python | 3.13 (`.venv/`) | **только** backup D1 + разовые импорты + UI тест-харнесы. Системный 3.9.6 — не использовать |
 | SQL (SQLite dialect) | — | `cloud/worker/migrations/`, `schema.sql` |
 
@@ -21,13 +21,13 @@ D1 (единственный источник правды) ← один Cloudfl
 
 ## Mini App (`cloud/miniapp/`) — SPEC-014
 
-React 19 + Vite 5 + TypeScript. TanStack Query. Tailwind + class-variance-authority + clsx + tailwind-merge. Telegram WebApp JS API (`telegram-web-app.js`), auth через `initData` HMAC. Scope: **только ввод расходов** (аналитика расходов — в Web Admin; см. CLAUDE.md правило 11). Деплой: `vite build` → `wrangler pages deploy dist`.
+React 19 + Vite 5 + TypeScript. TanStack Query. Tailwind + class-variance-authority + clsx + tailwind-merge. Telegram WebApp JS API (`telegram-web-app.js`), auth через `initData` HMAC. Scope: ввод расходов + read-only аналитика расходов (экран «📊 Статистика», ADR-021/SPEC-036; см. CLAUDE.md правило 11). Деплой: `vite build` → `wrangler pages deploy dist`.
 
 ## Web Admin (`cloud/admin/`)
 
 React 19 + Vite + TypeScript. TanStack Router / Query / Table (**без** Form). Tailwind + CVA/clsx/tailwind-merge — UI hand-rolled (**без** Radix/shadcn/Tremor, вопреки исходному ADR-012; см. уточнение там). Графики/KPI — ECharts + echarts-for-react (vendored через `manualChunks`). Lucide-иконки. Деньги — `number` + `Intl`-форматирование (ADR-015), конверсия — на worker. Auth: Google OAuth → JWT HS256 → `Authorization: Bearer`.
 
-> Установлены, но **не используются** и удаляются/выносятся в Стадии 2: `dinero.js` (деньги — REAL, ADR-015), `date-fns` (даты — нативные ISO). `zod` — будет использован (валидация + контракт).
+> Сделано в Стадии 2: `dinero.js` и `date-fns` **удалены** (деньги — REAL/`Intl`, ADR-015; даты — нативные ISO-строки). `zod` **используется** — серверная валидация payload на worker (SPEC-019); shared-контракт worker↔admin — post-MVP.
 
 ## Облачные сервисы (Cloudflare free tier)
 

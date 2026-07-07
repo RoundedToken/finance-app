@@ -1,6 +1,6 @@
 # Модель данных
 
-> Актуально на post-MVP (после ADR-011/012/014…021). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0017`.
+> Актуально на post-MVP (после ADR-011/012/014…023). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0018`.
 >
 > `local/finances.db` и `local/migrations/` — наследие до-D1-эпохи (см. `local/legacy/`), **не источник правды**.
 
@@ -74,6 +74,27 @@
 **`goal_contributions`** — ручные взносы в цель. `id, goal_id(FK), date, amount(>0), currency_code, account_id?(FK), note, created_at, updated_at, deleted_at`.
 - **Инвариант (Стадия 2):** `account_id` обязателен — каждый взнос привязан к реальному ведру, чтобы `targeted` сходился с `net` (см. ниже).
 
+### Бюджеты (SPEC-020/023)
+
+**`budgets`** — месячные лимиты в EUR, recurring (без истории по месяцам); факт трат derived, не хранится.
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | TEXT PK | UUID |
+| `scope` | TEXT CHECK | `category` (лимит на категорию, `category_id NOT NULL`) \| `total` (общий потолок, `category_id NULL`); CHECK связывает scope↔category_id |
+| `category_id` | TEXT FK→categories | nullable (см. scope) |
+| `limit_eur` | REAL CHECK > 0 | лимит в EUR |
+| `created_at`, `updated_at`, `deleted_at` | | soft-delete |
+
+Уникальность: partial-индексы — один активный бюджет на категорию (`idx_budgets_category`) и один активный `total` (`idx_budgets_total`).
+
+**`budget_settings`** — per-category override'ы адаптивных бюджетов (RBAR, SPEC-023). `category_id` PK(FK), `archetype_override` (CHECK `fixed|recurring|seasonal|lumpy|intermittent`, NULL = авто), `floor_eur` (CHECK ≥ 0, NULL = нет пола), `adaptive_enabled` (default 1), `created_at`, `updated_at`. Состояние оценщика **не хранится** — реплеится из `expenses`.
+
+**`budget_recommendation_log`** — аудит рекомендаций лимитов (accept/dismiss). `id` PK, `category_id`(FK), `period` (`YYYY-MM`), `archetype`, `prev_limit_eur?`, `reco_limit_eur`, `reason_code`, `decision` (CHECK `pending|accepted|dismissed`, default `pending`), `decided_at?`, `created_at`. Индекс `(category_id, period)`.
+
+### Служебные
+
+**`coach_state`** — cooldown-состояние coach-нуджей о качестве данных (SPEC-040, миграция 0018). `signal_key` TEXT PK (тип сигнала: `gap_no_expenses`, `stale_snapshots`, `budget_over`, `goal_overdue`, `free_negative`, `runway_low`, `spending_spike`, …), `last_fired` TEXT NOT NULL (дата последней отправки сигнала — антиспам-cooldown; при ошибке доставки НЕ обновляется), `last_detail` TEXT (зарезервировано, код пока не пишет). Пишется только cron'ом (`COACH_CRON`, `coach.ts`), UI не читает.
+
 ## Ключевые инварианты
 
 ### `effective_balance` ведра (SPEC-011)
@@ -123,7 +144,7 @@ free        = net_worth − targeted − invested    # без клампа: мо
 
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0017`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса); `0017` = fix `created_at` импортированных снапшотов против двойного учёта (SPEC-031).
+D1: `cloud/worker/migrations/0001…0018`, применять через `wrangler d1 execute --file` (NOT `migrations apply` — трекинг рассинхрон, memory `d1-migrations-apply-via-execute-file`). `schema.sql` — текущий снапшот (применять для свежей базы). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса); `0017` = fix `created_at` импортированных снапшотов против двойного учёта (SPEC-031); `0018` = `coach_state` (SPEC-040: cooldown coach-нуджей).
 
 | Миграция | Что |
 |---|---|
@@ -143,3 +164,4 @@ D1: `cloud/worker/migrations/0001…0017`, применять через `wrangl
 | 0015 | `investment_settings.staked_qty` + `app_config` (SPEC-027) |
 | 0016 | `rate_ticks` — внутридневные тики курса (SPEC-028) |
 | 0017 | fix `created_at` импортированных снапшотов — устранение двойного учёта (SPEC-031) |
+| 0018 | `coach_state` — cooldown coach-нуджей о качестве данных (SPEC-040) |

@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-016, SPEC-019, SPEC-039]  # конверсия, валидация, auth-инвариант
   - adr: docs/decisions.md#adr-012
   - parent: null
   - depends_on: []
@@ -338,3 +339,4 @@ Permissions-Policy: geolocation=(), camera=(), microphone=()
 ## 13. Changelog spec'а
 
 - 2026-05-25: создан как retrospective spec (`done`) после реализации Stage 4.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): §6 EUR-конверсия переписана на canonical `RatesIndex` (SPEC-016), валидация payload — Zod (SPEC-019), auth-инвариант `/v1/web/*` ужесточён структурным guard-ом (SPEC-039). Ядро (OAuth-flow, JWT, allowlist) актуально.

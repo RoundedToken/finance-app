@@ -8,6 +8,7 @@ updated: 2026-06-27
 links:
   - parent: post-mvp-roadmap   # 2.4 (детектор анти-данных), AI-трек шаг 1
   - depends_on: [SPEC-013, SPEC-020, SPEC-024]
+  - adr: docs/decisions.md#adr-023  # заведён ретроактивно (аудит 2026-07, DOC-10)
 ---
 
 # Coach — нуджи по качеству данных (AI-трек, шаг 1)
@@ -189,3 +190,4 @@ UI нет. UX — Telegram-сообщение, HTML, лаконичное:
   эпсилон −0.5 для free_negative (нет «−0 €»); спайк делит на фактич. месяцы с данными; budgets берут cron-month;
   is_active-фильтр ведёр; free<0 подавляет runway_low; `COACH_CRON`-константа. 194/194 vitest. Descope: ETA-
   отставание цели + pace-prorate бюджета → routine (шаг 2). arch APPROVED после фикса, qa PASS после фикса.
+- 2026-07-07: решение зафиксировано ADR-023 (заведён ретроактивно по находке DOC-10 аудита 2026-07); ссылка добавлена во фронтматтер.

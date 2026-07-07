@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-06-01
 links:
+  - revised_by: SPEC-041  # среднее 3 мес → медиана 6 (ADR-022)
   - adr: docs/decisions.md#adr-006   # rates pipeline (EUR base)
   - adr: docs/decisions.md#adr-012   # Web Admin
   - depends_on: [SPEC-005, SPEC-006, SPEC-007, SPEC-008, SPEC-011]
@@ -249,3 +250,4 @@ In-memory lookup внутри Worker, чтобы избежать N запрос
 - 2026-05-25: Phase 2 — реализация (worker `dashboard.ts` + endpoint; admin `queries`/`types`/`DashboardPage`). Уточнения D5/D6. typecheck + build зелёные.
 - 2026-05-25: Phase 3 — senior-qa PASS_WITH_NICES + solution-architect APPROVED_WITH_NICES, 0 блокеров. Fix: missing_rates (E3 покрытие net worth + убран double-count), D6 пересчёт долей легенды, empty-state net worth chart, a11y/UX мелочи. Nice-to-have → roadmap tech-debt.
 - 2026-06-01: `status` → `done` (синхрон фронтматтера: фича давно в проде, статус застрял на `in_progress` — дрейф доков).
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): §6 «среднее за 3 полных месяца» заменено медианой за 6 (SPEC-041/ADR-022) во всех темповых метриках дашборда (KPI, норма сбережений, runway, прогнозы).

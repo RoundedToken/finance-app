@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: SPEC-012  # chains полностью откачены
   - adr: docs/decisions.md#adr-011
   - adr: docs/decisions.md#adr-012
   - adr: docs/decisions.md#adr-013
@@ -693,3 +694,4 @@ to_account_id=this за current month; считается во фронте по
   AC19 (N обменов на bucket card), AC9 UI warning prev=0,
   data-model.md update.
 - 2026-05-25: статус `done`. Roadmap обновлён.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): фича chains (multi-step цепочки, `chain_id`/`chain_sequence`) полностью откачена SPEC-012 — chain-эндпоинты и UI удалены, колонки спят до миграции удаления (~08-2026). Актуальный scope транзакций — exchange/transfer без цепочек.

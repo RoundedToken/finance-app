@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: SPEC-025  # AC5 goal balance: MtM → поток
   - parent: specs/SPEC-005-stage-5a-snapshots-crud.md
   - parent: specs/SPEC-008-stage-7-5-transactions.md
 ---
@@ -182,3 +183,4 @@ computed on read).
 ## 8. Changelog
 
 - 2026-05-25: создан, реализация одной sprint'ой.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): AC5 (goal balance mark-to-market) пересмотрен SPEC-025/ADR-020 — вклад в цель теперь поток, фиксируется по курсу даты вклада; шаг `target_currency → EUR` остаётся MtM. Остальные инварианты (effective_balance, tie-break) актуальны.

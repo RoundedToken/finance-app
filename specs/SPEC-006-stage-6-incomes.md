@@ -6,6 +6,7 @@ owner: stepan
 created: 2026-05-25
 updated: 2026-05-25
 links:
+  - revised_by: [SPEC-025, SPEC-032, SPEC-042]  # конверсия goal-дохода; OQ1 закрыт
   - adr: docs/decisions.md#adr-011
   - adr: docs/decisions.md#adr-012
   - adr: docs/decisions.md#adr-013
@@ -559,3 +560,4 @@ Soft-delete.
   PASS_WITH_NICES / APPROVED_WITH_NICES, 0 must-fix, 1 should-fix
   (catById helper дублирование — починен fix-commit'ом).
 - 2026-05-25: статус `done`. Roadmap обновлён, audits committed.
+- 2026-07-07: обратный superseded-маркер (аудит 2026-07, SPC-08): конверсия goal-привязанного дохода — теперь поток по дате вклада (SPEC-025/ADR-020); OQ1 (пере-деривация валюты при смене счёта в edit) закрыт классово SPEC-032, для edit-потока incomes — SPEC-042 (аудит FIN-01).
