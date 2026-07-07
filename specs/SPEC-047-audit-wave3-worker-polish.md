@@ -1,7 +1,7 @@
 ---
 spec: SPEC-047
 title: Волна 3 аудита — P3-полировка worker-зоны
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -90,3 +90,4 @@ WRK-08/22-остаток (батч-агрегатор — M, смежный те
 
 - 2026-07-07: создан, `in_progress`; реализация в сессии волны 3 (ветка fix/audit-wave3-worker, worktree).
 - 2026-07-07: реализация завершена: worker 332/332 (vitest 3, +26 новых в `spec-047-worker-polish.test.ts` и правка FIN-05-кейса в rates.test.ts), miniapp 30/30, `tsc --noEmit` чист ×3 (worker — ВКЛЮЧАЯ test/), `npm audit` = 0 во всех трёх пакетах (vitest 2→3, wrangler 3→4, vite 5→7, plugin-react 4→5, @types/node добавлен). Миграция 0020 НЕ применена на прод (применить при деплое после бэкапа). ⚠ Деплой-предусловия: (1) прод-var `ADMIN_ALLOWED_ORIGINS` дополнить origin'ом Mini App Pages ДО деплоя worker'а (SEC-12), (2) `wrangler d1 migrations apply` для 0020, (3) wrangler 4 — первый деплой проверить `--dry-run`.
+- 2026-07-07: `done` — PR #37 (`ad8c8de`), миграция 0020 применена штатно (после бэкапа), worker задеплоен (wrangler 4, dry-run прошёл), ADMIN_ALLOWED_ORIGINS пополнен miniapp-origin ДО деплоя (SEC-12-предусловие). Прод: smoke GREEN, CORS-матрица (miniapp echo / unknown deny) проверена curl'ом. 332/332.
