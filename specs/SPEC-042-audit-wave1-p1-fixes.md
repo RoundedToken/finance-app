@@ -1,7 +1,7 @@
 ---
 spec: SPEC-042
 title: Волна 1 аудита 2026-07 — P1 bug-фиксы (9 находок)
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -84,10 +84,11 @@ bug-фиксы волны объединяются в один SPEC/ветку. 
 - [x] AC6: повторный `save()` того же драфта шлёт тот же `id` (двойной тап/ретрай → `inserted:false`, не дубликат).
 - [x] AC7: при `isError` История и Статистика показывают error-state с работающим «Повторить», не «Трат нет».
 - [x] AC8: мутации snapshot/income/goal/contribution инвалидируют dashboard+accounts; budget CRUD инвалидирует рекомендации.
-- [~] AC9: `/tg` без/с неверным secret-header → 403 при заданном `TELEGRAM_WEBHOOK_SECRET`; с верным → 200 (тест); прод-бот отвечает после перевыставления webhook.
+- [x] AC9: `/tg` без/с неверным secret-header → 403 при заданном `TELEGRAM_WEBHOOK_SECRET`; с верным → 200 (тест); прод-бот отвечает после перевыставления webhook.
 - [x] AC10: `test/transactions.test.ts` зелёный; полный vitest worker зелёный; tsc всех трёх пакетов зелёный.
 
 ## 6. Changelog
 
 - 2026-07-07: создан, `in_progress` — волна 1 аудита, owner одобрил автономное выполнение всего списка волн.
 - 2026-07-07: реализация + Phase 3: qa=PASS_WITH_NICES (0 must-fix), arch=CHANGES_REQUESTED→закрыто (must-fix: документация TELEGRAM_WEBHOOK_SECRET в wrangler.example.toml/setup.md). Применённые nice-to-have: `== null`-хардening FIN-01-guard'ов; `["goal"]` в useDeleteIncome; удалён мёртвый invalidateBudgets; консистентный error-гейт History; тост «Уже сохранено» при inserted:false; текст серверных 400 в EditScreen; updateSnapshot валидирует существование account_id (parity с create). Бонус-фикс: ранний dup-чек по id в createExpense/createTransaction (ретрай возвращал ложный overdraft). 230/230 vitest, tsc чист ×3, оба Playwright-харнеса зелёные. Отложено в волну 2: FIN-01 из Admin-форм (полный payload обходит guard — diff-patch форм), баннер-при-кэше MA-02, note-затирание updateSnapshot (кластер 2.1).
+- 2026-07-07: `done` — PR #31 смержен (squash, `591ec8b`), worker+miniapp+admin задеплоены. SEC-04 операционно: секрет в wrangler secret, setWebhook перевыставлен; прод-smoke `/tg` no/wrong header → 403, верный → 200, webhook last_error: none; траты с инвест-ведра в проде: 0 (guard ничего не ломает задним числом); miniapp/admin 200.
