@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, ListChecks, LogOut, Wallet, ArrowRightLeft, TrendingUp, PieChart, Sparkles, Target, FolderTree, Gauge, Coins, ShieldAlert } from "lucide-react";
 import { useMe } from "@/api/queries";
-import { clearToken, decodeClaims, getToken } from "@/lib/auth";
+import { apiFetch } from "@/api/client";
+import { clearToken, decodeClaims, getToken, setToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -65,6 +66,28 @@ export function AppLayout() {
         };
         arm();
         return () => window.clearTimeout(timer);
+    }, []);
+
+    // SEC-08 (волна 2): автопродление активной сессии. TTL сокращён до 72ч —
+    // при остатке < половины TTL молча берём свежий токен; активный пользователь
+    // не разлогинивается, украденный токен живёт максимум 72ч.
+    useEffect(() => {
+        const refreshIfStale = async () => {
+            const token = getToken();
+            const claims = token ? decodeClaims(token) : null;
+            if (!claims) return;
+            const ttlMs = (claims.exp - claims.iat) * 1000;
+            const leftMs = claims.exp * 1000 - Date.now();
+            if (leftMs > 0 && leftMs < ttlMs / 2) {
+                try {
+                    const r = await apiFetch<{ ok: boolean; token: string }>("/v1/web/session/refresh", { method: "POST" });
+                    if (r.token) setToken(r.token);
+                } catch { /* 401 обработает общий session-expired поток */ }
+            }
+        };
+        refreshIfStale();
+        const iv = window.setInterval(refreshIfStale, 60 * 60 * 1000);   // раз в час
+        return () => window.clearInterval(iv);
     }, []);
 
     const relogin = () => {

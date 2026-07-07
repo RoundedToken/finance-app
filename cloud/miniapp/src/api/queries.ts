@@ -15,7 +15,7 @@ export function useBootstrap() {
 export function useExpenses() {
     return useQuery({
         queryKey: ["expenses"],
-        queryFn: () => api<{ expenses: Expense[] }>("/v1/expenses?limit=5000"),
+        queryFn: () => api<{ expenses: Expense[] }>("/v1/expenses?limit=20000"),   // SPC-06 (волна 2): симметрия с bootstrap — тихий потолок 5000 резал Историю/Статистику «Всё»
         staleTime: 30_000,
     });
 }

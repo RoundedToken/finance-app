@@ -48,7 +48,8 @@ import {
     createIncomeCategory,
     updateIncomeCategory,
 } from "./categories";
-import { handleGoogleStart, handleGoogleCallback, requireAdminSession } from "./auth-google";
+import { handleGoogleStart, handleGoogleCallback, requireAdminSession, SESSION_TTL_SECONDS } from "./auth-google";
+import { signJwt } from "./jwt";
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
     listSnapshots,
@@ -190,6 +191,11 @@ export default {
                 const session = await requireAdminSession(request, env);
                 if (!session.ok) return session.response;
                 if (path === "/v1/web/me" && request.method === "GET") return json({ ok: true, email: session.email }, 200, request, env);
+                // SEC-08 (волна 2): продление активной сессии — свежий 72ч-токен по валидному текущему.
+                if (path === "/v1/web/session/refresh" && request.method === "POST") {
+                    const token = await signJwt({ sub: session.email }, env.ADMIN_JWT_SECRET!, SESSION_TTL_SECONDS);
+                    return json({ ok: true, token, ttl_seconds: SESSION_TTL_SECONDS }, 200, request, env);
+                }
             }
             if (path === "/v1/web/expenses" && request.method === "GET") return handleWebExpenses(request, env, url);
             if (path === "/v1/web/references" && request.method === "GET") return handleWebReferences(request, env);

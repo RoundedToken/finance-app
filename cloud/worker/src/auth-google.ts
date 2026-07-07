@@ -14,7 +14,11 @@ import type { Env } from "./types";
 import { randomState, signJwt, verifyJwt } from "./jwt";
 import { jsonResponse } from "./cors";
 
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;          // 30 дней
+// SEC-08 (волна 2 аудита): 30 дней в localStorage без отзыва — слишком широкое окно
+// для украденного XSS'ом токена. 72ч + автопродление активной сессии через
+// /v1/web/session/refresh (клиент дергает при exp < TTL/2) — активный пользователь
+// не разлогинивается, украденный токен умирает максимум за 72ч. Пересмотр ADR-012.
+export const SESSION_TTL_SECONDS = 60 * 60 * 72;        // 72 часа
 const STATE_TTL_SECONDS = 600;                          // 10 минут на сам OAuth flow
 const STATE_COOKIE = "google_oauth_state";
 const RETURN_COOKIE = "google_oauth_return";

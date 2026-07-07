@@ -2,6 +2,7 @@
  * Минимальный JWT HS256 без зависимостей. Web Crypto API.
  * Используется только для сессий Web Admin (ADR-012).
  */
+import { timingSafeEqualStr } from "./auth";
 
 export interface JwtPayload {
     sub: string;       // email
@@ -35,7 +36,7 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtVerif
     if (parts.length !== 3) return { ok: false, reason: "bad shape" };
     const [head, body, sig] = parts;
     const expected = await hmacSign(secret, `${head}.${body}`);
-    if (expected !== sig) return { ok: false, reason: "bad signature" };
+    if (!timingSafeEqualStr(expected, sig)) return { ok: false, reason: "bad signature" };   // SEC-07
     let payload: JwtPayload;
     try {
         payload = JSON.parse(new TextDecoder().decode(b64urlDecode(body)));
