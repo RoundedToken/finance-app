@@ -9,6 +9,7 @@ export interface JwtPayload {
     iat: number;       // unix seconds
     exp: number;       // unix seconds
     iss?: string;
+    auth_time?: number; // unix seconds исходного OAuth-входа (SEC-08: absolute cap refresh-цепочки)
 }
 
 const HEADER = { alg: "HS256", typ: "JWT" };

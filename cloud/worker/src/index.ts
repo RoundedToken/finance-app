@@ -12,6 +12,7 @@
  *   GET    /v1/auth/google/start      — OAuth redirect
  *   GET    /v1/auth/google/callback   — OAuth code → JWT
  *   GET    /v1/web/me                 — sanity-check сессии (Bearer JWT)
+ *   POST   /v1/web/session/refresh    — продление сессии (Bearer JWT, SEC-08)
  *   GET    /v1/web/expenses           — read-only список для Admin (Bearer JWT)
  *   GET    /v1/web/references         — accounts/categories/currencies (Bearer JWT)
  *   GET    /v1/web/accounts           — buckets + latest_snapshot (Bearer JWT)
@@ -48,7 +49,7 @@ import {
     createIncomeCategory,
     updateIncomeCategory,
 } from "./categories";
-import { handleGoogleStart, handleGoogleCallback, requireAdminSession, SESSION_TTL_SECONDS } from "./auth-google";
+import { handleGoogleStart, handleGoogleCallback, requireAdminSession, SESSION_TTL_SECONDS, MAX_SESSION_AGE_SECONDS } from "./auth-google";
 import { signJwt } from "./jwt";
 import { corsHeaders, jsonResponse as jsonRes } from "./cors";
 import {
@@ -191,9 +192,15 @@ export default {
                 const session = await requireAdminSession(request, env);
                 if (!session.ok) return session.response;
                 if (path === "/v1/web/me" && request.method === "GET") return json({ ok: true, email: session.email }, 200, request, env);
-                // SEC-08 (волна 2): продление активной сессии — свежий 72ч-токен по валидному текущему.
+                // SEC-08 (волна 2): продление активной сессии — свежий 72ч-токен по валидному
+                // текущему. auth_time (момент исходного OAuth-входа) переносится и капит
+                // цепочку 30 днями — активное продление украденного токена не бесконечно.
                 if (path === "/v1/web/session/refresh" && request.method === "POST") {
-                    const token = await signJwt({ sub: session.email }, env.ADMIN_JWT_SECRET!, SESSION_TTL_SECONDS);
+                    const authTime = session.payload.auth_time ?? session.payload.iat;
+                    if (Math.floor(Date.now() / 1000) - authTime > MAX_SESSION_AGE_SECONDS) {
+                        return json({ error: "session too old — sign in again" }, 401, request, env);
+                    }
+                    const token = await signJwt({ sub: session.email, auth_time: authTime }, env.ADMIN_JWT_SECRET!, SESSION_TTL_SECONDS);
                     return json({ ok: true, token, ttl_seconds: SESSION_TTL_SECONDS }, 200, request, env);
                 }
             }
