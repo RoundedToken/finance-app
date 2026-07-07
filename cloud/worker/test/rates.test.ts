@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { RatesIndex } from "../src/rates";
+import { RatesIndex, saveRates } from "../src/rates";
+import { makeEnv } from "./d1-mock";
 
 /** Хелпер: индекс EUR→quote из пар [quote, date, rate]. */
 function idx(points: Array<[string, string, number]>): RatesIndex {
@@ -135,5 +136,65 @@ describe("RatesIndex tick-aware rateAt (SPEC-028: свежесть по врем
     it("toEurAt стоимости 'сейчас' идёт по тику (mark-to-market)", () => {
         // 2 ETH сейчас → 2 × 1450 = 2900 EUR (тик), а не 2 × 1400 (дневное закрытие)
         expect(idxWithTick().toEurAt(2, "ETH", "2026-06-09")).toBeCloseTo(2900, 6);
+    });
+});
+
+// ── QA-06 (SPEC-046): фиатная ветка — saveRates на D1-моке ───────────────────
+// fetchLatestRatesEUR сетевой и тут не гоняется; parseLatestCsv покрыт в
+// spec-043-hardening.test.ts. Здесь — путь записи в D1.
+describe("saveRates (QA-06)", () => {
+    const all = (d1: any) =>
+        d1.db.prepare("SELECT date, base, quote, rate, source FROM rates ORDER BY quote").all();
+
+    it("пишет все валидные quotes, возвращает их число", async () => {
+        const { env, d1 } = makeEnv();
+        const n = await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { USD: 1.08, RUB: 95.5 } });
+        expect(n).toBe(2);
+        expect(all(d1)).toEqual([
+            { date: "2026-06-10", base: "EUR", quote: "RUB", rate: 95.5, source: "google-sheets" },
+            { date: "2026-06-10", base: "EUR", quote: "USD", rate: 1.08, source: "google-sheets" },
+        ]);
+    });
+
+    it("INSERT OR REPLACE: повторная запись того же дня ОБНОВЛЯЕТ курс, не дублирует", async () => {
+        const { env, d1 } = makeEnv();
+        await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { USD: 1.08 } });
+        const n = await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { USD: 1.11 } });
+        expect(n).toBe(1);
+        const rows = all(d1);
+        expect(rows).toHaveLength(1);              // PK (date, base, quote) → одна строка
+        expect(rows[0].rate).toBe(1.11);           // свежее значение победило
+    });
+
+    it("другая дата — отдельная строка (история не перезаписывается)", async () => {
+        const { env, d1 } = makeEnv();
+        await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { USD: 1.08 } });
+        await saveRates(env, { base: "EUR", date: "2026-06-11", rates: { USD: 1.09 } });
+        expect(d1.db.prepare("SELECT COUNT(*) AS n FROM rates").get()).toMatchObject({ n: 2 });
+    });
+
+    it("не-finite и неположительные курсы пропускаются, валидные из того же payload — пишутся", async () => {
+        const { env, d1 } = makeEnv();
+        const n = await saveRates(env, {
+            base: "EUR", date: "2026-06-10",
+            rates: { USD: 1.08, BAD1: NaN, BAD2: Infinity, BAD3: -5, BAD4: 0 },
+        });
+        expect(n).toBe(1);                          // записан только USD
+        const rows = all(d1);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].quote).toBe("USD");
+    });
+
+    it("пустой payload / целиком мусорный → 0 записей, batch не дёргается", async () => {
+        const { env, d1 } = makeEnv();
+        expect(await saveRates(env, { base: "EUR", date: "2026-06-10", rates: {} })).toBe(0);
+        expect(await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { X: NaN } })).toBe(0);
+        expect(d1.db.prepare("SELECT COUNT(*) AS n FROM rates").get()).toMatchObject({ n: 0 });
+    });
+
+    it("source-параметр прокидывается (дефолт google-sheets, override — напр. manual)", async () => {
+        const { env, d1 } = makeEnv();
+        await saveRates(env, { base: "EUR", date: "2026-06-10", rates: { USD: 1.08 } }, "manual");
+        expect(all(d1)[0].source).toBe("manual");
     });
 });

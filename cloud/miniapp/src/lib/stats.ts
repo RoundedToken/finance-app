@@ -36,6 +36,13 @@ export const TOP_N = 8;
 /** Короткие имена месяцев для оси тренда (Год/Всё). */
 export const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
+/** Предыдущий период для дельты (учёт перехода через год). QA-02 (SPEC-046):
+ *  вынесен из StatsScreen — чистая математика тестируется без JSX. */
+export function prevPeriod(mode: Mode, year: number, month: number): { year: number; month: number } {
+    if (mode === "year") return { year: year - 1, month };
+    return month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 };
+}
+
 /** Префикс даты периода для клиентского фильтра (идентичен Истории). null = всё время. */
 export function periodPrefix(mode: Mode, year: number, month: number): string | null {
     if (mode === "all") return null;
@@ -197,6 +204,20 @@ function finishTrend(bins: TrendBin[], title: string, byMonth: boolean, todayIso
     const total = bins.reduce((s, b) => s + b.sum, 0);
     const max = bins.reduce((mx, b) => Math.max(mx, b.sum), 0) || 1;
     return { title, bins, avg: total / elapsed, max, byMonth };
+}
+
+/** Drill-down (QA-02, SPEC-046): траты категории внутри уже отфильтрованного
+ *  периода, новые сверху (date desc, tie-break created_at desc — зеркало Истории). */
+export function drillItems(filtered: Expense[], cat: string | null): Expense[] {
+    return filtered
+        .filter(e => e.category_id === cat)
+        .sort((a, b) => b.date.localeCompare(a.date) || (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
+
+/** Σ amount_eur drill-списка. Траты без курса (null) в сумму не входят —
+ *  их сигналит missing-счётчик KPI (aggregate), не эта сумма. */
+export function drillSumEur(items: Expense[]): number {
+    return items.reduce((s, e) => s + (e.amount_eur ?? 0), 0);
 }
 
 /** Индексы тиков оси X: Месяц → 5, Год/Всё → до 6 (равномерно). */

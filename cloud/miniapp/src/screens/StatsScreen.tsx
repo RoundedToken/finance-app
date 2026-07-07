@@ -10,7 +10,8 @@ import { haptic } from "@/lib/telegram";
 import {
     type Mode, type Delta,
     CHART_OTHER, filterByPeriod, aggregate, buildPalette, periodRange,
-    avgPerDay, computeDelta, buildTrend, axisTickIndices,
+    avgPerDay, computeDelta, buildTrend, axisTickIndices, prevPeriod,
+    drillItems, drillSumEur,
 } from "@/lib/stats";
 import type { Expense, Category } from "@/api/types";
 
@@ -19,12 +20,6 @@ const MODES: { key: Mode; label: string }[] = [
     { key: "year", label: "Год" },
     { key: "all", label: "Всё" },
 ];
-
-/** Предыдущий период для дельты (учёт перехода через год). */
-function prevPeriod(mode: Mode, year: number, month: number): { year: number; month: number } {
-    if (mode === "year") return { year: year - 1, month };
-    return month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 };
-}
 
 export function StatsScreen() {
     const { d } = useApp();
@@ -359,13 +354,9 @@ function DrillModal({ drill, onClose, filtered, catById, periodLabel, onPickExpe
 }) {
     const cat = drill?.cat ? catById.get(drill.cat) : undefined;
     const title = drill ? (cat?.name ?? "Без категории") : "";
-    const items = useMemo(() => {
-        if (!drill) return [];
-        return filtered
-            .filter(e => e.category_id === drill.cat)
-            .sort((a, b) => b.date.localeCompare(a.date) || (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    }, [drill, filtered]);
-    const sumEur = items.reduce((s, e) => s + (e.amount_eur ?? 0), 0);
+    // QA-02 (SPEC-046): математика drill-down вынесена в lib/stats (тестируется без JSX).
+    const items = useMemo(() => (drill ? drillItems(filtered, drill.cat) : []), [drill, filtered]);
+    const sumEur = drillSumEur(items);
 
     return (
         <Modal open={drill !== null} onClose={onClose} title={title}>

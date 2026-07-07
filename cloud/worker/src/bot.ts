@@ -100,7 +100,10 @@ export async function handleTelegramUpdate(update: TelegramUpdate, env: Env): Pr
     );
 }
 
-function parseExpense(text: string): { amount: number; currency: string; category: string; note?: string } | null {
+/** Парсер текстового ввода траты "<amount> <ccy> <category> [note]". Чистая функция
+ *  без side-effects; экспорт — для тестов (QA-08, SPEC-046): единственный не-Mini-App
+ *  канал ввода денег, регрессия = тихо испорченная запись расхода. */
+export function parseExpense(text: string): { amount: number; currency: string; category: string; note?: string } | null {
     const m = text.match(/^(-?\d+(?:[.,]\d+)?)\s+([A-Za-z]{3,5})\s+(\S+)(?:\s+(.+))?$/);
     if (!m) return null;
     const amount = parseFloat(m[1].replace(",", "."));
