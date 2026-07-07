@@ -1,7 +1,7 @@
 ---
 spec: SPEC-044
 title: Волна 2 аудита (кластер 2 + часть 5) — Admin: идемпотентность create-мутаций и 401-UX
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -70,3 +70,4 @@ worker не трогаем (сервер уже готов: `INSERT OR IGNORE`, 
 ## 5. Changelog
 
 - 2026-07-07: создан, `in_progress`; реализация в этой же сессии (волна 2, автономный режим по owner-решению). AC отмечены по факту реализации + `tsc`/`build`; Playwright-прогон (light/dark) — на стороне оркестратора волны перед merge/deploy.
+- 2026-07-07: `done` — PR #32 смержен (squash, `51a0cd1`), worker+admin задеплоены. Прод-smoke: /v1/admin/references → 404, /tg без секрета → 403, healthz/admin 200.

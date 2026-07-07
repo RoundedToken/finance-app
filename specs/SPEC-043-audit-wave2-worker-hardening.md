@@ -1,7 +1,7 @@
 ---
 spec: SPEC-043
 title: Волна 2 аудита (кластеры 1+3+4) — worker hardening: null-семантика PUT, валидация периметра, legacy-код
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -64,3 +64,4 @@ owner: Stepan
 
 - 2026-07-07: создан, `in_progress`; реализация в этой же сессии (волна 2, автономный режим по owner-решению).
 - 2026-07-07: Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES (0 must-fix). Добивы по ревью (`bb332d1`): migrate-expenses reject >5000 + exists-фильтр справочников + timestamp-shape; WRK-07 откат только после baseline (QA-репро закрыт тестом); isRealIsoDate в goals.deadline/rates-CSV; period-refine; 502 на падении refresh-rates; escapeHtml категории в боте. Осознанные side-effects: бот с невалидной категорией теперь получает явный отказ вместо тихой ghost-записи (резолв по имени — WRK-21, волна 3); updateGoal на несуществующую цель → 400 «goal not found». 249/249.
+- 2026-07-07: `done` — PR #32 смержен (squash, `51a0cd1`), worker+admin задеплоены. Прод-smoke: /v1/admin/references → 404, /tg без секрета → 403, healthz/admin 200.
