@@ -1,7 +1,7 @@
 ---
 spec: SPEC-049
 title: Волна 3 аудита — P3-полировка Web Admin + доки P3
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -73,3 +73,4 @@ ADM-09…22, кроме уже закрытого ADM-16) и доки P3 (DOC-21
 ## 5. Changelog
 
 - 2026-07-07: создан, `in_progress`; реализация в worktree-сессии волны 3 (ветка `fix/audit-wave3-admin`, без push — merge/deploy у оркестратора).
+- 2026-07-07: `done` — PR #35 (`15fba6d`) смержен, задеплоено на прод (Pages), харнесы light+dark зелёные, скриншоты просмотрены (Runway без спарклайна, бейджи при disabled-гриде, Δ-подпись).
