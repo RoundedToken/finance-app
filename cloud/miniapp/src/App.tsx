@@ -21,6 +21,7 @@ function Shell() {
             <div className="min-h-screen grid place-items-center p-6">
                 <div className="text-center space-y-3">
                     <p className="text-hint">Не удалось загрузить данные</p>
+                    <p className="text-hint text-xs">Если приложение открыто давно — закрой и открой его заново</p>
                     <button onClick={() => boot.refetch()} className="inline-flex items-center gap-2 text-accent font-medium">
                         <RefreshCw className="h-4 w-4" /> Повторить
                     </button>

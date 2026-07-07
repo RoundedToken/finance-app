@@ -496,7 +496,7 @@
 **Auth:** Google OAuth 2.0, allowlist email через `ADMIN_ALLOWED_EMAILS` wrangler var (CSV-список).
 - Worker: `/v1/auth/google/start` → редирект на Google, `/v1/auth/google/callback` → exchange code → проверка email → выдача JWT HS256.
 - JWT возвращается через URL fragment (`#token=<jwt>`), SPA сохраняет в `localStorage`, шлёт как `Authorization: Bearer <jwt>` на все `/v1/web/*`.
-- Срок JWT — 30 дней, rotate on use.
+- Срок JWT — 30 дней, rotate on use. ~~(исходно)~~ — ♻️ 2026-07-07: TTL 72ч + auto-refresh с cap 30 дней, см. пересмотр выше.
 - Cross-origin cookies НЕ используются (Pages.dev и Worker — разные origins, без custom-домена не работает SameSite).
 
 **Почему Google OAuth, а не Telegram Login Widget:**
