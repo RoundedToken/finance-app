@@ -143,17 +143,21 @@ export async function getEffectiveBalance(env: Env, accountId: string, asOfDate?
     // Платит ведро, чья валюта = fee_currency, приоритет from (см. ledger.feePayerBucket):
     //   • bucket == from И fee_currency == from.currency, ИЛИ
     //   • bucket == to   И fee_currency == to.currency И fee_currency != from.currency.
+    // FIN-18 (SPEC-047): fee-событие входит в events_count (сумма и так вычиталась) —
+    // подпись «N событий» у ведра-плательщика комиссий больше не занижена.
+    // fee_amount > 0 — нулевая комиссия не событие (и в сумме ничего не меняет).
     const fee = await env.DB.prepare(
-        `SELECT COALESCE(SUM(t.fee_amount), 0) AS s
+        `SELECT COALESCE(SUM(t.fee_amount), 0) AS s, COUNT(*) AS c
          FROM transactions t
          JOIN accounts fa ON fa.id = t.from_account_id
          JOIN accounts ta ON ta.id = t.to_account_id
-         WHERE t.deleted_at IS NULL AND t.fee_amount IS NOT NULL
+         WHERE t.deleted_at IS NULL AND t.fee_amount > 0
            AND t.date <= ? AND (t.date > ? OR (t.date = ? AND t.created_at > ?))
            AND ( (t.from_account_id = ? AND t.fee_currency = fa.currency)
               OR (t.to_account_id = ? AND t.fee_currency = ta.currency AND t.fee_currency <> fa.currency) )`,
-    ).bind(upTo, fromDate, fromDate, fromCreatedAt, accountId, accountId).first<{ s: number }>();
+    ).bind(upTo, fromDate, fromDate, fromCreatedAt, accountId, accountId).first<{ s: number; c: number }>();
     balance -= fee?.s ?? 0;
+    events  += fee?.c ?? 0;
 
     // manual_baseline — публичный контракт {id,date,amount} (created_at тащим только
     // внутри для tie-break, наружу не отдаём — паритет с latestManualSnapshotPerAccount).

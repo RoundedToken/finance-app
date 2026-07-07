@@ -127,8 +127,14 @@ export default {
             }
             return;
         }
+        // WRK-10 (SPEC-047): фиат и крипта пишутся ОДНОЙ датой (payload.date из Google
+        // Sheet — зона таблицы), как в handleRefreshRates. Иначе на границе суток дневные
+        // строки разъезжались на день и convertAt через кросс-курс был несогласован.
+        // Фиат упал → fallback UTC-today внутри fetchCryptoRatesEUR (штатная деградация).
+        let fiatDate: string | undefined;
         try {
             const payload = await fetchLatestRatesEUR(env);
+            fiatDate = payload.date;
             const n = await saveRates(env, payload);
             console.log(`scheduled rates: saved ${n} for date ${payload.date}`);
         } catch (e) {
@@ -137,7 +143,7 @@ export default {
         // SPEC-026: крипто-курсы (ETH) — ОТДЕЛЬНЫЙ try/catch, чтобы гео-блок/таймаут
         // Binance не валил фиат-курсы (E7). Падение → курс ETH остаётся вчерашним.
         try {
-            const crypto = await fetchCryptoRatesEUR();
+            const crypto = await fetchCryptoRatesEUR(fiatDate);
             const n = await saveCryptoRates(env, crypto);
             console.log(`scheduled crypto rates: saved ${n} via ${crypto.provider} for date ${crypto.date}`);
         } catch (e) {
@@ -354,14 +360,18 @@ async function handleUpdateExpense(request: Request, env: Env, id: string): Prom
     if (!parsed.ok) return parsed.response;
     const r = await updateExpense(env, id, auth.userId!, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);   // SPEC-032: рассогласование валюта↔счёт
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    // WRK-20 (SPEC-047): единая семантика мутаций — no-op по несуществующему id это 404,
+    // а не 200 {updated:false} (клиент, смотрящий только на статус, принимал no-op за успех).
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleDeleteExpense(request: Request, env: Env, id: string): Promise<Response> {
     const auth = await authenticateMiniApp(request, env);
     if (!auth.ok) return auth.response;
     const r = await deleteExpense(env, id, auth.userId!);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 async function handleGetRates(request: Request, env: Env): Promise<Response> {
@@ -490,12 +500,14 @@ async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string):
     if (!parsed.ok) return parsed.response;
     const r = await updateSnapshot(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebSnapshotsDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteSnapshot(env, id);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 // ── Web Admin · category management (SPEC-017) ────────────────────────────
@@ -517,6 +529,7 @@ async function handleWebCategoriesUpdate(request: Request, env: Env, id: string)
     if (!parsed.ok) return parsed.response;
     const r = await updateExpenseCategory(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
     return json(r, 200, request, env);
 }
 
@@ -539,6 +552,7 @@ async function handleWebIncomeCategoriesUpdate(request: Request, env: Env, id: s
     if (!parsed.ok) return parsed.response;
     const r = await updateIncomeCategory(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
     return json(r, 200, request, env);
 }
 
@@ -566,12 +580,14 @@ async function handleWebIncomesUpdate(request: Request, env: Env, id: string): P
     if (!parsed.ok) return parsed.response;
     const r = await updateIncome(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebIncomesDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteIncome(env, id);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 // ── Web Admin · goals ─────────────────────────────────────────────────────
@@ -603,8 +619,9 @@ async function handleWebGoalsUpdate(request: Request, env: Env, id: string): Pro
     const parsed = await readBody(request, env, goalUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateGoal(env, id, parsed.data);
-    if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, r.error === "goal not found" ? 404 : 400, request, env);   // WRK-20
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): Promise<Response> {
@@ -612,11 +629,13 @@ async function handleWebGoalsSetStatus(request: Request, env: Env, id: string): 
     if (!parsed.ok) return parsed.response;
     const r = await setGoalStatus(env, id, parsed.data.status);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebGoalsDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteGoal(env, id);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
     return json({ ok: true, ...r }, 200, request, env);
 }
 
@@ -633,12 +652,14 @@ async function handleWebContributionsUpdate(request: Request, env: Env, id: stri
     if (!parsed.ok) return parsed.response;
     const r = await updateContribution(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebContributionsDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteContribution(env, id);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 // ── Web Admin · transactions ──────────────────────────────────────────────
@@ -666,13 +687,15 @@ async function handleWebTransactionsUpdate(request: Request, env: Env, id: strin
     const parsed = await readBody(request, env, transactionUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateTransaction(env, id, parsed.data);
-    if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, r.error === "transaction not found" ? 404 : 400, request, env);   // WRK-20
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebTransactionsDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteTransaction(env, id);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 // ── Web Admin · dashboard (SPEC-013) ──────────────────────────────────────
@@ -731,12 +754,14 @@ async function handleWebBudgetsUpdate(request: Request, env: Env, id: string): P
     if (!parsed.ok) return parsed.response;
     const r = await updateBudget(env, id, parsed.data);
     if (!r.ok) return json({ error: r.error }, 400, request, env);
-    return json({ ok: true, updated: r.updated }, 200, request, env);
+    if (!r.updated) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, updated: true }, 200, request, env);
 }
 
 async function handleWebBudgetsDelete(request: Request, env: Env, id: string): Promise<Response> {
     const r = await deleteBudget(env, id);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.deleted) return json({ error: "not found" }, 404, request, env);   // WRK-20
+    return json({ ok: true, deleted: true }, 200, request, env);
 }
 
 // ── Web Admin · adaptive budgets RBAR (SPEC-023) ───────────────────────────

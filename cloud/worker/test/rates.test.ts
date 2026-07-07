@@ -111,11 +111,14 @@ describe("RatesIndex tick-aware rateAt (SPEC-028: свежесть по врем
         r.finalize();
         expect(r.rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1400, 10);
     });
-    it("только тик, нет дневных → тик", () => {
+    it("FIN-05 (SPEC-047): только тик, нет дневных → null (тик не подменяет историю)", () => {
+        // Раньше тик без daily-ряда возвращался для ЛЮБОЙ даты — историческая
+        // конверсия (cost basis 2024 года) тихо шла по сегодняшнему курсу.
         const r = new RatesIndex();
         r.addTick("ETH", "2026-06-09 12:00:00", 1 / 1450);
         r.finalize();
-        expect(r.rateAt("ETH", "2026-06-09")).toBeCloseTo(1 / 1450, 10);
+        expect(r.rateAt("ETH", "2024-01-15")).toBeNull();   // историческая дата
+        expect(r.rateAt("ETH", "2026-06-09")).toBeNull();   // и «сейчас» без daily — честный missing
     });
     it("addTick держит последний по fetched_at (порядок вставки неважен)", () => {
         const r = new RatesIndex();

@@ -1,4 +1,4 @@
--- D1 schema (текущий снапшот после миграций 0001-0019; 0019 — data-only), выровнен с фактическим
+-- D1 schema (текущий снапшот после миграций 0001-0020; 0019 — data-only), выровнен с фактическим
 -- прод-DDL (аудит 2026-07, DB-02: PRAGMA-дифф prod vs этот файл — структурных
 -- расхождений нет; отличие только в порядке колонок после исторических ALTER).
 -- Source of truth для всех финансовых данных (ADR-011).
@@ -75,9 +75,9 @@ CREATE TABLE IF NOT EXISTS expenses (
     deleted_at        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_date      ON expenses(date DESC);
-CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_expenses_updated   ON expenses(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_expenses_deleted   ON expenses(deleted_at);
+-- 0020 (DB-08/WRK-12): горячий getEffectiveBalance; мёртвые индексы sync-эпохи
+-- (user_date/updated/deleted) удалены той же миграцией.
+CREATE INDEX IF NOT EXISTS idx_expenses_account_date ON expenses(account_id, date) WHERE deleted_at IS NULL;
 
 -- ─── Курсы валют (ADR-006) ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rates (

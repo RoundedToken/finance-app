@@ -138,6 +138,16 @@ export async function getInvestments(
                     cbQty -= t.from_amount;                  // edge: продажа без учтённой покупки
                 }
             }
+            // FIN-15 (SPEC-047): комиссия в валюте актива платится этим же ведром (fee-leg
+            // уже вычтен из effective_balance) — нетто-принятое количество меньше брутто
+            // to_amount. Без вычета reward = qty − netBought занижался ровно на Σ fee-in-asset
+            // (доход стейкинга «съедался» комиссиями). Стоимость fee в cost уже входит.
+            const feePayer = feePayerBucket({
+                from_account_id: t.from_account_id, to_account_id: t.to_account_id,
+                from_currency: t.from_currency, to_currency: t.to_currency,
+                fee_currency: t.fee_currency, fee_amount: t.fee_amount,
+            });
+            if (feePayer === b.id && t.fee_amount) cbQty -= t.fee_amount;
         }
         const netBoughtQty = cbQty;
         // E2/AC8: если есть manual-снапшот РАНЬШЕ первой покупки (amount>0) — это

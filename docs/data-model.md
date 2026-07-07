@@ -1,6 +1,6 @@
 # Модель данных
 
-> Актуально на post-MVP (после ADR-011/012/014…023). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0018`.
+> Актуально на post-MVP (после ADR-011/012/014…023). **Единственная база — Cloudflare D1** (ADR-011); локального SQLite-источника правды больше нет. Канонический снапшот схемы — `cloud/worker/schema.sql`; история — `cloud/worker/migrations/0001…0020`.
 >
 > `local/finances.db` и `local/migrations/` — наследие до-D1-эпохи (см. `local/legacy/`), **не источник правды**.
 
@@ -50,7 +50,7 @@
 | `amount` | REAL | положительная сумма расхода |
 | `currency` | TEXT | |
 | `category_id` | TEXT FK→categories | |
-| `note`, `source`, `source_record_id` | | `source`: `mini_app` \| `telegram_bot` \| `csv_ok_import` \| `migration` |
+| `note`, `source`, `source_record_id` | | `source` (факт в проде, аудит DB-13): `mini_app` \| `telegram` (бот) \| `csv_ok_import`; дефолт bulk-импорта — `migration`. `source_record_id` — **резерв** (пишется импортами, ничем не читается; идемпотентность держится на PK `id` + `INSERT OR IGNORE`) |
 | `created_at`, `updated_at`, `deleted_at` | | |
 
 **Инвариант валюта↔счёт (SPEC-032):** для траты со счётом `expenses.currency == accounts.currency` (ведро денoминировано в одной валюте; `effective_balance` вычитает расход в native-валюте ведра — рассогласование тихо искажает баланс). Энфорсится в `createExpense`/`updateExpense` (`db.ts:currencyMismatchError`): account-bound `currency != account.currency` без флага `allow_currency_mismatch` → 400. Трата «без счёта» (`account_id IS NULL` — бот, CSV-импорт, ручной выбор «Без счёта») валюту имеет свободную (используется только для EUR-конверсии/репортинга). Mini App предотвращает рассогласование auto-bind'ом (выбор счёта ставит его валюту) + осознанным override.
@@ -142,9 +142,26 @@ free        = net_worth − targeted − invested    # без клампа: мо
 - **Валюта ETH** в `currencies` (is_crypto=1, decimals=6). Курс ETH/EUR — цепочка провайдеров **Binance→Coinbase→CoinGecko** (SPEC-028/ADR-019, fallback при гео-блоке CF-IP), cron 4×/сутки + бэкфилл `backfill_crypto_rates.py`; хранится как `1 EUR = rate × quote` → `rate = 1/price`. Пишется в дневной `rates` (закрытие дня) **и** `rate_ticks` (внутридневная свежесть). stETH пегуется к ETH 1:1 (отдельной котировки нет).
 - **Покупка** USDT→ETH = `transactions` (`type='exchange'`); **ребейзинг** = `snapshots` инвест-ведра (ground truth). Cost basis — WAC из exchange-истории; доход стейкинга (факт) = `qty(today) − net_bought_qty`.
 
+## Политика деактивации / удаления (soft-delete)
+
+> Аудит 2026-07 (DB-10): в базе сосуществуют **три** механизма скрытия строк. Данные
+> сейчас согласованы (0 soft-сирот); таблица ниже — источник правды «кто чем
+> деактивируется и кто как это видит», чтобы новый код не выбирал механизм наугад.
+> Унификация — существующий пункт техдолга (roadmap, SPEC-006 N6), не делаем попутно.
+
+| Таблица | Механизм | Кто скрывает | Кто видит скрытые |
+|---|---|---|---|
+| `expenses`, `incomes`, `snapshots`, `transactions`, `goals`, `goal_contributions`, `budgets` | `deleted_at` (soft-delete) | все доменные SELECT фильтруют `deleted_at IS NULL` | никто (только прямой SQL) |
+| `categories`, `income_categories` | `is_active` (деактивация, записи-истории живут) | пикеры/бюджеты (`is_active = 1`) | история/аналитика: bootstrap отдаёт ВСЕ категории (подпись после деактивации, SPEC-017 AC4); donut дашборда тянет все `type='expense'` |
+| `accounts` | **оба** `deleted_at` + `is_active`, плюс фильтр видимости `form != 'external'` | `listBuckets`/dashboard: `form != 'external' AND deleted_at IS NULL`; bootstrap: `is_active = 1`; transactions: `is_active = 1 AND deleted_at IS NULL` | — |
+
+Правило для нового кода: транзакционные таблицы — только `deleted_at`; справочники
+выбора — `is_active`; для `accounts` любой новый SELECT обязан явно решить все три
+фильтра (образец — `snapshots.ts:listBuckets`).
+
 ## Миграции
 
-D1: `cloud/worker/migrations/0001…0019`, применять **штатным** `wrangler d1 migrations apply finances-outbox --remote` (исторический рассинхрон трекинга вылечен 2026-07-07 backfill'ом имён 0006–0018 — аудит DB-04; старый workaround `execute --file` больше НЕ использовать, он рассинхронизирует трекинг заново). `schema.sql` — документация текущей структуры + основа тест-моков (bootstrap свежей базы — импорт дампа, см. `local/README.md` § Restore-runbook). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса); `0017` = fix `created_at` импортированных снапшотов против двойного учёта (SPEC-031); `0018` = `coach_state` (SPEC-040: cooldown coach-нуджей); `0019` = нормализация `created_at` snapshots/incomes к канону (DB-09, data-only).
+D1: `cloud/worker/migrations/0001…0020`, применять **штатным** `wrangler d1 migrations apply finances-outbox --remote` (исторический рассинхрон трекинга вылечен 2026-07-07 backfill'ом имён 0006–0018 — аудит DB-04; старый workaround `execute --file` больше НЕ использовать, он рассинхронизирует трекинг заново). `schema.sql` — документация текущей структуры + основа тест-моков (bootstrap свежей базы — импорт дампа, см. `local/README.md` § Restore-runbook). **Правило:** применённые миграции immutable; изменения — только новой миграцией. `0014` = инвестиции (SPEC-026: валюта ETH, `accounts.is_investment`, seed `eth-invest`, `investment_settings`); `0015` = итерация 2 (SPEC-027: `investment_settings.staked_qty`, таблица `app_config`); `0016` = `rate_ticks` (SPEC-028: внутридневные тики курса); `0017` = fix `created_at` импортированных снапшотов против двойного учёта (SPEC-031); `0018` = `coach_state` (SPEC-040: cooldown coach-нуджей); `0019` = нормализация `created_at` snapshots/incomes к канону (DB-09, data-only); `0020` = индексы expenses под effective_balance + чистка мёртвых индексов sync-эпохи (DB-08/WRK-12).
 
 | Миграция | Что |
 |---|---|
@@ -165,3 +182,5 @@ D1: `cloud/worker/migrations/0001…0019`, применять **штатным**
 | 0016 | `rate_ticks` — внутридневные тики курса (SPEC-028) |
 | 0017 | fix `created_at` импортированных снапшотов — устранение двойного учёта (SPEC-031) |
 | 0018 | `coach_state` — cooldown coach-нуджей о качестве данных (SPEC-040) |
+| 0019 | нормализация `created_at` snapshots/incomes к канону `YYYY-MM-DD HH:MM:SS` (аудит DB-09, data-only) |
+| 0020 | `idx_expenses_account_date` (partial, под `effective_balance`) + DROP мёртвых `idx_expenses_updated/user_date/deleted` (аудит DB-08/WRK-12) |

@@ -137,7 +137,9 @@ export function computeBudgetProgress(
                 spent_eur: r2(totalSpent),
                 remaining_eur: r2(b.limit_eur - totalSpent),
                 pct: Math.round((totalSpent / b.limit_eur) * 100),
-                status: budgetStatus(totalSpent, b.limit_eur),
+                // FIN-08 (SPEC-047): статус от того же r2(spent), что и на экране, — иначе на
+                // ножевой границе (99.996 vs 100.00000000001) цвет противоречит подписи.
+                status: budgetStatus(r2(totalSpent), b.limit_eur),
                 missing_rates: totalMissing,
             };
             continue;
@@ -154,7 +156,7 @@ export function computeBudgetProgress(
             spent_eur: r2(spent),
             remaining_eur: r2(b.limit_eur - spent),
             pct: Math.round((spent / b.limit_eur) * 100),
-            status: budgetStatus(spent, b.limit_eur),
+            status: budgetStatus(r2(spent), b.limit_eur),   // FIN-08: display и статус — от одного числа
             missing_rates: catMissing.get(cid) ?? 0,
         });
     }

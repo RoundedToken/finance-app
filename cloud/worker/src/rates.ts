@@ -320,9 +320,13 @@ export class RatesIndex {
         if (quote === "EUR") return 1;
         const arr = this.byQuote.get(quote);
         const tick = this.tickByQuote.get(quote);
-        if (tick) {
-            const lastDaily = arr && arr.length ? arr[arr.length - 1].date : null;
-            if (lastDaily == null || date >= lastDaily) return tick.rate;
+        if (tick && arr && arr.length) {
+            // FIN-05 (SPEC-047): тик применяется ТОЛЬКО при наличии дневного ряда quote и
+            // date ≥ последней дневной даты («сейчас»). Тик без daily (ретенция/новая монета
+            // до backfill'а) раньше подменял ЛЮБУЮ историческую конверсию сегодняшним курсом —
+            // теперь честный null → missing_rates.
+            const lastDaily = arr[arr.length - 1].date;
+            if (date >= lastDaily) return tick.rate;
         }
         if (!arr || !arr.length) return null;
         let lo = 0, hi = arr.length - 1, ans = -1;

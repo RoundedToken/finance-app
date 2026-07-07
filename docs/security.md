@@ -53,6 +53,11 @@ WRN leaks found: 1
 - `git commit --no-verify` (**не использовать без явной необходимости**).
 - Если ложный positive — добавить в `.gitleaksignore` или `.gitleaks.toml` точечно.
 
+**Вторая линия обороны — CI** (QA-11, SPEC-047): job `gitleaks` в
+`.github/workflows/ci.yml` гоняет `gitleaks/gitleaks-action` по полной истории
+на каждый push/PR — секрет, проскочивший мимо локального (opt-in) хука,
+подсветится до долгой жизни в default-ветке.
+
 ## Перед каждым push в public
 
 Чеклист (выполняется руками — авто-таргета `make security-check` нет, не выдумывать):

@@ -140,7 +140,17 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
         }
     }
     if (patch.category_id !== undefined) {
-        if (!(await categoryExists(env, patch.category_id))) return { ok: false, error: "unknown category_id" };
+        // WRK-18 (SPEC-047): full-PUT шлёт и неизменённый category_id. Если категорию
+        // деактивировали (SPEC-017 — история живёт), правка любого поля старого дохода
+        // падала «unknown category_id». Активность требуем только при СМЕНЕ категории.
+        const existing = await env.DB
+            .prepare("SELECT category_id FROM incomes WHERE id = ? AND deleted_at IS NULL")
+            .bind(id)
+            .first<{ category_id: string }>();
+        const unchanged = existing != null && existing.category_id === patch.category_id;
+        if (!unchanged && !(await categoryExists(env, patch.category_id))) {
+            return { ok: false, error: "unknown category_id" };
+        }
     }
     if (patch.goal_id !== undefined && patch.goal_id !== null) {
         const goalCheck = await validateGoalRef(env, patch.goal_id);
