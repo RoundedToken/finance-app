@@ -281,7 +281,25 @@ export default {
 };
 
 // ── Telegram bot webhook ───────────────────────────────────────────────────
+/** SEC-04 (SPEC-042): constant-time сравнение секрета вебхука. URL /tg обнаружим,
+ *  а from.id в теле контролируется отправителем — без секрета апдейты подделываемы. */
+function webhookSecretValid(request: Request, env: Env): boolean {
+    if (!env.TELEGRAM_WEBHOOK_SECRET) return true; // секрет ещё не выставлен — совместимость
+    const got = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+    const enc = new TextEncoder();
+    const a = enc.encode(got);
+    const b = enc.encode(env.TELEGRAM_WEBHOOK_SECRET);
+    if (a.byteLength !== b.byteLength) return false;
+    let diff = 0; // XOR-аккумулятор: без раннего выхода (работает и в Workers, и в node-тестах)
+    for (let i = 0; i < a.byteLength; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+}
+
 async function handleTg(request: Request, env: Env): Promise<Response> {
+    if (!webhookSecretValid(request, env)) {
+        console.log(JSON.stringify({ event: "tg_webhook_bad_secret" }));
+        return json({ error: "forbidden" }, 403, request, env);
+    }
     const body = await request.json().catch(() => null);
     if (!body) return json({ ok: false, reason: "bad json" }, 200, request, env);
     try {
@@ -459,7 +477,8 @@ async function handleWebSnapshotsUpdate(request: Request, env: Env, id: string):
     const parsed = await readBody(request, env, snapshotUpdateSchema);
     if (!parsed.ok) return parsed.response;
     const r = await updateSnapshot(env, id, parsed.data);
-    return json({ ok: true, ...r }, 200, request, env);
+    if (!r.ok) return json({ error: r.error }, 400, request, env);
+    return json({ ok: true, updated: r.updated }, 200, request, env);
 }
 
 async function handleWebSnapshotsDelete(request: Request, env: Env, id: string): Promise<Response> {

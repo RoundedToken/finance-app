@@ -124,6 +124,18 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
     if (patch.account_id !== undefined) {
         newCurrency = await lookupAccountCurrency(env, patch.account_id);
         if (!newCurrency) return { ok: false, error: "unknown account_id" };
+        // FIN-01 (SPEC-042): смена счёта пере-деривит валюту записи; старый amount молча
+        // стал бы суммой в новой валюте («100 000 RUB» → «100 000 EUR», ×курс искажение
+        // баланса и KPI). Смена валюты требует amount в том же PATCH.
+        if (patch.amount === undefined) {
+            const existing = await env.DB
+                .prepare("SELECT currency_code FROM incomes WHERE id = ? AND deleted_at IS NULL")
+                .bind(id)
+                .first<{ currency_code: string }>();
+            if (existing && existing.currency_code !== newCurrency) {
+                return { ok: false, error: `новый счёт в ${newCurrency}, запись в ${existing.currency_code} — укажи amount в валюте нового счёта тем же запросом` };
+            }
+        }
     }
     if (patch.category_id !== undefined) {
         if (!(await categoryExists(env, patch.category_id))) return { ok: false, error: "unknown category_id" };

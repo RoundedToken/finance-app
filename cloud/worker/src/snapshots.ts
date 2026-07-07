@@ -198,7 +198,25 @@ export async function createSnapshot(env: Env, payload: SnapshotPayload): Promis
     return { ok: true, id, inserted: (r.meta.changes ?? 0) > 0 };
 }
 
-export async function updateSnapshot(env: Env, id: string, patch: Partial<SnapshotPayload>): Promise<{ updated: boolean }> {
+export async function updateSnapshot(env: Env, id: string, patch: Partial<SnapshotPayload>): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
+    // FIN-01 (SPEC-042): валюта снапшота неявная — native ведра. Перенос снапшота на
+    // ведро другой валюты молча реинтерпретировал бы amount (baseline всего ведра ×курс).
+    // Смена валюты требует amount в том же PATCH.
+    if (patch.account_id !== undefined && patch.account_id !== null && patch.amount === undefined) {
+        const row = await env.DB
+            .prepare(
+                `SELECT cur.currency AS new_currency, old.currency AS old_currency
+                 FROM snapshots s
+                 JOIN accounts old ON old.id = s.account_id
+                 JOIN accounts cur ON cur.id = ?
+                 WHERE s.id = ? AND s.deleted_at IS NULL`,
+            )
+            .bind(patch.account_id, id)
+            .first<{ new_currency: string; old_currency: string }>();
+        if (row && row.new_currency !== row.old_currency) {
+            return { ok: false, error: `новое ведро в ${row.new_currency}, снапшот в ${row.old_currency} — укажи amount в валюте нового ведра тем же запросом` };
+        }
+    }
     const r = await env.DB.prepare(
         `UPDATE snapshots
            SET date        = COALESCE(?, date),
@@ -214,7 +232,7 @@ export async function updateSnapshot(env: Env, id: string, patch: Partial<Snapsh
         patch.note ?? null,
         id,
     ).run();
-    return { updated: (r.meta.changes ?? 0) > 0 };
+    return { ok: true, updated: (r.meta.changes ?? 0) > 0 };
 }
 
 export async function deleteSnapshot(env: Env, id: string): Promise<{ deleted: boolean }> {

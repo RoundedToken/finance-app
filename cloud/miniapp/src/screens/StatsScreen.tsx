@@ -28,7 +28,7 @@ function prevPeriod(mode: Mode, year: number, month: number): { year: number; mo
 
 export function StatsScreen() {
     const { d } = useApp();
-    const { data, isLoading } = useExpenses();
+    const { data, isLoading, isError, refetch } = useExpenses();
     const boot = useBootstrap();
     const expenses = useMemo(() => data?.expenses ?? [], [data]);
     const cats = boot.data?.categories ?? [];
@@ -146,13 +146,21 @@ export function StatsScreen() {
             <div className="px-4 pb-12 space-y-5">
                 {isLoading && <p className="text-center text-hint py-10 animate-pulse">Загрузка…</p>}
 
-                {!isLoading && agg.count === 0 && (
+                {/* MA-02 (SPEC-042): ошибка сети ≠ «трат нет» — различимый error-state с ретраем (паттерн Shell). */}
+                {!isLoading && isError && (
+                    <div className="text-center py-12 space-y-3">
+                        <p className="text-hint">Не удалось загрузить траты</p>
+                        <button onClick={() => refetch()} className="text-accent font-medium">Повторить</button>
+                    </div>
+                )}
+
+                {!isLoading && !isError && agg.count === 0 && (
                     <p className="text-center text-hint py-12">
                         {!bounds ? "Пока нет трат" : "Трат в этом периоде нет"}
                     </p>
                 )}
 
-                {!isLoading && agg.count > 0 && (
+                {!isLoading && !isError && agg.count > 0 && (
                     <>
                         <KPI total={agg.total} avg={avg} count={agg.count} missing={agg.missing} delta={delta} />
                         {agg.total > 0 && <Donut agg={agg} palette={palette} onTapCat={openDrill} />}

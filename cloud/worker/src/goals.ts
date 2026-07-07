@@ -410,6 +410,17 @@ export async function updateContribution(env: Env, id: string, patch: Partial<Co
         if (!acc) return { ok: false, error: "unknown account_id" };
         if (acc.is_investment) return { ok: false, error: "нельзя привязать вклад цели к инвест-ведру" };  // SPEC-026 E6
         newCurrency = acc.currency;
+        // FIN-01 (SPEC-042): смена счёта пере-деривит валюту взноса; старый amount молча
+        // ревальвировал бы goal.balance по новой валюте. Смена валюты требует amount в PATCH.
+        if (patch.amount === undefined) {
+            const existing = await env.DB
+                .prepare("SELECT currency_code FROM goal_contributions WHERE id = ? AND deleted_at IS NULL")
+                .bind(id)
+                .first<{ currency_code: string }>();
+            if (existing && existing.currency_code !== newCurrency) {
+                return { ok: false, error: `новый счёт в ${newCurrency}, взнос в ${existing.currency_code} — укажи amount в валюте нового счёта тем же запросом` };
+            }
+        }
     }
     if (patch.goal_id !== undefined && !(await goalExists(env, patch.goal_id))) {
         return { ok: false, error: "unknown goal_id" };

@@ -43,7 +43,9 @@ function CurrencyPicker({ open }: { open: boolean }) {
 function AccountPicker({ open }: { open: boolean }) {
     const { s, d } = useApp();
     const { data } = useBootstrap();
-    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external" && a.is_active !== 0);
+    // SPEC-026 AC18 / SPEC-042 (SPC-01): инвест-ведро — актив, трат с него не бывает
+    // (иначе реплей qty в /investments расходится с балансом). Сервер дублирует guard'ом.
+    const accounts = (data?.accounts ?? []).filter(a => a.form !== "external" && a.is_active !== 0 && !a.is_investment);
     return (
         <Modal open={open} onClose={() => d({ t: "modal", v: null })} title="Счёт">
             <div className="space-y-1.5">

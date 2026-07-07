@@ -198,6 +198,12 @@ function buildTransactionInsert(
 // ── Create ──────────────────────────────────────────────────────────────────
 
 export async function createTransaction(env: Env, payload: TransactionPayload): Promise<Result<{ id: string; inserted: boolean }>> {
+    // Идемпотентность (CLAUDE.md §6 / SPEC-042): ретрай с тем же id → inserted:false,
+    // не ложный overdraft (баланс уже уменьшен первой вставкой).
+    if (payload.id) {
+        const dup = await env.DB.prepare("SELECT 1 FROM transactions WHERE id = ?").bind(payload.id).first();
+        if (dup) return { ok: true, id: payload.id, inserted: false };
+    }
     const v = await validateStep(env, payload);
     if (!v.ok) return v;
     // fee, оплачиваемая из from-ведра (валюта совпадает), тоже уменьшает баланс (L2) —

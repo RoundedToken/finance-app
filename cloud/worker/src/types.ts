@@ -3,6 +3,9 @@ export interface Env {
 
     // Telegram
     TELEGRAM_BOT_TOKEN: string;
+    // SEC-04 (SPEC-042): секрет вебхука — Telegram шлёт его в X-Telegram-Bot-Api-Secret-Token
+    // (ставится через setWebhook?secret_token=…). Не задан → проверка выключена (bootstrap).
+    TELEGRAM_WEBHOOK_SECRET?: string;
 
     // Bearer для миграционных endpoints (push references, bulk rates, migrate)
     SYNC_TOKEN: string;

@@ -7,6 +7,7 @@ export interface Account {
     currency: string;
     form?: string;            // 'cash' | 'digital' | 'external'
     is_active?: number;
+    is_investment?: number;   // SPEC-026: инвест-ведро (не операционный счёт)
     color?: string | null;
     sort_order?: number;
 }

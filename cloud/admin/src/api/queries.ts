@@ -82,6 +82,14 @@ export function useSnapshots() {
     });
 }
 
+// ADM-01 (SPEC-042): любая мутация, двигающая деньги (снапшот/доход/цель/взнос/обмен),
+// обязана инвалидировать финансовые агрегаты — дашборд и сводку счетов. Иначе открытый
+// дашборд (refetchOnWindowFocus=false) показывает цифры «до правки» до ручного Refresh.
+function invalidateMoneyAggregates(qc: ReturnType<typeof useQueryClient>) {
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["accounts"] });
+}
+
 export function useCreateSnapshot() {
     const qc = useQueryClient();
     return useMutation({
@@ -92,8 +100,8 @@ export function useCreateSnapshot() {
             }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
-            qc.invalidateQueries({ queryKey: ["accounts"] });
             qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -108,8 +116,8 @@ export function useUpdateSnapshot() {
             }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
-            qc.invalidateQueries({ queryKey: ["accounts"] });
             qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -121,8 +129,8 @@ export function useDeleteSnapshot() {
             apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/snapshots/${id}`, { method: "DELETE" }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["snapshots"] });
-            qc.invalidateQueries({ queryKey: ["accounts"] });
             qc.invalidateQueries({ queryKey: ["investments"] });   // SPEC-026: снапшот инвест-ведра = доход стейкинга
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -145,10 +153,9 @@ export function useIncomes() {
 
 function invalidateOnIncomeMutation(qc: ReturnType<typeof useQueryClient>) {
     // Доход — это «событие» для счёта (snapshots.ts: incomes +amount): влияет на
-    // effective_balance и events_count на странице «Счета». Без инвалидации
-    // ["accounts"] баланс/счётчик событий не обновляются до перезагрузки страницы.
+    // effective_balance/events_count на «Счетах» и на KPI дохода/нормы дашборда (ADM-01).
     qc.invalidateQueries({ queryKey: ["incomes"] });
-    qc.invalidateQueries({ queryKey: ["accounts"] });
+    invalidateMoneyAggregates(qc);
 }
 
 export function useCreateIncome() {
@@ -178,12 +185,13 @@ export function useUpdateIncome() {
                 method: "PUT",
                 body: JSON.stringify(patch),
             }),
-        onSuccess: (_d, { patch }) => {
+        onSuccess: () => {
             invalidateOnIncomeMutation(qc);
-            // Goal attachment изменился или amount/account/date — пересчитать
-            // balance во всех goals; конкретный goal-detail тоже.
+            // Goal attachment изменился или amount/account/date — пересчитать balance во
+            // всех goals + любой открытый goal-detail. Префикс ["goal"] покрывает и отвязку
+            // goal_id: null (ADM-16: точечная инвалидация по truthy goal_id теряла старую цель).
             qc.invalidateQueries({ queryKey: ["goals"] });
-            if (patch.goal_id) qc.invalidateQueries({ queryKey: ["goal", patch.goal_id] });
+            qc.invalidateQueries({ queryKey: ["goal"] });
         },
     });
 }
@@ -227,7 +235,10 @@ export function useCreateGoal() {
                 method: "POST",
                 body: JSON.stringify(payload),
             }),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ["goals"] }); },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["goals"] });
+            invalidateMoneyAggregates(qc);   // targeted → free (дашборд + сводка счетов)
+        },
     });
 }
 
@@ -242,6 +253,7 @@ export function useUpdateGoal() {
         onSuccess: (_d, { id }) => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal", id] });
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -257,6 +269,7 @@ export function useSetGoalStatus() {
         onSuccess: (_d, { id }) => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal", id] });
+            invalidateMoneyAggregates(qc);   // архив/достижение цели меняет targeted → free
         },
     });
 }
@@ -269,6 +282,7 @@ export function useDeleteGoal() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["incomes"] });
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -284,6 +298,7 @@ export function useCreateContribution() {
         onSuccess: (_d, payload) => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal", payload.goal_id] });
+            invalidateMoneyAggregates(qc);   // взнос меняет targeted → free
         },
     });
 }
@@ -299,6 +314,7 @@ export function useUpdateContribution() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal"] });
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -311,6 +327,7 @@ export function useDeleteContribution() {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["goals"] });
             qc.invalidateQueries({ queryKey: ["goal"] });
+            invalidateMoneyAggregates(qc);
         },
     });
 }
@@ -362,7 +379,8 @@ export function useDeleteTransaction() {
     return useMutation({
         mutationFn: (id: string) =>
             apiFetch<{ ok: true; deleted: boolean; deleted_snapshots: number }>(`/v1/web/transactions/${id}`, { method: "DELETE" }),
-        onSuccess: () => { invalidateOnTxMutation(qc); },
+        // ADM-16: удаление goal-tagged обмена меняет goal balance — как в useUpdateTransaction.
+        onSuccess: () => { invalidateOnTxMutation(qc); qc.invalidateQueries({ queryKey: ["goals"] }); qc.invalidateQueries({ queryKey: ["goal"] }); },
     });
 }
 
@@ -397,6 +415,8 @@ function invalidateBudgets(qc: ReturnType<typeof useQueryClient>) {
     qc.invalidateQueries({ queryKey: ["dashboard"] });   // бюджеты — линза на те же траты
 }
 
+// ADM-07 (SPEC-042): ручной CRUD лимита обязан рефетчить и рекомендации RBAR —
+// карточка рекомендации показывает current_limit/дельту относительно лимита.
 export function useCreateBudget() {
     const qc = useQueryClient();
     return useMutation({
@@ -405,7 +425,7 @@ export function useCreateBudget() {
                 method: "POST",
                 body: JSON.stringify(payload),
             }),
-        onSuccess: () => invalidateBudgets(qc),
+        onSuccess: () => invalidateAdaptive(qc),
     });
 }
 
@@ -417,7 +437,7 @@ export function useUpdateBudget() {
                 method: "PUT",
                 body: JSON.stringify(patch),
             }),
-        onSuccess: () => invalidateBudgets(qc),
+        onSuccess: () => invalidateAdaptive(qc),
     });
 }
 
@@ -426,7 +446,7 @@ export function useDeleteBudget() {
     return useMutation({
         mutationFn: (id: string) =>
             apiFetch<{ ok: true; deleted: boolean }>(`/v1/web/budgets/${id}`, { method: "DELETE" }),
-        onSuccess: () => invalidateBudgets(qc),
+        onSuccess: () => invalidateAdaptive(qc),
     });
 }
 
@@ -556,6 +576,7 @@ function invalidateCategories(qc: ReturnType<typeof useQueryClient>, kind: Categ
     if (kind === "expense") {
         qc.invalidateQueries({ queryKey: ["references"] });   // refs.categories — Expenses/Dashboard
         qc.invalidateQueries({ queryKey: ["expenses"] });
+        qc.invalidateQueries({ queryKey: ["budgets"] });      // ADM-16: подписи/эмодзи категорий на /budgets
     } else {
         qc.invalidateQueries({ queryKey: ["income-categories"] });
         qc.invalidateQueries({ queryKey: ["incomes"] });

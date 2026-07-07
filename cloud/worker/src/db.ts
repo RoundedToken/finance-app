@@ -54,10 +54,29 @@ async function currencyMismatchError(
     return `валюта траты (${currency}) не совпадает с валютой счёта «${acc.name}» (${acc.currency})`;
 }
 
+/** SPEC-026 AC18 / SPEC-042: инвест-ведро — актив, не операционный счёт. Трата с него
+ *  ломает реплей qty vs value_series в investments.ts (доход стейкинга занижается). */
+async function investmentAccountError(env: Env, accountId: string | null | undefined): Promise<string | null> {
+    if (!accountId) return null;
+    const acc = await env.DB
+        .prepare("SELECT name, is_investment FROM accounts WHERE id = ? AND deleted_at IS NULL")
+        .bind(accountId)
+        .first<{ name: string; is_investment: number }>();
+    if (!acc || !acc.is_investment) return null;
+    return `нельзя записать трату с инвест-ведра «${acc.name}»`;
+}
+
 export async function createExpense(env: Env, userId: string, e: ExpensePayload): Promise<{ ok: true; inserted: boolean } | { ok: false; error: string }> {
+    // Идемпотентность (CLAUDE.md §6 / SPEC-042): ретрай с тем же id должен вернуть
+    // inserted:false, а не споткнуться о guard'ы ниже (overdraft уже «съеден» первой
+    // вставкой — повтор дал бы ложное «недостаточно средств»).
+    const dup = await env.DB.prepare("SELECT 1 FROM expenses WHERE id = ?").bind(e.id).first();
+    if (dup) return { ok: true, inserted: false };
     // SPEC-032: трата со счётом обязана быть в валюте ведра (см. currencyMismatchError).
     const ccyErr = await currencyMismatchError(env, e.account_id, e.currency, e.allow_currency_mismatch);
     if (ccyErr) return { ok: false, error: ccyErr };
+    const invErr = await investmentAccountError(env, e.account_id);
+    if (invErr) return { ok: false, error: invErr };
     // Overdraft (L1, SPEC-011 §G6): не даём ведру уйти в минус — но ТОЛЬКО если у
     // ведра есть manual baseline (без него нет ground truth, чтобы судить о минусе;
     // первичный flow Mini App без снапшота не ломаем). asOf = дата траты.
@@ -93,32 +112,37 @@ export async function createExpense(env: Env, userId: string, e: ExpensePayload)
 }
 
 export async function updateExpense(env: Env, id: string, userId: string, patch: any): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
+    // PATCH-семантика: отсутствие ключа → оставить старое; явный null → стереть.
+    // Для nullable-полей (note, account_id, category_id) различаем «не передан» и
+    // «стереть» через hasOwnProperty (WRK-01: COALESCE молча глотал account_id: null —
+    // «без счёта» в Edit не работало, ведро продолжало худеть).
+    const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
+    const hasAccount = Object.prototype.hasOwnProperty.call(patch, "account_id");
+    const hasCategory = Object.prototype.hasOwnProperty.call(patch, "category_id");
     // SPEC-032: валидируем согласованность валюта↔счёт по РЕЗУЛЬТИРУЮЩИМ значениям, но только
     // если патч реально трогает валюту или счёт (иначе инвариант измениться не может — экономим
-    // лишний SELECT в горячем пути правки note/amount/date). COALESCE-семантика ниже меняет
-    // account_id/currency лишь при непустом patch-значении, поэтому resulting = patch.X ?? existing.X.
-    if (patch.account_id !== undefined || patch.currency !== undefined) {
+    // лишний SELECT в горячем пути правки note/amount/date).
+    if (hasAccount || patch.currency !== undefined) {
         const existing = await env.DB
             .prepare("SELECT account_id, currency FROM expenses WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
             .bind(id, userId)
             .first<{ account_id: string | null; currency: string }>();
         if (existing) {
-            const resAccount = patch.account_id ?? existing.account_id;
+            const resAccount = hasAccount ? (patch.account_id ?? null) : existing.account_id;
             const resCurrency = patch.currency ?? existing.currency;
             const ccyErr = await currencyMismatchError(env, resAccount, resCurrency, patch.allow_currency_mismatch);
             if (ccyErr) return { ok: false, error: ccyErr };
+            const invErr = await investmentAccountError(env, resAccount);
+            if (invErr) return { ok: false, error: invErr };
         }
     }
-    // PATCH-семантика: отсутствие ключа → оставить старое; явный null → стереть.
-    // Для note различаем "не передан" и "стереть" через hasOwnProperty.
-    const hasNote = Object.prototype.hasOwnProperty.call(patch, "note");
     const sql =
         `UPDATE expenses
          SET date         = COALESCE(?, date),
              amount       = COALESCE(?, amount),
              currency     = COALESCE(?, currency),
-             category_id  = COALESCE(?, category_id),
-             account_id   = COALESCE(?, account_id),
+             category_id  = ${hasCategory ? "?" : "category_id"},
+             account_id   = ${hasAccount ? "?" : "account_id"},
              note         = ${hasNote ? "?" : "note"},
              updated_at   = datetime('now')
          WHERE id = ? AND user_id = ? AND deleted_at IS NULL`;
@@ -126,9 +150,9 @@ export async function updateExpense(env: Env, id: string, userId: string, patch:
         patch.date ?? null,
         patch.amount ?? null,
         patch.currency ?? null,
-        patch.category_id ?? null,
-        patch.account_id ?? null,
     ];
+    if (hasCategory) params.push(patch.category_id ?? null);
+    if (hasAccount) params.push(patch.account_id ?? null);
     if (hasNote) params.push(patch.note ?? null);
     params.push(id, userId);
     const r = await env.DB.prepare(sql).bind(...params).run();

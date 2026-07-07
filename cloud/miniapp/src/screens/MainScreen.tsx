@@ -9,7 +9,7 @@ import { SwipeRow } from "@/components/SwipeRow";
 import { Numpad } from "@/components/Numpad";
 import { DayTotal } from "@/components/DayTotal";
 import { haptic, confirmDialog } from "@/lib/telegram";
-import { cn, fmt, humanDay, uuid4 } from "@/lib/utils";
+import { cn, fmt, humanDay } from "@/lib/utils";
 import type { Category, Account, Expense, BudgetCategoryProgress, BudgetEnvelope } from "@/api/types";
 
 export function MainScreen() {
@@ -47,7 +47,8 @@ export function MainScreen() {
         create.mutate(
             // created_at не шлём: сервер ставит datetime('now') (SPEC-024 G3); s.date — локальный день.
             // SPEC-032: allow_currency_mismatch=true только при реальном осознанном рассогласовании (через override-гейт).
-            { id: uuid4(), date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null,
+            // MA-01 (SPEC-042): id живёт в драфте — ретрай/двойной тап шлют тот же UUID (идемпотентность).
+            { id: s.draftId, date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null,
               allow_currency_mismatch: !!account && s.currency !== account.currency },
             {
                 onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
