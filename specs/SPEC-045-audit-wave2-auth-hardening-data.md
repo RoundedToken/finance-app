@@ -1,7 +1,7 @@
 ---
 spec: SPEC-045
 title: Волна 2 аудита (кластеры 5+7) — auth-hardening и гигиена данных
-status: in_progress
+status: done
 created: 2026-07-07
 owner: Stepan
 ---
@@ -54,3 +54,4 @@ owner: Stepan
 ## 5. Changelog
 
 - 2026-07-07: создан, `in_progress`; реализация в сессии аудита (автономный режим). Прод-операции DB-04/DB-09 выполнены до merge ветки (бэкап взят, анализ приложен) — файл миграции 0019 едет в репо этим же PR.
+- 2026-07-07: Phase 3: qa=PASS_WITH_NICES, arch=APPROVED_WITH_NICES; must-fix (data-model/ADR-012) закрыты, применены nices: absolute cap 30д на refresh-цепочку (auth_time), CSP base-uri/form-action/object-src ×2, подсказка про протухший initData. `done` — PR #33 (`cd27483`), worker+miniapp+admin задеплоены, ADMIN_JWT_SECRET ротирован (старые 30-дневные токены погашены), прод-smoke: CSP Mini App отдаётся, refresh 401 без auth, healthz 200. 256/256.
