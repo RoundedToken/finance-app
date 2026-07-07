@@ -127,7 +127,9 @@ export async function updateIncome(env: Env, id: string, patch: Partial<IncomePa
         // FIN-01 (SPEC-042): смена счёта пере-деривит валюту записи; старый amount молча
         // стал бы суммой в новой валюте («100 000 RUB» → «100 000 EUR», ×курс искажение
         // баланса и KPI). Смена валюты требует amount в том же PATCH.
-        if (patch.amount === undefined) {
+        // == null (не ===): amount: null тоже не «новая сумма» — инвариант не должен
+        // зависеть от того, что Zod-граница режет null раньше.
+        if (patch.amount == null) {
             const existing = await env.DB
                 .prepare("SELECT currency_code FROM incomes WHERE id = ? AND deleted_at IS NULL")
                 .bind(id)

@@ -176,7 +176,7 @@ export function HistoryScreen() {
                     </div>
                 )}
                 {!isLoading && !isError && !days.length && <p className="text-center text-hint py-12">{emptyLabel}</p>}
-                {days.length > 0 && (
+                {!isError && days.length > 0 && (
                     <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
                         {virtualDays.map(vd => {
                             const day = days[vd.index];

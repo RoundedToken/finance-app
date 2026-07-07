@@ -51,7 +51,13 @@ export function MainScreen() {
             { id: s.draftId, date: s.date, amount, currency: s.currency, category_id: categoryId, account_id: s.accountId, note: s.note || null,
               allow_currency_mismatch: !!account && s.currency !== account.currency },
             {
-                onSuccess: () => { haptic("success"); toast(`✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}`); d({ t: "resetDraft" }); },
+                // inserted:false — ретрай уже записанной траты: не врём тостом про текущие
+                // значения драфта (они могли измениться после потерянного ответа первого POST).
+                onSuccess: (resp) => {
+                    haptic("success");
+                    toast(resp.inserted ? `✓ ${fmt(amount, s.currency)} ${s.currency} → ${catName}` : "Уже сохранено");
+                    d({ t: "resetDraft" });
+                },
                 onError: (e) => { haptic("error"); toast(e instanceof Error ? e.message : "Ошибка сохранения", "err"); },
             },
         );

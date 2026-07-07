@@ -28,7 +28,8 @@ function invalidate(qc: ReturnType<typeof useQueryClient>) {
 export function useCreateExpense() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (e: ExpenseInput) => api("/v1/expenses", { method: "POST", body: JSON.stringify(e) }),
+        // inserted:false = ретрай уже записанной траты (MA-01) — UI показывает «Уже сохранено».
+        mutationFn: (e: ExpenseInput) => api<{ ok: boolean; inserted: boolean }>("/v1/expenses", { method: "POST", body: JSON.stringify(e) }),
         onSuccess: () => invalidate(qc),
     });
 }

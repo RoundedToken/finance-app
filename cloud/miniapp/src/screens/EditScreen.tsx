@@ -47,7 +47,8 @@ export function EditScreen() {
         upd.mutate(
             // SPEC-032: allow_currency_mismatch=true только при реальном рассогласовании (осознанно/легаси).
             { id: s.editingId, patch: { amount: amt, currency: s.currency, date: s.date, note: s.note || null, category_id: s.categoryId, account_id: s.accountId, allow_currency_mismatch: mismatch } },
-            { onSuccess: () => { haptic("success"); toast("Сохранено"); back(); }, onError: () => { haptic("error"); toast("Ошибка", "err"); } },
+            // Текст сервера важен: 400-guard'ы (валюта↔счёт, инвест-ведро, FIN-01) объясняют, что исправить.
+            { onSuccess: () => { haptic("success"); toast("Сохранено"); back(); }, onError: (e) => { haptic("error"); toast(e instanceof Error ? e.message : "Ошибка", "err"); } },
         );
     };
     const remove = async () => {

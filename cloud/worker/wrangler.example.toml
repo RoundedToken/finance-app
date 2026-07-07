@@ -37,6 +37,9 @@ ADMIN_DEFAULT_RETURN_URL = "https://<your-admin>.pages.dev/"
 
 # Secrets устанавливаются через `wrangler secret put <NAME>` интерактивно:
 #   TELEGRAM_BOT_TOKEN       — Telegram bot token (Mini App auth)
+#   TELEGRAM_WEBHOOK_SECRET  — секрет вебхука /tg (openssl rand -hex 32); тот же секрет
+#                              передать в setWebhook?secret_token=… (см. docs/setup.md).
+#                              Без него /tg принимает подделываемые апдейты (SEC-04).
 #   SYNC_TOKEN               — Bearer для миграционных endpoints (любой random 32+ байт)
 #   GOOGLE_CLIENT_ID         — OAuth Web client ID (см. docs/setup.md §8)
 #   GOOGLE_CLIENT_SECRET     — OAuth Web client secret

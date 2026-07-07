@@ -411,8 +411,9 @@ export async function updateContribution(env: Env, id: string, patch: Partial<Co
         if (acc.is_investment) return { ok: false, error: "нельзя привязать вклад цели к инвест-ведру" };  // SPEC-026 E6
         newCurrency = acc.currency;
         // FIN-01 (SPEC-042): смена счёта пере-деривит валюту взноса; старый amount молча
-        // ревальвировал бы goal.balance по новой валюте. Смена валюты требует amount в PATCH.
-        if (patch.amount === undefined) {
+        // ревальвировал бы goal.balance по новой валюте. Смена валюты требует amount в PATCH
+        // (== null: явный null — тоже не сумма).
+        if (patch.amount == null) {
             const existing = await env.DB
                 .prepare("SELECT currency_code FROM goal_contributions WHERE id = ? AND deleted_at IS NULL")
                 .bind(id)

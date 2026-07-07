@@ -204,6 +204,7 @@ export function useDeleteIncome() {
         onSuccess: () => {
             invalidateOnIncomeMutation(qc);
             qc.invalidateQueries({ queryKey: ["goals"] });
+            qc.invalidateQueries({ queryKey: ["goal"] });   // ADM-16: открытый detail цели удалённого goal-дохода
         },
     });
 }
@@ -408,11 +409,6 @@ export function useBudgets() {
         queryFn: () => apiFetch<BudgetsResponse>("/v1/web/budgets"),
         staleTime: 30_000,
     });
-}
-
-function invalidateBudgets(qc: ReturnType<typeof useQueryClient>) {
-    qc.invalidateQueries({ queryKey: ["budgets"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });   // бюджеты — линза на те же траты
 }
 
 // ADM-07 (SPEC-042): ручной CRUD лимита обязан рефетчить и рекомендации RBAR —
