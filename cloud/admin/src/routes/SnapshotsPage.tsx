@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { Plus, Pencil, Trash2, Banknote, Coins, Search } from "lucide-react";
 import { useAccounts, useCreateSnapshot, useDeleteSnapshot, useSnapshots, useUpdateSnapshot } from "@/api/queries";
 import { ErrorState } from "@/components/ErrorState";
@@ -21,10 +22,17 @@ export function SnapshotsPage() {
     const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
     const snapshots = snapData?.snapshots ?? [];
 
+    // ADM-10: /accounts передаёт ?account_id=… (validateSearch в routeTree) — применяем как фильтр.
+    const { account_id: searchAccountId } = useSearch({ strict: false }) as { account_id?: string };
+
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Snapshot | null>(null);
-    const [filterAccount, setFilterAccount] = useState<string>("");
+    const [filterAccount, setFilterAccount] = useState<string>(searchAccountId ?? "");
     const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        if (searchAccountId) setFilterAccount(searchAccountId);
+    }, [searchAccountId]);
 
     const filtered = useMemo(() => {
         let rows = snapshots;
@@ -148,7 +156,8 @@ export function SnapshotsPage() {
                                                     <button onClick={() => openEdit(s)} className="btn-icon" aria-label="Редактировать">
                                                         <Pencil className="h-4 w-4" />
                                                     </button>
-                                                    <button onClick={() => handleDelete(s)} className="btn-icon text-destructive" aria-label="Удалить">
+                                                    {/* ADM-19: guard от двойного клика — пока DELETE в полёте, кнопки строк неактивны */}
+                                                    <button onClick={() => handleDelete(s)} disabled={remove.isPending} className="btn-icon text-destructive" aria-label="Удалить">
                                                         <Trash2 className="h-4 w-4" />
                                                     </button>
                                                 </>
@@ -193,14 +202,25 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
     const [note, setNote] = useState(editing?.note ?? "");
     const [submitting, setSubmitting] = useState(false);
 
-    // ре-инициализация при открытии
-    const key = `${open}-${editing?.id ?? "new"}`;
-    useMemo(() => {
+    // ре-инициализация при открытии (ADM-14: useEffect, не useMemo — setState в memo
+    // был side-effect-анти-паттерном и расходился с остальными модалами)
+    useEffect(() => {
+        if (!open) return;
         setDate(editing?.date ?? todayISO());
         setAccountId(editing?.account_id ?? accounts[0]?.id ?? "");
         setAmount(editing ? String(editing.amount) : "");
         setNote(editing?.note ?? "");
-    }, [key]);
+        setSubmitting(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, editing?.id]);
+
+    // ADM-14: модал мог открыться до загрузки accounts — accountId="" при непустом списке
+    // опций (браузер рисует первую опцию выбранной, state пуст → кнопка disabled без
+    // объяснения). Как только accounts пришли — доводим до дефолта.
+    useEffect(() => {
+        if (open && !editing && !accountId && accounts.length > 0) setAccountId(accounts[0].id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, accounts.length]);
 
     const selectedAcc = accounts.find(a => a.id === accountId);
     const lastForAcc = selectedAcc?.manual_snapshot ?? selectedAcc?.latest_snapshot;
@@ -239,6 +259,9 @@ function SnapshotModal({ open, editing, accounts, onClose, onSubmit }: SnapshotM
             <form onSubmit={submit} className="space-y-4">
                 <Field label="Ведро">
                     <Select fullWidth value={accountId} onChange={e => setAccountId(e.target.value)}>
+                        {/* ADM-14: пока state пуст, показываем честный плейсхолдер вместо
+                            визуально «выбранной» первой опции при пустом value */}
+                        {!accountId && <option value="">— выбери ведро —</option>}
                         {accounts.map(a => (
                             <AccountOption key={a.id} account={a} />
                         ))}

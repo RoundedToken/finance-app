@@ -251,7 +251,8 @@ export function IncomesPage() {
                                             <button onClick={() => openEdit(inc)} className="btn-icon" aria-label="Редактировать">
                                                 <Pencil className="h-4 w-4" />
                                             </button>
-                                            <button onClick={() => handleDelete(inc)} className="btn-icon text-destructive" aria-label="Удалить">
+                                            {/* ADM-19: guard от двойного клика — пока DELETE в полёте, кнопка неактивна */}
+                                            <button onClick={() => handleDelete(inc)} disabled={remove.isPending} className="btn-icon text-destructive" aria-label="Удалить">
                                                 <Trash2 className="h-4 w-4" />
                                             </button>
                                         </td>

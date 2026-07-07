@@ -38,7 +38,7 @@ cloud/
 | Web Admin | `/v1/web/*` (expenses/accounts/snapshots/incomes/goals/transactions/categories/dashboard) | Google OAuth → JWT (`Authorization: Bearer`) |
 | OAuth | `/v1/auth/google/{start,callback}` | — |
 | System (миграции) | `/v1/admin/{references,migrate-expenses,refresh-rates,bulk-rates}` | Bearer `SYNC_TOKEN` |
-| Cron | `scheduled` `0 6 * * *` | ежедневный фетч курсов (ADR-006) |
+| Cron | `scheduled` `0 6 * * *` + `0 7 * * *` | фетч курсов (ADR-006) + coach-дайджест (SPEC-040) |
 | Health | `GET /healthz` | public |
 
 Архитектура и потоки — `docs/architecture.md`; модель данных — `docs/data-model.md`; решения — `docs/decisions.md`.

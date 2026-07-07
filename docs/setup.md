@@ -243,8 +243,9 @@ CF_ACCOUNT_ID=<your-account-id>
 CF_WORKER_URL=https://finances-worker.<account>.workers.dev
 SYNC_TOKEN=<тот же что в wrangler secret>
 
-# Google Sheets курсов
-GOOGLE_RATES_CSV_URL=https://docs.google.com/spreadsheets/d/.../export?format=csv
+# Google Sheets курсов (пишет setup_rates_sheet.py, читает worker — см. шаг 6 выше)
+GOOGLE_RATES_LATEST_CSV=https://docs.google.com/spreadsheets/d/.../export?format=csv&gid=...
+GOOGLE_RATES_HISTORY_CSV=https://docs.google.com/spreadsheets/d/.../export?format=csv&gid=...
 
 # Telegram (для тестов из Python)
 TELEGRAM_BOT_TOKEN=<token>

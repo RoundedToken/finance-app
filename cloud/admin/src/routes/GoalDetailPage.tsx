@@ -12,6 +12,7 @@ import {
     useDeleteContribution,
 } from "@/api/queries";
 import { Currency, AccountOption } from "@/components/Currency";
+import { ErrorState } from "@/components/ErrorState";
 import { GoalProgressChart } from "@/components/GoalProgressChart";
 import { Select } from "@/components/Select";
 import { Modal } from "@/components/Modal";
@@ -23,7 +24,7 @@ const todayISO = todayLocal;   // SPEC-024: дефолт даты взноса +
 export function GoalDetailPage() {
     const { goalId } = useParams({ strict: false }) as { goalId: string };
     const router = useRouter();
-    const { data, isLoading } = useGoalDetail(goalId);
+    const { data, isLoading, isError, refetch } = useGoalDetail(goalId);
     const setStatus = useSetGoalStatus();
     const remove = useDeleteGoal();
 
@@ -46,6 +47,10 @@ export function GoalDetailPage() {
 
     if (isLoading) {
         return <div className="card p-12 text-center text-muted-foreground">Загрузка…</div>;
+    }
+    // ADM-05: 5xx/сеть — не «Цель не найдена»: ложное сообщение подталкивало считать цель удалённой.
+    if (isError) {
+        return <ErrorState onRetry={() => refetch()} label="Не удалось загрузить цель" />;
     }
     if (!data?.goal) {
         return (
@@ -262,7 +267,8 @@ function ContribRow({ contrib, targetCcy }: { contrib: GoalContribution; targetC
             </td>
             <td className="px-4 py-2.5 text-right whitespace-nowrap">
                 {isManual && (
-                    <button onClick={handleDelete} className="btn-icon text-destructive" aria-label="Удалить">
+                    /* ADM-19: guard от двойного клика — пока DELETE в полёте, кнопка неактивна */
+                    <button onClick={handleDelete} disabled={remove.isPending} className="btn-icon text-destructive" aria-label="Удалить">
                         <Trash2 className="h-4 w-4" />
                     </button>
                 )}
